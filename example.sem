@@ -1,0 +1,45 @@
+% Comments
+
+%% Syntax
+
+syntax {
+	%% Expressions
+	aexp in AExp ::= i | lambda(x, e);
+	e in Exp ::= aexp
+			   | let(x, e, e);
+	i in Int;
+	x in Atom;
+
+	%% Values
+	v in Value ::= closure(e, rho);
+
+	%% State space
+
+	rho  in Environment;
+	sto  in Store;
+	kont in Stack;
+
+	ctrl in Ctrl ::= ev(e, rho)
+				   | ap(v);
+
+	state in State ::= st(ctrl, kont, sto);
+};
+
+%% Rewrite functions
+aeval(lambda(x, e), rho, sto) =
+	closure(lambda(x,e), rho);
+aeval(i, _, _) = i;
+
+
+rules {
+	transition State ~> State;
+	
+	rule "St-Atomic"
+	[ aeval(aexp, rho, sto) = v ]
+	=>
+	[
+		step(state(ev(aexp, rho), sto, k))
+	~>  step(state(ap(v), sto, k))
+	];
+
+}

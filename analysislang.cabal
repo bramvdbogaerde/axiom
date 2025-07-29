@@ -1,0 +1,19 @@
+name: analysislang
+version: 1.0
+build-type: Simple
+cabal-version:>= 1.8
+
+library
+  build-depends: base >= 4 && < 5,
+                 containers,
+                 mtl,
+                 parsec
+  exposed-modules:  Language.Lexer
+                  , Language.AST
+                  , Language.Parser
+  hs-source-dirs: src
+  
+executable analysislang
+  build-depends: base >= 4 && < 5, analysislang, pretty-simple
+  hs-source-dirs: app
+  main-is: Main.hs
