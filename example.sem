@@ -26,13 +26,16 @@ syntax {
 };
 
 %% Rewrite functions
+
 aeval(lambda(x, e), rho, sto) =
 	closure(lambda(x,e), rho);
 aeval(i, _, _) = i;
 
 
+% Define the main transition function between two sequential states
+transition State ~> State;
+
 rules {
-	transition State ~> State;
 	
 	rule "St-Atomic"
 	[ aeval(aexp, rho, sto) = v ]
