@@ -32,8 +32,10 @@ aeval(lambda(x, e), rho, sto) =
 aeval(i, _, _) = i;
 
 
-% Define the main transition function between two sequential states
+%% Declare the main transition function between two sequential states
 transition State ~> State;
+
+%% Transition rules
 
 rules {
 	
@@ -41,8 +43,20 @@ rules {
 	[ aeval(aexp, rho, sto) = v ]
 	=>
 	[
-		step(state(ev(aexp, rho), sto, k))
-	~>  step(state(ap(v), sto, k))
+		st(ev(aexp, rho), sto, k)
+	~>  st(ap(v), sto, k)
+	];
+
+	rule "St-App"
+	[ aeval(aexp0, rho, sto) = closure(lambda(x, e), rho1);
+	  aeval(aexp1, rho, sto) = v1;
+	  adr  = alloc(x);
+	  rho2 = extend(rho1, x, adr);
+	  sto2 = extend(sto,  adr, v1) ]
+	=>
+	[
+		st(ev(app(aexp0, aexp1), rho), sto, k)
+	~>  st(ev(e, rho2), sto2, k)
 	];
 
 };

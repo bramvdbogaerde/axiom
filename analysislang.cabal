@@ -11,6 +11,7 @@ library
   exposed-modules:  Language.Lexer
                   , Language.AST
                   , Language.Parser
+                  , Language.Model
   hs-source-dirs: src
   
 executable analysislang

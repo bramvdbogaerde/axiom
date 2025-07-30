@@ -9,6 +9,6 @@ main :: IO ()
 main = do
   contents <- readFile "example.sem"
   let tokens = lex emptyCtx contents
-  pPrint tokens
+  -- pPrint tokens
   pPrint $ runParser tokens
 

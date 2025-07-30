@@ -2,6 +2,7 @@
 module Language.Lexer where
 import Prelude hiding (lex)
 import Data.Char (isLetter)
+import GHC.Unicode
 
 data Ctx = Ctx { line :: Int, col :: Int }
 emptyCtx = Ctx 1 1
@@ -74,7 +75,7 @@ lexEq ctx [] = error $ "unexpected end of file at " ++ show (line ctx) ++ ":" ++
 -- | Lex an identifier and then continue
 lexIdentifier :: Ctx -> String -> String -> [TokenWithCtx]
 lexIdentifier ctx acc (c:rest)
-  | isWhitespace c || not (isLetter c) = TokenWithCtx (Ident (reverse acc)) ctx : lex ctx (c:rest)
+  | isWhitespace c || not (isAlphaNum c) = TokenWithCtx (Ident (reverse acc)) ctx : lex ctx (c:rest)
   | otherwise = lexIdentifier (incc ctx) (c:acc) rest
 
 -- | Scan until another quote is found, no escaping, multiline supported
