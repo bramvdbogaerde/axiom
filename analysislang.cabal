@@ -7,7 +7,8 @@ library
   build-depends: base >= 4 && < 5,
                  containers,
                  mtl,
-                 parsec
+                 parsec,
+                 lens
   exposed-modules:  Language.Lexer
                   , Language.AST
                   , Language.Parser
