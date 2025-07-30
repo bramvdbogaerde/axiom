@@ -23,6 +23,10 @@ matchToken f = tokenPrim show (\pos _ _ -> pos) (f . tokenToken)
 parens :: Parser a -> Parser a
 parens = between lpar rpar
 
+brackets :: Parser a -> Parser a
+brackets = between lbra rbra
+
+
 ------------------------------------------------------------
 --  Token matching parser
 ------------------------------------------------------------
@@ -59,6 +63,14 @@ lcba = matchToken (\case LCBa -> Just (); _ -> Nothing)
 rcba :: Parser ()
 rcba = matchToken (\case RCBa -> Just (); _ -> Nothing)
 
+-- | Matches with a left bracket
+lbra :: Parser ()
+lbra = matchToken (\case LBra -> Just () ; _ -> Nothing)
+
+-- | Matches with a left bracket
+rbra :: Parser ()
+rbra = matchToken (\case RBra -> Just () ; _ -> Nothing)
+
 -- | Matches a right comma
 com :: Parser ()
 com = matchToken (\case Comma -> Just (); _ -> Nothing)
@@ -79,17 +91,41 @@ mid = matchToken (\case Bar -> Just (); _ -> Nothing)
 inn :: Parser ()
 inn = matchToken (\case Ident "in" -> Just () ; _ -> Nothing)
 
+-- | Match a "rule" token
+ruleToken :: Parser ()
+ruleToken = matchToken (\case Rule -> Just () ; _ -> Nothing)
+
+-- | Match a string token and returns its value
+str :: Parser String
+str = matchToken (\case Quo s -> Just s; _ -> Nothing)
+
+-- | Matches with a "~>" token
+leadsto :: Parser ()
+leadsto = matchToken (\case LeadsTo -> Just () ; _ -> Nothing)
+
+-- | Matches with a "transition" token
+transitionToken :: Parser ()
+transitionToken = matchToken (\case Ident "transition" -> Just (); _ -> Nothing)
+
+-- | Matches with a "=>" token
+implies :: Parser ()
+implies = matchToken (\case Implies -> Just (); _ -> Nothing)
 
 ------------------------------------------------------------
 -- Parsers
 ------------------------------------------------------------
 
 -- | Parses a term or pattern
-term :: Parser Production
+term :: Parser Term
 term =  do
     typeOrFunctor <- ident
-    parens (Functor typeOrFunctor <$> sepBy term com)  <|> return (Type typeOrFunctor)
+    term0 <- parens (Functor typeOrFunctor <$> sepBy term com)  <|> return (Atom typeOrFunctor)
+    -- possibly still a transition rule or "equals" rule
+    (equals >> Eqq term0 <$> term) <|> (leadsto >> Transition "~>" term0 <$> term) <|> return term0
 
+-- | Parses a sequence of terms seperated (and ended) by the given parser
+terms :: Parser a -> Parser [Term]
+terms = sepBy term
 
 -- | Parse a single syntax declaration
 syntaxDecl :: Parser SyntaxDecl
@@ -98,7 +134,7 @@ syntaxDecl = do
                  <*> (inn >> ident)
                  <*> (fromMaybe [] <$> parseProductions)
   where parseProductions = optionMaybe (definedAs >> sepBy parseProduction mid)
-        parseProduction :: Parser Production
+        parseProduction :: Parser Term
         parseProduction  = term
 -- | Parse a syntax block
 syntax :: Parser Decl
@@ -110,21 +146,29 @@ syntax =  Syntax <$>
 
 -- | Parse a rewrite rule
 rewriteRule :: Parser Decl
-rewriteRule =  Rewrite 
+rewriteRule =  Rewrite
            <$> ( RewriteDecl
               <$> ident
               <*> parens (sepBy term com)
               <*> (equals >> term) )
-    where termParser = undefined
+
+-- | Parse a single rule declaration
+rule :: Parser RuleDecl
+rule = ruleToken >> (RuleDecl <$> str <*> brackets (terms sem) <*> (implies >> brackets (terms sem)))
 
 -- | Parse a rules section
 rules :: Parser Decl
-rules = RulesDecl <$> undefined
+rules = rulesToken >> RulesDecl <$> between lcba rcba (endBy rule sem)
+
+-- | Parses a declarartion for a transition
+transition :: Parser Decl
+transition = transitionToken >> flip TransitionDecl <$> ident <*> (leadsto >> return "~>") <*> ident
 
 parser :: Parser Program
 parser = Program <$> endBy programElement sem
   where programElement =  syntax
-                       -- <|> rules
+                       <|> rules
+                       <|> transition
                        <|> rewriteRule
 
 
