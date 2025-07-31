@@ -8,11 +8,12 @@ library
                  containers,
                  mtl,
                  parsec,
-                 lens
+                 lens,
+                 regex-compat
   exposed-modules:  Language.Lexer
                   , Language.AST
                   , Language.Parser
-                  , Language.Model
+                  , Language.TypeCheck
   hs-source-dirs: src
   
 executable analysislang

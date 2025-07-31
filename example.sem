@@ -11,25 +11,26 @@ syntax {
 	x in Atom;
 
 	%% Values
-	v in Value ::= closure(e, rho);
+	v in Value ::= closure(aexp, rho);
 
 	%% State space
 
 	rho  in Environment;
 	sto  in Store;
-	kont in Stack;
+	k, kont in Stack;
 
 	ctrl in Ctrl ::= ev(e, rho)
 				   | ap(v);
 
 	state in State ::= st(ctrl, kont, sto);
+		
 };
 
 %% Rewrite functions
 
 aeval(lambda(x, e), rho, sto) =
 	closure(lambda(x,e), rho);
-aeval(i, _, _) = i;
+aeval(i, rho, sto) = i;
 
 
 %% Declare the main transition function between two sequential states
@@ -43,20 +44,20 @@ rules {
 	[ aeval(aexp, rho, sto) = v ]
 	=>
 	[
-		st(ev(aexp, rho), sto, k)
-	~>  st(ap(v), sto, k)
+		st(ev(aexp, rho), k, sto)
+	~>  st(ap(v), k, sto)
 	];
 
-	rule "St-App"
-	[ aeval(aexp0, rho, sto) = closure(lambda(x, e), rho1);
-	  aeval(aexp1, rho, sto) = v1;
-	  adr  = alloc(x);
-	  rho2 = extend(rho1, x, adr);
-	  sto2 = extend(sto,  adr, v1) ]
-	=>
-	[
-		st(ev(app(aexp0, aexp1), rho), sto, k)
-	~>  st(ev(e, rho2), sto2, k)
-	];
+%	rule "St-App"
+%	[ aeval(aexp0, rho, sto) = closure(lambda(x, e), rho1);
+%	  aeval(aexp1, rho, sto) = v1;
+%	  adr  = alloc(x);
+%	  rho2 = extend(rho1, x, adr);
+%	  sto2 = extend(sto,  adr, v1) ]
+%	=>
+%	[
+%		st(ev(app(aexp0, aexp1), rho), k, sto)
+%	~>  st(ev(e, rho2), k, sto2)
+%	];
 
 };

@@ -5,8 +5,11 @@ module Language.AST(
     SyntaxDecl(..),
     RewriteDecl(..),
     RuleDecl(..),
-    Term(..)   
+    Term(..),
+    variableName
   ) where
+import Text.Regex (mkRegex, matchRegex)
+import Data.Maybe (fromJust, fromMaybe)
 
 -- | A program is a sequence of declarations
 newtype Program = Program [Decl] deriving (Ord, Eq, Show)
@@ -50,5 +53,8 @@ data Term = Atom String
           | Eqq Term Term
           | Transition String Term Term
           deriving (Ord, Eq, Show)
-      
-  
+
+-- | Extract the name of the variable from variables suffixed with numbers
+variableName :: String -> String
+variableName s = head $ fromMaybe (error $ "could not get variable name of " ++ s) $ matchRegex r s
+  where r = mkRegex "([a-zA-Z]+)\\d*"
