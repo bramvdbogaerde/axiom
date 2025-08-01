@@ -10,13 +10,18 @@ library
                  parsec,
                  lens,
                  regex-compat
-  exposed-modules:  Language.Lexer
-                  , Language.AST
+  exposed-modules:  Language.AST
                   , Language.Parser
                   , Language.TypeCheck
+                  , Language.Solver
+  other-modules: Language.Lexer
   hs-source-dirs: src
   
 executable analysislang
-  build-depends: base >= 4 && < 5, analysislang, pretty-simple
+  build-depends: base >= 4 && < 5
+              , ansi-terminal
+              , analysislang
+              , pretty-simple
+  other-modules: Reporting
   hs-source-dirs: app
   main-is: Main.hs

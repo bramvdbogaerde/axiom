@@ -4,7 +4,7 @@
 
 syntax {
 	%% Expressions
-	aexp in AExp ::= i | lambda(x, e);
+        aexp in AExp ::= i | lambda(x, e);
 	e in Exp ::= aexp
 			   | let(x, e, e);
 	i in Int;

@@ -21,13 +21,6 @@ import Control.Monad
 import Data.Kind
 import Data.Maybe (fromMaybe)
 
--- TODO: allow for 'subtyping', meaning that if
--- the syntax specifies:
--- aexp in AExp ::= something
--- exp in Exp :: aexp
---
--- that AExp can also be used where Exp is expected
-
 -----------------------------------------
 -- Model datatypes
 -----------------------------------------
@@ -43,6 +36,11 @@ type Var = String
 data DataCtor = DataAtom SortName | DataTagged String [SortName]
               deriving (Ord, Eq, Show)
 
+-- | Returns the sorts beloning to the given data constructor
+ctorSorts :: DataCtor -> [SortName]
+ctorSorts = \case DataAtom s -> [s]
+                  DataTagged _ ss -> ss
+
 -- | A sort consists of a set of data constructors, a name of the sort and
 -- the variables associated with that sort.
 data Sort = Sort String (Set Var) (Set DataCtor)
@@ -56,10 +54,10 @@ data ModelError = DuplicateVariable String SortName
                 | DuplicateSort SortName
                 | NoNestingAt SortName
                 | NoSuchSort Var
-                | IncompatibleType SortName SortName
+                | IncompatibleTypes [SortName] [SortName]
                 deriving (Ord, Eq, Show)
 
-data Error = Error { err :: ModelError, ctx :: Context }
+data Error = Error { err :: ModelError, raisedAt :: Maybe Range,  ctx :: Context }
            deriving (Ord, Eq, Show)
 
 
@@ -72,7 +70,9 @@ data Error = Error { err :: ModelError, ctx :: Context }
 data Context = Context { _atomToSorts      :: Map String SortName, -- ^ mapping from data atoms (in variables or datactors) to their sorts
                          _functorToCtor    :: Map String DataCtor,
                          _sorts            :: Map String Sort,     -- ^ a mapping from a sort name to their sort data structure
-                         _supertypes       :: Map SortName (Set SortName)
+                         _supertypes       :: Map SortName (Set SortName),
+                        -- | A mapping from sort names to the location of their definition (for debugging and error messaging)
+                         _sortToDefSite    :: Map String (Maybe Range)
                        } deriving (Ord, Eq, Show)
 
 
@@ -80,14 +80,18 @@ $(makeLenses ''Context)
 
 -- | Create an empty context
 emptyContext :: Context
-emptyContext = Context Map.empty Map.empty Map.empty Map.empty
+emptyContext = Context Map.empty Map.empty Map.empty Map.empty Map.empty
 
 -- | Monad for modifying and tracking the typing context
 type MonadTy m = (MonadState Context m, MonadError Error m)
 
 -- | Throw an error by adding the current context to it
 throwError :: MonadTy m => ModelError -> m a
-throwError err = get >>= Except.throwError . Error err
+throwError err = get >>= Except.throwError . Error err Nothing
+
+-- | Throw an error at the given location in the sourcez by adding the current context to it 
+throwErrorAt :: MonadTy m => Range -> ModelError -> m a
+throwErrorAt range err = get >>= Except.throwError . Error err (Just range)
 
 -- | Associate a single variable to the given type or return
 -- an error if there is already a type associated with the given variable.
@@ -117,22 +121,33 @@ registerSubtype subtype parenttype = modify (over supertypes (Map.insertWith Set
 
 -- | Produces and associated the data constructors in the given sort
 makeCtor :: MonadTy m => SortName -> Term -> m DataCtor
-makeCtor sortName = \case (Atom nam) -> do
+makeCtor sortName = \case (Atom nam _) -> do
                               sort <- resolveSort nam
                               registerSubtype sort sortName
                               return $ DataAtom sort
-                          (Functor nam ts) -> do
+                          (Functor nam ts _) -> do
                             assocAtomToSort sortName nam
                             sorts <- mapM (collectAtoms >=> resolveSort) ts
                             let ctor = DataTagged nam sorts
                             modify (over functorToCtor (Map.insert nam ctor))
                             return ctor
-  where collectAtoms (Atom nam) = return nam
-        collectAtoms _ = throwError $ NoNestingAt sortName
+  where collectAtoms (Atom nam _) = return nam
+        collectAtoms t = throwErrorAt (rangeOf t) $ NoNestingAt sortName
+
+
+-- | Add a new sort to the type system 
+addSort :: MonadTy m
+        => String      -- ^ name of the sort
+        -> Maybe Range -- ^ the definition site of the sort (if available)
+        -> Sort        -- ^ the sort to define
+        -> m ()
+addSort tpy range sort = do
+  modify (over sorts (Map.insert tpy sort))
+  modify (over sortToDefSite (Map.insert tpy range))
 
 -- | Add the contents of a single syntax rule Context to the typing context 
 addSyntaxRule :: MonadTy m => SyntaxDecl -> m ()
-addSyntaxRule (SyntaxDecl vars tpy ctors) = do
+addSyntaxRule (SyntaxDecl vars tpy ctors range) = do
   -- construct the data constructors from ctors
   ctors <- mapM (makeCtor (SortName tpy)) ctors
   let sort = Sort tpy (Set.fromList vars) (Set.fromList ctors)
@@ -140,19 +155,19 @@ addSyntaxRule (SyntaxDecl vars tpy ctors) = do
   alreadyDefined <- gets (Map.member tpy . _sorts)
   if alreadyDefined
     then throwError (DuplicateSort (SortName tpy))
-    else modify (over sorts (Map.insert tpy sort))
+    else addSort tpy (Just range) sort
 
 -- | Associates the sorts with the variables in the syntax rule or raises an error
 -- if the variables was already defined in another rule.
 assocSyntaxRule :: MonadTy m => SyntaxDecl -> m ()
-assocSyntaxRule (SyntaxDecl vars tpy ctors) = do
+assocSyntaxRule (SyntaxDecl vars tpy ctors _) = do
   mapM_ (assocAtomToSort (SortName tpy)) vars
 
 -- | Traverse the program's declarations for constructing a context
 traverseDecls :: MonadTy m => [Decl] -> m ()
 traverseDecls = mapM_ traverseDecl
-  where traverseDecl (Syntax decls) = mapM_ addSyntaxRule decls
-        traverseDecl (TransitionDecl nam from to) = do
+  where traverseDecl (Syntax decls _) = mapM_ addSyntaxRule decls
+        traverseDecl (TransitionDecl nam from to range) = do
           -- Effectively:
           -- transition State ~> State
           -- is equivalent to the syntax rule:
@@ -160,7 +175,7 @@ traverseDecls = mapM_ traverseDecl
           -- from a typing perspective
           let ctor = DataTagged nam [SortName from, SortName to]
           let sort = Sort nam Set.empty (Set.singleton ctor)
-          modify (over sorts (Map.insert nam sort))
+          addSort nam (Just range) sort
           assocAtomToSort (SortName nam) nam
           modify (over functorToCtor (Map.insert nam ctor))
         traverseDecl _ = return  ()
@@ -170,7 +185,7 @@ traverseDecls = mapM_ traverseDecl
 -- - The next pass traverses the entire tree again and constructs the data constructors provided in the syntax  
 deriveCtx :: MonadTy m => [Decl] -> m ()
 deriveCtx decls = mapM_ traverseDecl decls >> traverseDecls decls
-  where traverseDecl (Syntax decls) = mapM_ assocSyntaxRule decls
+  where traverseDecl (Syntax decls _) = mapM_ assocSyntaxRule decls
         traverseDecl _ = return ()
 
 -----------------------------------------
@@ -211,7 +226,7 @@ findPath from to =
 -- | Infer the types of the arguments in reduction rules
 inferProgram :: MonadTy m => [Decl] -> m ()
 inferProgram  = mapM_ visitDecl
-  where visitDecl (Rewrite (RewriteDecl nam args bdy)) = do
+  where visitDecl (Rewrite (RewriteDecl nam args bdy range) _) = do
           sorts <- mapM checkTerm args
           bdySort <- checkTerm bdy
           let ctor = DataTagged nam sorts
@@ -219,17 +234,19 @@ inferProgram  = mapM_ visitDecl
           -- or checking whether existing data constructors are the same as the
           -- current one.
           existingSort <- gets (Map.lookup nam . _sorts)
-          winningCtor <- maybe (createSort nam ctor) (checkSame ctor) existingSort
+          winningCtor <- maybe (createSort nam ctor) (checkSame range ctor) existingSort
           modify (over functorToCtor (Map.insert nam winningCtor))
+          -- type the rewrite functor as the sort of its body,
+          -- unless it was already typed before.
+          -- TODO: subtyping?
           alreadyTyped <- gets (Map.member nam . _atomToSorts)
-          -- type the rewrite functor as the sort of its body
           unless alreadyTyped $
             assocAtomToSort bdySort nam
         visitDecl _ = return ()
         createSort nam ctor  = do
           modify (over sorts (Map.insert nam $ Sort nam Set.empty (Set.singleton ctor)))
           return ctor
-        checkSame ctor (Sort nam vrs ctors)  = do
+        checkSame range ctor (Sort nam vrs ctors)  = do
           -- ASSUMPTION: the set of ctors is a singleton (by construction)
           let ctor' = head $ Set.toList ctors
           -- is the new rule a subtype of the old rule
@@ -239,7 +256,7 @@ inferProgram  = mapM_ visitDecl
           -- if neither isSubset or isSubsetOp is true then
           -- the types are incompatible
           if not (isSubset || isSubsetOp)
-            then error $  "inferring rewrite rules failed, incompatible types " ++ show ctors ++ " and " ++ show ctor
+            then throwErrorAt range (IncompatibleTypes (ctorSorts ctor') (ctorSorts ctor))
             else if isSubsetOp
                     -- widen if the new type is broader than the old one
                     then modify (over sorts (Map.insert nam $ Sort nam Set.empty (Set.singleton ctor))) >> return ctor
@@ -252,36 +269,36 @@ inferProgram  = mapM_ visitDecl
 
 -- | Check an individual term and returns its sort
 checkTerm :: MonadTy m => Term -> m SortName
-checkTerm (Atom nam)       = resolveSort $ variableName nam
-checkTerm (Functor tpy ts) = do
+checkTerm (Atom nam _)       = resolveSort $ variableName nam
+checkTerm (Functor tpy ts range) = do
     ts' <- mapM checkTerm ts
     expected <- sortsInFunctor tpy
     functorSort <- resolveSort tpy
     ok <- and <$> zipWithM subtypeOf ts' expected
     if ok
       then return functorSort
-      else error $ "type checking failed" ++ show expected ++ " got: " ++ show ts'
-checkTerm (Eqq t1 t2)      = do
+      else throwErrorAt range $ IncompatibleTypes expected ts' 
+checkTerm (Eqq t1 t2 range)      = do
     t1' <- checkTerm t1
     t2' <- checkTerm t2
     if t1' /= t2'
-      then throwError (IncompatibleType t1' t2')
+      then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
       else return t1'
-checkTerm (Transition transitionName t1 t2) =
+checkTerm (Transition transitionName t1 t2 range) =
   --  transitions are registered in the typing context
   -- as sorts with a single data constructor and no
   -- variables associated with it (so that they cannot be used as atoms), hence we can check them as if they were functors
-  checkTerm (Functor transitionName [t1, t2])
+  checkTerm (Functor transitionName [t1, t2] range)
 
 -- | Check a rule in the given context and add it to the model
 checkRule :: MonadTy m => RuleDecl -> m ()
-checkRule rule@(RuleDecl nam precedent consequent) = do
+checkRule rule@(RuleDecl nam precedent consequent _) = do
     mapM_ checkTerm (precedent ++ consequent)
 
 -- | Check all declarations in a program
 checkProgram :: MonadTy m => [Decl] -> m ()
 checkProgram = mapM_ visitDecl
-  where visitDecl (RulesDecl rules) = mapM_ checkRule rules
+  where visitDecl (RulesDecl rules _) = mapM_ checkRule rules
         visitDecl _ = return ()
 
 -----------------------------------------

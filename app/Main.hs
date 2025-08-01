@@ -2,18 +2,28 @@
 module Main where
 
 import Prelude hiding (lex)
-import Language.Lexer
 import Language.Parser
 import Language.TypeCheck
-import Text.Pretty.Simple
+import Text.Pretty.Simple hiding (Vivid, Green)
 import Data.Either
 import Data.Bifunctor
+import System.Console.ANSI
+
+printGreen :: String -> IO ()
+printGreen txt = setSGR [SetColor Foreground Vivid Green]
+              >> putStrLn txt
+              >> setSGR [Reset]
+
+printError :: Error -> IO ()
+printError = undefined
+
+printSuccess :: IO ()
+printSuccess = printGreen "Program typechecked successfully"
 
 main :: IO ()
 main = do
   contents <- readFile "example.sem"
-  let tokens = lex emptyCtx contents
-  -- pPrint tokens
-  let ast = fromRight (error "could not parse program") $  runParser tokens
-  pPrint $ first (\case Error e _ -> e) $ runChecker ast
+  let ast = either (error . ("could not parse program" ++) . show) id $  parseProgram contents
+  either printError (const printSuccess) $ runChecker ast
+  
 
