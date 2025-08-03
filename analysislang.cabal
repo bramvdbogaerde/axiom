@@ -22,6 +22,8 @@ executable analysislang
               , ansi-terminal
               , analysislang
               , pretty-simple
+              , containers
+              , optparse-applicative
   other-modules: Reporting
   hs-source-dirs: app
   main-is: Main.hs
