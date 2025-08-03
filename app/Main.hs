@@ -9,8 +9,10 @@ import Text.Pretty.Simple hiding (Vivid, Green)
 import Data.Either
 import Data.Bifunctor
 import System.Console.ANSI
+import System.Exit
 import Reporting
 import Options.Applicative
+import qualified LanguageServer
 
 -------------------------------------------------------------
 -- Data types
@@ -41,11 +43,19 @@ inputOptionsParser = InputOptions
 checkCommand :: Parser (IO ())
 checkCommand = runCheckCommand <$> inputOptionsParser
 
+-- | Parser for the 'lsp' subcommand  
+lspCommand :: Parser (IO ())
+lspCommand = pure $ do
+  exitCode <- LanguageServer.runLanguageServer
+  exitWith $ if exitCode == 0 then ExitSuccess else ExitFailure exitCode
+
 -- | Parser for all available subcommands
 commandParser :: Parser (IO ())
 commandParser = subparser
   ( command "check"
     (info checkCommand (progDesc "Type check a program"))
+ <> command "lsp"
+    (info lspCommand (progDesc "Start Language Server Protocol server"))
   )
 
 -- | Top-level parser for global options

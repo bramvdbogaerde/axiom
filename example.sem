@@ -4,7 +4,7 @@
 
 syntax {
 	%% Expressions
-        aexp in AExp ::= i | lambda(x, e) | x;
+    aexp in AExp ::= i | lambda(x, e) | x;
 	e in Exp ::= aexp
 			   | let(x, e, e);
 	i in Int;
@@ -32,14 +32,12 @@ aeval(lambda(x, e), rho, sto) =
 	closure(lambda(x,e), rho);
 aeval(i, rho, sto) = i;
 
-
 %% Declare the main transition function between two sequential states
 transition State ~> State;
 
 %% Transition rules
 
 rules {
-	
 	rule "St-Atomic"
 	[ aeval(aexp, rho, sto) = v ]
 	=>

@@ -24,6 +24,14 @@ executable analysislang
               , pretty-simple
               , containers
               , optparse-applicative
+              , lsp >= 2.0 && < 3.0
+              , text
+              , lens
+              , uri-encode
+              , transformers
   other-modules: Reporting
+               , LanguageServer
+               , LanguageServer.Diagnostics
+               , LanguageServer.Symbols
   hs-source-dirs: app
   main-is: Main.hs
