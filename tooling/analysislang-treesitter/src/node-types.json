@@ -1,10 +1,10 @@
 [
   {
-    "type": "production",
+    "type": "atom",
     "named": true,
     "fields": {},
     "children": {
-      "multiple": true,
+      "multiple": false,
       "required": true,
       "types": [
         {
@@ -15,7 +15,53 @@
     }
   },
   {
-    "type": "rewrite",
+    "type": "declaration",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "rewrite_rule",
+          "named": true
+        },
+        {
+          "type": "rules_block",
+          "named": true
+        },
+        {
+          "type": "syntax_block",
+          "named": true
+        },
+        {
+          "type": "transition_declaration",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "equality",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "primary_term",
+          "named": true
+        },
+        {
+          "type": "term",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "functor",
     "named": true,
     "fields": {},
     "children": {
@@ -27,14 +73,33 @@
           "named": true
         },
         {
-          "type": "production",
+          "type": "term",
           "named": true
         }
       ]
     }
   },
   {
-    "type": "ruleRule",
+    "type": "primary_term",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "atom",
+          "named": true
+        },
+        {
+          "type": "functor",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "production_list",
     "named": true,
     "fields": {},
     "children": {
@@ -42,49 +107,60 @@
       "required": true,
       "types": [
         {
-          "type": "production",
+          "type": "term",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "rewrite_rule",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
           "named": true
         },
+        {
+          "type": "term",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "rule",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
         {
           "type": "string",
           "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "rules",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
+        },
         {
-          "type": "ruleRule",
+          "type": "term_list",
           "named": true
         }
       ]
     }
   },
   {
-    "type": "section",
+    "type": "rules_block",
     "named": true,
     "fields": {},
     "children": {
       "multiple": true,
-      "required": true,
+      "required": false,
       "types": [
         {
-          "type": "rewrite",
-          "named": true
-        },
-        {
-          "type": "rules",
-          "named": true
-        },
-        {
-          "type": "syntaxblock",
+          "type": "rule",
           "named": true
         }
       ]
@@ -97,17 +173,32 @@
     "fields": {},
     "children": {
       "multiple": true,
-      "required": true,
+      "required": false,
       "types": [
         {
-          "type": "section",
+          "type": "declaration",
           "named": true
         }
       ]
     }
   },
   {
-    "type": "syntaxRule",
+    "type": "syntax_block",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "syntax_rule",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "syntax_rule",
     "named": true,
     "fields": {},
     "children": {
@@ -119,22 +210,98 @@
           "named": true
         },
         {
-          "type": "production",
+          "type": "production_list",
+          "named": true
+        },
+        {
+          "type": "variable_list",
           "named": true
         }
       ]
     }
   },
   {
-    "type": "syntaxblock",
+    "type": "term",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "equality",
+          "named": true
+        },
+        {
+          "type": "primary_term",
+          "named": true
+        },
+        {
+          "type": "transition_term",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "term_list",
     "named": true,
     "fields": {},
     "children": {
       "multiple": true,
-      "required": false,
+      "required": true,
       "types": [
         {
-          "type": "syntaxRule",
+          "type": "term",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "transition_declaration",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "transition_term",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "primary_term",
+          "named": true
+        },
+        {
+          "type": "term",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "variable_list",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
           "named": true
         }
       ]
@@ -202,6 +369,14 @@
     "named": true
   },
   {
+    "type": "syntax",
+    "named": false
+  },
+  {
+    "type": "transition",
+    "named": false
+  },
+  {
     "type": "{",
     "named": false
   },
@@ -211,6 +386,10 @@
   },
   {
     "type": "}",
+    "named": false
+  },
+  {
+    "type": "~>",
     "named": false
   }
 ]
