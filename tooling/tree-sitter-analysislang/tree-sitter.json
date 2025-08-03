@@ -10,7 +10,8 @@
         "sem"
       ],
       "injection-regex": "^analysislang$",
-      "class-name": "TreeSitterAnalysislang"
+      "class-name": "TreeSitterAnalysislang",
+      "highlights": "queries/highlights.scm"
     }
   ],
   "metadata": {

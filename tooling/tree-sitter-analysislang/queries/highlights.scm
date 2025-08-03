@@ -28,15 +28,26 @@
 ; Comments
 (comment) @comment
 
-; Function calls (functors) - highlight the function name
+; Function calls (functors) - highlight the function name first
 (functor (identifier) @function)
 
-; Regular identifiers
+; Sort names in syntax declarations - the identifier after "in" 
+(syntax_rule
+  (variable_list)
+  "in"
+  (identifier) @type)
+
+; Sort names in transition declarations
+(transition_declaration 
+  (identifier) @type
+  "~>"
+  (identifier) @type)
+
+; Regular identifiers - atoms and remaining identifiers
 (atom) @variable
-(identifier) @variable
 
 ; String literals in rule names get special highlighting
 (rule (string) @string.special)
 
-; Error highlighting for malformed syntax
-ERROR @error
+; Error highlighting for malformed syntax  
+(ERROR) @error
