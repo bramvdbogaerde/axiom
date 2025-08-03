@@ -238,10 +238,13 @@ inferProgram  = mapM_ visitDecl
           modify (over functorToCtor (Map.insert nam winningCtor))
           -- type the rewrite functor as the sort of its body,
           -- unless it was already typed before.
-          -- TODO: subtyping?
-          alreadyTyped <- gets (Map.member nam . _atomToSorts)
-          unless alreadyTyped $
-            assocAtomToSort bdySort nam
+          alreadyTyped <- gets (Map.lookup nam . _atomToSorts)
+          -- check whether the existing type matches
+          case alreadyTyped of
+            -- TODO: widening
+            Just existingType -> subtypeOf bdySort existingType
+                             >>= (\r -> if r then return () else throwErrorAt (rangeOf bdy) $ IncompatibleTypes [existingType] [bdySort])
+            Nothing -> assocAtomToSort bdySort nam
         visitDecl _ = return ()
         createSort nam ctor  = do
           modify (over sorts (Map.insert nam $ Sort nam Set.empty (Set.singleton ctor)))
