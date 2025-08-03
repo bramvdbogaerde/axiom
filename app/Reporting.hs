@@ -41,6 +41,8 @@ formatModelError (NoSuchSort var) =
   "Variable '" ++ var ++ "' is used but not defined in any sort"
 formatModelError (IncompatibleTypes expected actual) =
   "Type mismatch: " ++ formatTypeDifference expected actual
+formatModelError (SortNotDefined sortName) =
+  "Sort " ++ sortName ++ " is not defined"
 
 formatTypeDifference :: [SortName] -> [SortName] -> String
 formatTypeDifference expected actual =

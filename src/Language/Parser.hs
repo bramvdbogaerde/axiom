@@ -61,6 +61,8 @@ endRange :: Position -- ^ starting position
         -> Parser Range
 endRange = (fmap (flip Range) position <*>) . pure
 
+-- TODO: we should actually do the range construction in the lexer as it can more
+-- reliably deduce the range of its tokens
 -- | Attaches a range object to the output of the given applicative functor
 withRange :: Parser (Range -> a) -> Parser a
 withRange f = do
@@ -118,6 +120,13 @@ com = matchToken (\case Comma -> Just (); _ -> Nothing)
 -- | Matches with an identifier token
 ident :: Parser String
 ident = matchToken (\case Ident s -> Just s; _ -> Nothing)
+
+identWithRange :: Parser (String, Range)
+identWithRange = do
+  start <- position
+  x <- ident
+  end <- position
+  return (x, Range start end) 
 
 -- | Matches with a defined as token
 definedAs :: Parser ()
@@ -208,7 +217,7 @@ rules = rulesToken >> withRange (RulesDecl <$> between lcba rcba (endBy rule sem
 
 -- | Parses a declarartion for a transition
 transition :: Parser Decl
-transition = transitionToken >> withRange (flip TransitionDecl <$> ident <*> (leadsto >> return "~>") <*> ident)
+transition = transitionToken >> withRange (flip TransitionDecl <$> identWithRange <*> (leadsto >> return "~>") <*> identWithRange)
 
 parser :: Parser Program
 parser = Program <$> endBy programElement sem

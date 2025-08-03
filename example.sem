@@ -3,7 +3,7 @@
 %% Syntax
 syntax {
 	%% Expressions
-    aexp in AExp ::= i | lambda(x, e) | x;
+    aexp in AExp ::= i | lambda(x, e) | y | x;
 	e in Exp ::= aexp
 			   | let(x, e, e);
 	i in Int;

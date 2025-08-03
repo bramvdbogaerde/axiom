@@ -43,7 +43,7 @@ type Tpy = String
 data Decl = Syntax [SyntaxDecl] Range
           | Rewrite RewriteDecl Range 
           | RulesDecl [RuleDecl] Range
-          | TransitionDecl String Tpy Tpy Range
+          | TransitionDecl String (Tpy, Range) (Tpy, Range) Range
           deriving (Ord, Eq, Show)
 
 -- | var in Tpy ::= term0 | term1 | ...

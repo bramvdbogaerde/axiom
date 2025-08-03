@@ -73,10 +73,10 @@ lexEq ctx (c:rest)
 lexEq ctx [] = error $ "unexpected end of file at " ++ show (line ctx) ++ ":" ++ show (col ctx)
 
 -- | Lex an identifier and then continue
-lexIdentifier :: Ctx -> String -> String -> [TokenWithCtx]
-lexIdentifier ctx acc (c:rest)
-  | isWhitespace c || not (isAlphaNum c) = TokenWithCtx (Ident (reverse acc)) ctx : lex ctx (c:rest)
-  | otherwise = lexIdentifier (incc ctx) (c:acc) rest
+lexIdentifier :: Ctx -> Ctx -> String -> String -> [TokenWithCtx]
+lexIdentifier ctx origCtx acc (c:rest)
+  | isWhitespace c || not (isAlphaNum c) = TokenWithCtx (Ident (reverse acc)) origCtx : lex ctx (c:rest)
+  | otherwise = lexIdentifier (incc ctx) origCtx (c:acc) rest
 
 -- | Scan until another quote is found, no escaping, multiline supported
 lexQuoted :: String -> Ctx -> String -> [TokenWithCtx]
@@ -114,8 +114,8 @@ lex ctx ('"':rest) = lexQuoted [] (incc ctx) rest
 lex ctx ('r':'u':'l':'e':c1:c2:rest)
     | c1 == 's' && isWhitespace c2 = TokenWithCtx Rules ctx : lex (inck 6 c2 ctx) rest
     | isWhitespace c1 = TokenWithCtx Rule ctx : lex (inck 5 c1 ctx) (c2:rest)
-    | otherwise = lexIdentifier (incck 4 ctx) (reverse "rule") (c1:c2:rest)
-lex ctx (c:rest) = lexIdentifier ctx [c] rest
+    | otherwise = lexIdentifier (incck 4 ctx) ctx (reverse "rule") (c1:c2:rest)
+lex ctx (c:rest) = lexIdentifier (incc ctx) ctx [c] rest
 lex _ [] = []
 -- lex ctx (c:rest) = error $ "unexpected character " ++ show c ++ " at " ++ show (line ctx) ++ ":" ++ show (col ctx)
 

@@ -54,6 +54,7 @@ data ModelError = DuplicateVariable String SortName
                 | DuplicateSort SortName
                 | NoNestingAt SortName
                 | NoSuchSort Var
+                | SortNotDefined String
                 | IncompatibleTypes [SortName] [SortName]
                 deriving (Ord, Eq, Show)
 
@@ -101,11 +102,21 @@ assocAtomToSort sortName var = do
   if alreadyDefined
     then throwError (DuplicateVariable var sortName)
     else modify (over atomToSorts (Map.insert var sortName))
+    
+-- | Check that the given sort exists
+assertSortDefinedAt :: MonadTy m => Range -> String -> m ()
+assertSortDefinedAt range sortName =
+      gets (Map.member sortName . _sorts)
+  >>= (\b -> if b then return () else throwErrorAt range (SortNotDefined sortName))
 
--- | Founds the sort associated with the given variable
+-- | Finds the sort associated with the given variable
 resolveSort :: (MonadState Context m, MonadError Error m) => String -> m SortName
 resolveSort varName = gets (Map.lookup varName . _atomToSorts)
                   >>= maybe (throwError (NoSuchSort varName)) return
+
+resolveSortAt :: (MonadState Context m, MonadError Error m) => Range -> String -> m SortName
+resolveSortAt range varName = gets (Map.lookup varName . _atomToSorts)
+                  >>= maybe (throwErrorAt range (NoSuchSort varName)) return
 
 -- | Return a list of sorts associated with the functor
 sortsInFunctor :: (MonadState Context m, MonadError Error m) => String -> m [SortName]
@@ -121,13 +132,13 @@ registerSubtype subtype parenttype = modify (over supertypes (Map.insertWith Set
 
 -- | Produces and associated the data constructors in the given sort
 makeCtor :: MonadTy m => SortName -> Term -> m DataCtor
-makeCtor sortName = \case (Atom nam _) -> do
-                              sort <- resolveSort nam
+makeCtor sortName = \case (Atom nam range) -> do
+                              sort <- resolveSortAt range nam
                               registerSubtype sort sortName
                               return $ DataAtom sort
-                          (Functor nam ts _) -> do
+                          (Functor nam ts range) -> do
                             assocAtomToSort sortName nam
-                            sorts <- mapM (collectAtoms >=> resolveSort) ts
+                            sorts <- mapM (collectAtoms >=> resolveSortAt range) ts
                             let ctor = DataTagged nam sorts
                             modify (over functorToCtor (Map.insert nam ctor))
                             return ctor
@@ -173,7 +184,7 @@ traverseDecls = mapM_ traverseDecl
           -- is equivalent to the syntax rule:
           -- ~> ::= ~>(state, state)
           -- from a typing perspective
-          let ctor = DataTagged nam [SortName from, SortName to]
+          let ctor = DataTagged nam [SortName (fst from), SortName (fst to)]
           let sort = Sort nam Set.empty (Set.singleton ctor)
           addSort nam (Just range) sort
           assocAtomToSort (SortName nam) nam
@@ -223,6 +234,7 @@ findPath from to =
 -- Type inference reduction rules
 -----------------------------------------
 
+-- TODO: check whether all variables are in the head of the rewrite rule
 -- | Infer the types of the arguments in reduction rules
 inferProgram :: MonadTy m => [Decl] -> m ()
 inferProgram  = mapM_ visitDecl
@@ -272,11 +284,11 @@ inferProgram  = mapM_ visitDecl
 
 -- | Check an individual term and returns its sort
 checkTerm :: MonadTy m => Term -> m SortName
-checkTerm (Atom nam _)       = resolveSort $ variableName nam
+checkTerm (Atom nam range)       = resolveSortAt range $ variableName nam
 checkTerm (Functor tpy ts range) = do
     ts' <- mapM checkTerm ts
     expected <- sortsInFunctor tpy
-    functorSort <- resolveSort tpy
+    functorSort <- resolveSortAt range tpy
     ok <- and <$> zipWithM subtypeOf ts' expected
     if ok
       then return functorSort
@@ -302,6 +314,9 @@ checkRule rule@(RuleDecl nam precedent consequent _) = do
 checkProgram :: MonadTy m => [Decl] -> m ()
 checkProgram = mapM_ visitDecl
   where visitDecl (RulesDecl rules _) = mapM_ checkRule rules
+        visitDecl (TransitionDecl _ (fromSort, r1) (toSort, r2) range) = do
+          assertSortDefinedAt r1 fromSort
+          assertSortDefinedAt r2 toSort 
         visitDecl _ = return ()
 
 -----------------------------------------
