@@ -11,7 +11,8 @@
       ],
       "injection-regex": "^analysislang$",
       "class-name": "TreeSitterAnalysislang",
-      "highlights": "queries/highlights.scm"
+      "highlights": "queries/highlights.scm",
+      "indents": "queries/indents.scm"
     }
   ],
   "metadata": {
