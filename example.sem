@@ -1,7 +1,6 @@
 % Comments
 
 %% Syntax
-
 syntax {
 	%% Expressions
     aexp in AExp ::= i | lambda(x, e) | x;

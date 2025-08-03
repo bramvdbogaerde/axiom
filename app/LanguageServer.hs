@@ -9,12 +9,12 @@ module LanguageServer
 import Language.Parser (parseProgram)
 import Language.TypeCheck (runChecker)
 import qualified Language.AST
-import LanguageServer.Diagnostics (errorToDiagnostic)
+import LanguageServer.Diagnostics (errorToDiagnostic, rangeToDiagnosticRange)
 import LanguageServer.Symbols (extractDocumentSymbols, findDefinition)
 
 import Language.LSP.Protocol.Message hiding (_code, _message)
 import qualified Language.LSP.Protocol.Message as Messag
-import Language.LSP.Protocol.Types (Position(..), Location, Uri(..), DocumentSymbol, Diagnostic (..), Range(..), DiagnosticSeverity (DiagnosticSeverity_Error), toNormalizedUri, fromNormalizedUri, type (|?) (InL))
+import Language.LSP.Protocol.Types (Position(..), Location, Uri(..), DocumentSymbol, Diagnostic (..), Range(..), DiagnosticSeverity (DiagnosticSeverity_Error), toNormalizedUri, fromNormalizedUri, type (|?) (InL), TextDocumentSyncOptions (..), TextDocumentSyncKind (TextDocumentSyncKind_Full))
 import Language.LSP.Server
 import Control.Monad.Trans.Maybe
 import Control.Monad.IO.Class (liftIO, MonadIO)
@@ -26,6 +26,9 @@ import Language.LSP.VFS (virtualFileText)
 import Language.LSP.Protocol.Lens hiding (publishDiagnostics, options)
 import Language.LSP.Diagnostics (partitionBySource)
 import Control.Lens ((^.))
+import System.IO
+import Language.Parser (Error(parseErrorPosition))
+import qualified Language.AST as AST
 
 -------------------------------------------------------------
 -- Language Server Entry Point
@@ -41,8 +44,12 @@ runLanguageServer = runServer $ ServerDefinition
   , doInitialize = \env _req -> pure $ Right env
   , staticHandlers = const handlers
   , interpretHandler = \env -> Iso (runLspT env) liftIO
-  , options = defaultOptions
-  }
+  , options = defaultOptions { optTextDocumentSync = Just $ TextDocumentSyncOptions
+                                                          {  _openClose = Nothing
+                                                           , _change    = Just TextDocumentSyncKind_Full
+                                                           , _willSave  = Nothing
+                                                           , _willSaveWaitUntil = Nothing
+                                                           , _save = Nothing } } }
 
 -------------------------------------------------------------
 -- LSP Handlers
@@ -51,8 +58,11 @@ runLanguageServer = runServer $ ServerDefinition
 -- | LSP message handlers
 handlers :: Handlers (LspM ())
 handlers = mconcat
-  [ -- Handle document open/change events for diagnostics
+  [ notificationHandler SMethod_Initialized $ \msg -> return (),
+  
+    -- Handle document open/change events for diagnostics
     notificationHandler SMethod_TextDocumentDidOpen $ \msg -> do
+      liftIO (hPutStrLn stderr "documented opened")
       let params' = msg ^. params
           uri' = params' ^. textDocument . uri
       handleDocumentChange uri'
@@ -60,6 +70,7 @@ handlers = mconcat
   , notificationHandler SMethod_TextDocumentDidChange $ \msg -> do
       let params' = msg ^. params
           uri' = params' ^. textDocument . uri
+      liftIO (hPutStrLn stderr "documented changed")
       handleDocumentChange uri'
 
     -- Handle document symbol requests
@@ -93,12 +104,16 @@ handleDocumentChange uri = do
       Left typeError -> return [errorToDiagnostic typeError]
       Right _context -> return []
 
+  liftIO (hPutStrLn stderr $ "uri: " ++ show uri)
+  -- Clear diagnostics for both parser and typechecker sources
+  flushDiagnosticsBySource 100 (Just "analysislang-parser")
+  flushDiagnosticsBySource 100 (Just "analysislang-typechecker")
   publishDiagnostics 100 (toNormalizedUri uri) Nothing (partitionBySource diagnostics)
 
 -- | Convert parse error to diagnostic
-parseErrorToDiagnostic :: Show e => e -> Diagnostic
+parseErrorToDiagnostic :: Error -> Diagnostic
 parseErrorToDiagnostic parseError = Diagnostic
-  { _range = Range (Position 0 0) (Position 0 0)
+  { _range = rangeToDiagnosticRange (AST.Range (parseErrorPosition parseError) (parseErrorPosition parseError))
   , _severity = Just DiagnosticSeverity_Error
   , _code = Nothing
   , _codeDescription = Nothing

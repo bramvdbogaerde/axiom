@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
-module Language.Parser(parseProgram) where
+module Language.Parser(parseProgram, Error(..)) where
 
 import Prelude hiding (lex)
 
@@ -13,8 +13,19 @@ import Control.Monad.Except
 import Data.Maybe
 import Data.Functor.Identity
 import Text.Parsec.Error (ParseError)
+import Text.Parsec (SourcePos(..), sourceLine, sourceColumn, sourceName, errorPos)
+import Data.Bifunctor
 
 type Parser a = ParsecT [TokenWithCtx] () Identity a
+
+data Error = ParsingError { parseErrorPosition :: Position, parseErrorMessage :: String }
+          deriving (Ord, Show, Eq)
+
+sourcePosToPosition :: SourcePos -> Position
+sourcePosToPosition pos = Position (sourceLine pos) (sourceColumn pos) (Just $ sourceName pos)
+
+parseErrorToError :: ParseError -> Error
+parseErrorToError err = ParsingError (sourcePosToPosition $ errorPos err) (show err)
 
 ------------------------------------------------------------
 -- Utilities
@@ -211,5 +222,5 @@ runParser :: [TokenWithCtx] -> Either ParseError Program
 runParser =  parse parser "<test>"
 
 -- | Parse a program from string
-parseProgram :: String -> Either ParseError Program
-parseProgram = runParser . lex emptyCtx
+parseProgram :: String -> Either Error Program
+parseProgram = first parseErrorToError . runParser . lex emptyCtx

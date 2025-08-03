@@ -5,6 +5,7 @@
 module LanguageServer.Diagnostics
   ( errorToDiagnostic
   , rangeToDiagnosticRange
+  , positionToDiagnosticPosition
   ) where
 
 import Language.TypeCheck (Error(..))
