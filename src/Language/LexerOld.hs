@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
-module Language.Lexer where
+module Language.LexerOld where
 import Prelude hiding (lex)
 import Data.Char (isLetter)
 import GHC.Unicode

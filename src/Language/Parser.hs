@@ -5,7 +5,9 @@ module Language.Parser(parseProgram, Error(..)) where
 import Prelude hiding (lex)
 
 import Language.Lexer
+import Language.Lexer.Token
 import Language.AST
+import Language.Range
 
 import Text.Parsec.Prim hiding (runParser)
 import Text.Parsec.Combinator
@@ -16,7 +18,7 @@ import Text.Parsec.Error (ParseError)
 import Text.Parsec (SourcePos(..), sourceLine, sourceColumn, sourceName, errorPos)
 import Data.Bifunctor
 
-type Parser a = ParsecT [TokenWithCtx] () Identity a
+type Parser a = ParsecT [TokenWithRange] () Identity a
 
 data Error = ParsingError { parseErrorPosition :: Position, parseErrorMessage :: String }
           deriving (Ord, Show, Eq)
@@ -40,21 +42,18 @@ parens = between lpar rpar
 brackets :: Parser a -> Parser a
 brackets = between lbra rbra
 
--- | Returns the current token with its context without consuming any input,
+-- | Returns the current token with its range without consuming any input,
 -- never fails.
-currentToken :: Parser TokenWithCtx
+currentToken :: Parser TokenWithRange
 currentToken = lookAhead $ tokenPrim show (\pos _ _ -> pos) Just
 
--- | Turns a 'Ctx' into a valid position
-ctxToPosition :: Ctx -> Position
-ctxToPosition Ctx { .. } =
-  -- TODO: add filename information to the lexer so that it can
-  -- be used here.
-  Position line col Nothing
+-- | Gets the start position from a range
+rangeToPosition :: Range -> Position
+rangeToPosition = rangeStart
 
 -- | Returns the position (according to the lexer) of the current token
 position :: Parser Position
-position = ctxToPosition . tokenCtx <$> currentToken
+position = rangeToPosition . tokenRange <$> currentToken
 
 -- | End the range at the current position
 endRange :: Position -- ^ starting position
@@ -227,9 +226,9 @@ parser = Program <$> endBy programElement sem
                        <|> rewriteRule
 
 
-runParser :: [TokenWithCtx] -> Either ParseError Program
+runParser :: [TokenWithRange] -> Either ParseError Program
 runParser =  parse parser "<test>"
 
 -- | Parse a program from string
 parseProgram :: String -> Either Error Program
-parseProgram = first parseErrorToError . runParser . lex emptyCtx
+parseProgram = first parseErrorToError . runParser . lex

@@ -9,12 +9,16 @@ library
                  mtl,
                  parsec,
                  lens,
-                 regex-compat
+                 regex-compat,
+                 array
+  build-tools: alex
   exposed-modules:  Language.AST
                   , Language.Parser
                   , Language.TypeCheck
                   , Language.Solver
-  other-modules: Language.Lexer
+                  , Language.Range
+  other-modules: Language.Lexer,
+                 Language.Lexer.Token
   hs-source-dirs: src
   
 executable analysislang
