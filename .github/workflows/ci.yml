@@ -58,50 +58,49 @@ jobs:
         cabal test all --test-show-details=direct | tee test-results/test-output.txt
         TEST_EXIT_CODE=${PIPESTATUS[0]}
         
-        # Create a basic JUnit XML report from the output
-        python3 -c "
+        # Create a simple JUnit XML report
+        cat > convert_to_junit.py << 'EOF'
 import xml.etree.ElementTree as ET
 import re
-import sys
 
 # Read test output
 with open('test-results/test-output.txt', 'r') as f:
     content = f.read()
 
 # Parse test results
-failures = content.count('[✗]') + content.count('FAIL')
-total_tests = content.count('[✓]') + content.count('[✗]') + failures
+failures = content.count('FAIL')
+passes = content.count('✔')
+total_tests = passes + failures
 errors = 0
 
 # Create XML structure
 testsuites = ET.Element('testsuites')
 testsuite = ET.SubElement(testsuites, 'testsuite', {
-    'name': 'analysislang-tests',
+    'name': 'analysislang-tests', 
     'tests': str(total_tests),
     'failures': str(failures),
     'errors': str(errors),
     'time': '0.0'
 })
 
-# Add individual test cases based on output
-lines = content.split('\n')
-for line in lines:
-    if '[✓]' in line or '[✗]' in line:
-        test_name = line.strip()
-        testcase = ET.SubElement(testsuite, 'testcase', {
-            'classname': 'TestSuite',
-            'name': test_name,
-            'time': '0.0'
-        })
-        if '[✗]' in line or 'FAIL' in line:
-            failure = ET.SubElement(testcase, 'failure', {'message': 'Test failed'})
-            failure.text = line
+# Add a summary test case
+testcase = ET.SubElement(testsuite, 'testcase', {
+    'classname': 'TestSuite',
+    'name': f'{total_tests} tests run',
+    'time': '0.0'
+})
+
+if failures > 0:
+    failure = ET.SubElement(testcase, 'failure', {'message': f'{failures} test(s) failed'})
+    failure.text = f'See test output for details. {failures} failures out of {total_tests} tests.'
 
 # Write XML file
 tree = ET.ElementTree(testsuites)
 ET.indent(tree, space='  ')
 tree.write('test-results/results.xml', encoding='utf-8', xml_declaration=True)
-"
+EOF
+        
+        python3 convert_to_junit.py
         
         # Exit with the original test exit code
         exit $TEST_EXIT_CODE
