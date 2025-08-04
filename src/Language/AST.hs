@@ -12,9 +12,12 @@ module Language.AST(
     Position(..),
     Range(..),
     RangeOf(..),
+    functorNames,
     module Language.Range
   ) where
 
+import Data.Set
+import qualified Data.Set as Set
 import Text.Regex (mkRegex, matchRegex)
 import Data.Maybe (fromJust, fromMaybe)
 import Language.Range
@@ -67,6 +70,12 @@ data Term = Atom String Range
           | Eqq Term Term Range
           | Transition String Term Term Range
           deriving (Ord, Eq, Show)
+
+functorNames :: Term -> Set String
+functorNames = \case Atom a _ -> Set.singleton a
+                     Functor _ ts _ -> foldMap functorNames ts
+                     Eqq t1 t2 _ -> functorNames t1 `Set.union` functorNames t2
+                     Transition _ t1 t2 _ -> functorNames t1 `Set.union` functorNames t2
 
 instance RangeOf Term where
   rangeOf = \case Atom _ r -> r
