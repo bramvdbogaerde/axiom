@@ -195,7 +195,10 @@ isSortDefined sortName = gets (Set.member sortName . _definedSorts)
 
 -- | Add a sort to the set of defined sorts
 defineSort :: MonadCheck m => SortName -> m ()
-defineSort sortName = modify (over definedSorts (Set.insert sortName))
+defineSort sortName = do
+  modify (over definedSorts (Set.insert sortName))
+  -- all sorts is a subtype of 'Any'
+  subtyped sortName (SortName "Any")
 
 -- | Record the definition site of a sort
 recordSortDefSite :: MonadCheck m => String -> Range -> m ()

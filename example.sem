@@ -60,7 +60,7 @@ rules {
 };
 
 
-%% Queries
+%% Query support
 
 syntax {
 	m in Multi ::= multi(state, state);
@@ -68,7 +68,7 @@ syntax {
 
 rules {
 	rule "St-Multi"
-	[ state0 ~> state1 ; multi(state1) ]
+	[ state0 ~> state1 ; multi(state1, state2) ]
 	=>
 	[
 		multi(state0, state2)
