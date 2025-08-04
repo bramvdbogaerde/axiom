@@ -138,7 +138,7 @@ makeCtor sortName = \case (Atom nam range) -> do
                               return $ DataAtom sort
                           (Functor nam ts range) -> do
                             assocAtomToSort sortName nam
-                            sorts <- mapM (collectAtoms >=> resolveSortAt range) ts
+                            sorts <- mapM (\t -> collectAtoms t >>=resolveSortAt (rangeOf t)) ts
                             let ctor = DataTagged nam sorts
                             modify (over functorToCtor (Map.insert nam ctor))
                             return ctor
