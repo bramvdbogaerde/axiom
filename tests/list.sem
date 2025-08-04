@@ -1,0 +1,36 @@
+
+%% This file tests the ability of our language to emulate standard
+%% Prolog semantics.
+%% In this case we define tests on lists.
+
+syntax {
+	% Data types
+	elem in Any;
+	l in List ::= nil() | cons(elem, l);
+
+	% Operations
+	ap in Append ::= append(l, l, l);
+	mem in Member ::= member(elem, l);
+};
+
+rules {
+	rule "Append-Empty"
+	[ ] =>
+	[ append(nil(), l,l) ];
+
+	rule "Append-Element"
+	[ append(l1, l2, l3) ]
+	=>
+	[ append(cons(elem, l1), l2, cons(elem, l3)) ];
+
+	rule "Member-Match"
+	[ ] =>
+	[ member(elem, cons(elem, l)) ];
+
+	rule "Member-NonMatch"
+	[ member(elem, l) ] =>
+	[ member(elem, cons(elem2, l)) ];
+ };
+
+%test: append(cons(1, cons(2, nil())) , cons(2, cons(3, nil())), cons(1, cons(2, cons(2, cons(3, nil())))))
+%test: member(1, cons(2, cons(3, nil())))
