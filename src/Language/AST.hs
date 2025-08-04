@@ -2,6 +2,7 @@
 module Language.AST(
     Tpy,
     Program(..),
+    Comment(..),
     Decl(..),
     SyntaxDecl(..),
     RewriteDecl(..),
@@ -18,8 +19,11 @@ import Text.Regex (mkRegex, matchRegex)
 import Data.Maybe (fromJust, fromMaybe)
 import Language.Range
 
--- | A program is a sequence of declarations
-newtype Program = Program [Decl] deriving (Ord, Eq, Show)
+-- | A program is a sequence of declarations with optional top-level comments
+data Program = Program [Decl] [Comment] deriving (Ord, Eq, Show)
+
+-- | A comment with its position
+data Comment = Comment String Range deriving (Ord, Eq, Show)
 
 -- | Names of types
 type Tpy = String

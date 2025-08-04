@@ -14,7 +14,7 @@ data Token = IsDefinedAs -- ^ '::='
            | RCBa        -- ^ '}'
            | LBra        -- ^ '['
            | RBra        -- ^ ']'
-           | Comment     -- ^ '%'
+           | Comment String -- ^ '%' followed by comment text
            | Comma       -- ^ ',' 
            | Dot         -- ^ '.'
            | Sem         -- ^ ';'

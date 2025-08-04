@@ -22,7 +22,7 @@ $alphanum = [a-zA-Z0-9]
 tokens :-
 
   $white+                       ;
-  "%".*                         ; -- comments
+  "%".*                         { mkTokenWith (\s -> Comment (drop 1 s)) } -- comments
   "::="                         { mkToken IsDefinedAs }
   "~>"                          { mkToken LeadsTo }
   "=>"                          { mkToken Implies }

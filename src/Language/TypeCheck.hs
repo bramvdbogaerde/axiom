@@ -277,7 +277,7 @@ pass0VisitDecl (TransitionDecl nam from to range) = do
 pass0VisitDecl _ = return ()
 
 pass0 :: MonadCheck m => Program -> m ()
-pass0 (Program decls) = mapM_ pass0VisitDecl decls
+pass0 (Program decls _) = mapM_ pass0VisitDecl decls
 
 -----------------------------------------
 -- Pass 1: associate functors in the syntax declarations with sorts, register subtyping for variables
@@ -310,7 +310,7 @@ pass1VisitDecl (TransitionDecl nam from to range) = do
 pass1VisitDecl _ = return ()
 
 pass1 :: MonadCheck m => Program -> m ()
-pass1 (Program decls) = mapM_ pass1VisitDecl decls
+pass1 (Program decls _) = mapM_ pass1VisitDecl decls
 
 -----------------------------------------
 -- Pass 2: infer the types in the rewrite rules
@@ -394,7 +394,7 @@ pass2VisitDecl (Rewrite (RewriteDecl nam args bdy range) _) = do
 pass2VisitDecl _ = return ()
 
 pass2 :: MonadCheck m => Program -> m ()
-pass2 (Program decls) = mapM_ pass2VisitDecl decls
+pass2 (Program decls _) = mapM_ pass2VisitDecl decls
 
 -----------------------------------------
 -- Pass 3: type check the terms in the rules
@@ -420,7 +420,7 @@ pass3VisitDecl (TransitionDecl _ (fromSort, r1) (toSort, r2) range) = do
 pass3VisitDecl _ = return ()
 
 pass3 :: MonadCheck m => Program -> m ()
-pass3 (Program decls) = mapM_ pass3VisitDecl decls
+pass3 (Program decls _) = mapM_ pass3VisitDecl decls
 
 -----------------------------------------
 -- Entrypoint
