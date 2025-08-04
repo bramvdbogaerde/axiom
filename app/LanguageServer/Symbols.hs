@@ -5,7 +5,7 @@ module LanguageServer.Symbols
   , findDefinition
   ) where
 
-import Language.TypeCheck (Context(..), Sort(..), SortName(..))
+import Language.TypeCheck (CheckingContext(..), SortName(..), getGamma)
 import qualified Language.AST as AST
 import Language.LSP.Protocol.Types
   ( DocumentSymbol(..)
@@ -26,24 +26,24 @@ import Control.Applicative
 -------------------------------------------------------------
 
 -- | Extract all document symbols from a type checker context
-extractDocumentSymbols :: Context -> [DocumentSymbol]
+extractDocumentSymbols :: CheckingContext -> [DocumentSymbol]
 extractDocumentSymbols ctx =
   let sortSymbols = extractSortSymbols ctx
       variableSymbols = extractVariableSymbols ctx
   in sortSymbols ++ variableSymbols
 
 -- | Extract sort definitions as document symbols
-extractSortSymbols :: Context -> [DocumentSymbol]
-extractSortSymbols ctx = mapMaybe sortToSymbol (Map.toList (_sorts ctx))
+extractSortSymbols :: CheckingContext -> [DocumentSymbol]
+extractSortSymbols ctx = mapMaybe sortToSymbol (Set.toList (_definedSorts ctx))
   where
-    sortToSymbol :: (String, Sort) -> Maybe DocumentSymbol
-    sortToSymbol (sortName, sort@(Sort _ vars ctors)) = do
+    sortToSymbol :: SortName -> Maybe DocumentSymbol
+    sortToSymbol sortName = do
       -- Get the definition range from sortToDefSite
-      maybeRange <- Map.lookup sortName (_sortToDefSite ctx)
-      range <- maybeRange
+      let sortNameStr = getSortName sortName
+      range <- Map.lookup sortNameStr (_sortToDefSite ctx)
       return DocumentSymbol
-        { _name = T.pack sortName
-        , _detail = Just $ T.pack $ formatSortDetail sort
+        { _name = T.pack sortNameStr
+        , _detail = Just $ T.pack $ "Sort " ++ sortNameStr
         , _kind = SymbolKind_Class -- Use Class symbol kind for sorts
         , _tags = Nothing
         , _deprecated = Nothing
@@ -52,15 +52,10 @@ extractSortSymbols ctx = mapMaybe sortToSymbol (Map.toList (_sorts ctx))
         , _children = Nothing
         }
 
-    formatSortDetail :: Sort -> String
-    formatSortDetail (Sort name vars ctors) =
-      "Sort with " ++ show (Set.size vars) ++ " variables and " ++
-      show (Set.size ctors) ++ " constructors"
-
 -- | Extract variable definitions as document symbols
-extractVariableSymbols :: Context -> [DocumentSymbol]
+extractVariableSymbols :: CheckingContext -> [DocumentSymbol]
 extractVariableSymbols ctx =
-  map variableToSymbol (Map.toList (_atomToSorts ctx))
+  map variableToSymbol (Map.toList (getGamma (_typingContext ctx)))
   where
     variableToSymbol :: (String, SortName) -> DocumentSymbol
     variableToSymbol (varName, sortName) = DocumentSymbol
@@ -85,15 +80,14 @@ extractVariableSymbols ctx =
 -------------------------------------------------------------
 
 -- | Find the definition location of a symbol at the given position
-findDefinition :: Context -> AST.Position -> String -> Maybe Location
+findDefinition :: CheckingContext -> AST.Position -> String -> Maybe Location
 findDefinition ctx _pos symbolName =
   findSortDefinition ctx symbolName <|> findVariableDefinition ctx symbolName
 
 -- | Find definition of a sort by name
-findSortDefinition :: Context -> String -> Maybe Location
+findSortDefinition :: CheckingContext -> String -> Maybe Location
 findSortDefinition ctx sortName = do
-  maybeRange <- Map.lookup sortName (_sortToDefSite ctx)
-  range <- maybeRange
+  range <- Map.lookup sortName (_sortToDefSite ctx)
   let startPos = AST.rangeStart range
   let uri = case AST.filename startPos of
         Just fname -> "file://" <> T.pack fname
@@ -101,7 +95,7 @@ findSortDefinition ctx sortName = do
   return $ Location (Uri uri) (rangeToDiagnosticRange range)
 
 -- | Find definition of a variable by name (returns sort definition)
-findVariableDefinition :: Context -> String -> Maybe Location
+findVariableDefinition :: CheckingContext -> String -> Maybe Location
 findVariableDefinition ctx varName = do
-  sortName <- Map.lookup varName (_atomToSorts ctx)
+  sortName <- Map.lookup varName (getGamma (_typingContext ctx))
   findSortDefinition ctx (getSortName sortName)

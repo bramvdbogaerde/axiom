@@ -58,3 +58,19 @@ rules {
 	% ];
 
 };
+
+
+%% Queries
+
+syntax {
+	m in Multi ::= multi(state, state);
+};
+
+rules {
+	rule "St-Multi"
+	[ state0 ~> state1 ; multi(state1) ]
+	=>
+	[
+		multi(state0, state2)
+	];
+};

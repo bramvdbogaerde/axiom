@@ -10,15 +10,18 @@ library
                  parsec,
                  lens,
                  regex-compat,
-                 array
+                 array,
+                 extra
   build-tools: alex
   exposed-modules:  Language.AST
                   , Language.Parser
                   , Language.TypeCheck
                   , Language.Solver
                   , Language.Range
-  other-modules: Language.Lexer,
-                 Language.Lexer.Token
+  other-modules:   Language.Lexer
+                 , Language.Lexer.Token
+                 , Language.Solver.Formula
+                 , Data.Graph
   hs-source-dirs: src
   
 executable analysislang

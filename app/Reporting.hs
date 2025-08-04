@@ -1,6 +1,6 @@
 module Reporting where
 
-import Language.TypeCheck (ModelError(..), Error(..), Context(..), SortName(..))
+import Language.TypeCheck (ModelError(..), Error(..), CheckingContext(..), SortName(..))
 import Language.AST (Range(..), Position(..))
 import System.Console.ANSI
 import qualified Data.Map as Map
@@ -37,20 +37,23 @@ formatModelError (DuplicateSort sortName) =
   "Sort '" ++ getSortName sortName ++ "' is defined multiple times"
 formatModelError (NoNestingAt sortName) =
   "Nested terms are not allowed in sort '" ++ getSortName sortName ++ "' - only atoms are permitted"
-formatModelError (NoSuchSort var) =
-  "Variable '" ++ var ++ "' is used but not defined in any sort"
+formatModelError (NameNotDefined var) =
+  "Name '" ++ var ++ "' is used but not defined"
 formatModelError (IncompatibleTypes expected actual) =
   "Type mismatch: " ++ formatTypeDifference expected actual
 formatModelError (SortNotDefined sortName) =
   "Sort " ++ sortName ++ " is not defined"
 
 formatTypeDifference :: [SortName] -> [SortName] -> String
-formatTypeDifference expected actual =
-    case differences of
-         [] -> "all types match (this shouldn't happen)"
-         [(e, a)] -> "expected '" ++ getSortName e ++ "' but got '" ++ getSortName a ++ "'"
-         diffs -> "differences at " ++ intercalate ", "
-                    (map (\(e, a) -> "'" ++ getSortName e ++ "' vs '" ++ getSortName a ++ "'") diffs)
+formatTypeDifference expected actual
+  | length expected /= length actual = 
+      "arity mismatch: expected " ++ show (length expected) ++ " arguments but got " ++ show (length actual)
+  | otherwise = 
+      case differences of
+           [] -> "all types match (this shouldn't happen)"
+           [(e, a)] -> "expected '" ++ getSortName e ++ "' but got '" ++ getSortName a ++ "'"
+           diffs -> "differences at " ++ intercalate ", "
+                      (map (\(e, a) -> "'" ++ getSortName e ++ "' vs '" ++ getSortName a ++ "'") diffs)
   where differences = filter (uncurry (/=)) (zip expected actual)
 
 -------------------------------------------------------------
