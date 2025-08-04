@@ -11,14 +11,24 @@ import Language.Range
 
 import Text.Parsec.Prim hiding (runParser)
 import Text.Parsec.Combinator
-import Text.Parsec (sepEndBy, skipMany)
+import Text.Parsec
+    ( sepEndBy,
+      skipMany,
+      eof,
+      (<?>),
+      SourcePos(..),
+      sourceLine,
+      sourceColumn,
+      sourceName,
+      errorPos )
 import Control.Monad.Except
 import Data.Maybe
 import Data.Functor.Identity
 import Text.Parsec.Error (ParseError)
-import Text.Parsec (SourcePos(..), sourceLine, sourceColumn, sourceName, errorPos)
+import Text.Parsec.Pos (newPos)
 import Data.Bifunctor
 import Data.Either (partitionEithers)
+import qualified Debug.Trace as Debug
 
 type Parser a = ParsecT [TokenWithRange] () Identity a
 
@@ -36,7 +46,11 @@ parseErrorToError err = ParsingError (sourcePosToPosition $ errorPos err) (show 
 ------------------------------------------------------------
 
 matchToken :: (Token -> Maybe a) -> Parser a
-matchToken f = tokenPrim show (\pos _ _ -> pos) (f . tokenToken)
+matchToken f = tokenPrim show updatePos (f . tokenToken)
+  where
+    updatePos pos (TokenWithRange _ range) _ =
+      let start = rangeStart range
+      in newPos (sourceName pos) (positionLine start) (positionColumn start)
 
 parens :: Parser a -> Parser a
 parens = between lpar rpar
@@ -127,7 +141,7 @@ identWithRange = do
   start <- position
   x <- ident
   end <- position
-  return (x, Range start end) 
+  return (x, Range start end)
 
 -- | Matches with a defined as token
 definedAs :: Parser ()
@@ -154,8 +168,7 @@ comment :: Parser Comment
 comment = do
   pos0 <- position
   content <- matchToken (\case Language.Lexer.Token.Comment s -> Just s; _ -> Nothing)
-  range <- endRange pos0
-  return $ Language.AST.Comment content range
+  return $ Language.AST.Comment content (Range pos0 pos0)
 
 -- | Skip any comments that appear at the current position
 skipComments :: Parser ()
@@ -189,19 +202,19 @@ implies = matchToken (\case Implies -> Just (); _ -> Nothing)
 term :: Parser Term
 term =  do
     pos0 <- position
-    typeOrFunctor <- ident
+    typeOrFunctor <- (ident <?> "identifier")
     -- Terms are functors or atoms
-    term0 <- (parens (Functor typeOrFunctor <$> withComments (sepBy (surroundedByComments term) (withComments com)))
-          <|> return (Atom typeOrFunctor)) <*> endRange pos0
+    term0 <- (((parens ((Functor typeOrFunctor <$> (withComments ((sepBy (surroundedByComments term) (withComments com)) <?> "comma-separated terms")) <?> "functor arguments")) <?> "functor application")
+          <|> return (Atom typeOrFunctor)) <*> endRange pos0) <?> "term"
 
     -- Terms can still be infix operators (which are predefined)
-    (equals >> Eqq term0 <$> term <*> endRange pos0)
-      <|> (leadsto >> Transition "~>" term0 <$> term <*> endRange pos0)
+    ((equals >> (Eqq term0 <$> term <*> endRange pos0)) <?> "equality")
+      <|> ((leadsto >> (Transition "~>" term0 <$> term <*> endRange pos0)) <?> "transition")
       <|> return term0
 
 -- | Parses a sequence of terms separated (and ended) by the given parser, allowing comments
 terms :: Parser a -> Parser [Term]
-terms sep = withComments $ sepBy (surroundedByComments term) (withComments sep)
+terms sep = (withComments $ sepBy (surroundedByComments term) (withComments sep)) <?> "terms separated by separator"
 
 -- | Parse a single syntax declaration
 syntaxDecl :: Parser SyntaxDecl
@@ -214,11 +227,11 @@ syntaxDecl = withRange $ do
         parseProduction  = term
 -- | Parse a syntax block
 syntax :: Parser Decl
-syntax =  withRange $ Syntax <$>
+syntax =  withRange (Syntax <$>
        (   syntaxToken
-        >> lcba
-        >> withComments (sepEndBy syntaxDecl (sem >> skipComments))
-        <* rcba )
+        >> (lcba <?> "opening brace after syntax")
+        >> (withComments (sepEndBy syntaxDecl (sem >> skipComments)) <?> "syntax declarations")
+        <* (rcba <?> "closing brace"))) <?> "syntax block"
 
 -- | Parse a rewrite rule
 rewriteRule :: Parser Decl
@@ -230,21 +243,22 @@ rewriteRule =  withRange $ Rewrite
 
 -- | Parse a single rule declaration
 rule :: Parser RuleDecl
-rule = ruleToken >> withRange (RuleDecl <$> str <*> brackets (terms sem) <*> (implies >> brackets (terms sem)))
+rule = ruleToken >> withRange (RuleDecl <$> (str <?> "rule name") <*> (brackets (terms sem) <?> "rule preconditions") <*> (implies >> brackets (terms sem <?> "rule postconditions")) <?> "rule declaration")
 
 -- | Parse a rules section
 rules :: Parser Decl
-rules = rulesToken >> withRange (RulesDecl <$> between (lcba >> skipComments) rcba (sepEndBy rule (sem >> skipComments)))
+rules = rulesToken >> withRange ((RulesDecl <$> between (lcba >> skipComments) rcba (sepEndBy rule (sem >> skipComments) <?> "rule declarations")) <?> "rules block")
 
 -- | Parses a declarartion for a transition
 transition :: Parser Decl
 transition = transitionToken >> withRange (flip TransitionDecl <$> identWithRange <*> (leadsto >> return "~>") <*> identWithRange)
 
 parser :: Parser Program
-parser = uncurry Program . partitionEithers <$> many programElement
-  where 
-    programElement = (Left <$> (syntax <|> rules <|> transition <|> rewriteRule) <* sem)
-                 <|> (Right <$> comment)
+parser = do
+  uncurry Program . partitionEithers <$> many programElement <?> "program elements"
+   where
+    programElement = (Left <$> ((syntax <|> rules <|> transition <|> rewriteRule) <* sem) <?> "declaration")
+                 <|> (Right <$> comment <?> "comment")
 
 
 runParser :: [TokenWithRange] -> Either ParseError Program

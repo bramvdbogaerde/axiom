@@ -1,4 +1,3 @@
-
 %% This file tests the ability of our language to emulate standard
 %% Prolog semantics.
 %% In this case we define tests on lists.

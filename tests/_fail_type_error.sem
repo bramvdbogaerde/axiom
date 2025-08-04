@@ -1,0 +1,10 @@
+% This file should fail type checking
+syntax {
+  elem in Any;
+  x in Expr ::= elem | func(x);
+  y in UndefinedType ::= badatom;  % This should cause a type error
+};
+
+rules {
+  rule "test" [badatom] => [func(elem)];  % badatom should cause error
+};

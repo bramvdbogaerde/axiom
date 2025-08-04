@@ -26,4 +26,8 @@ data Token = IsDefinedAs -- ^ '::='
 data TokenWithRange = TokenWithRange {
                       tokenToken :: Token,
                       tokenRange :: Range
-                    } deriving (Ord, Eq, Show)
+                    } deriving (Ord, Eq)
+
+instance Show TokenWithRange where
+   show = show . tokenToken
+           

@@ -119,3 +119,24 @@ spec = do
         Right (Program decls comments) -> do
           length decls `shouldBe` 1
           length comments `shouldBe` 0  -- No top-level comments
+
+    it "handles files with trailing comments at end of file" $ do
+      let trailingCommentsInput = unlines [
+            "syntax {",
+            "  elem in Any;",
+            "  l in List ::= nil() | cons(elem, l);",
+            "};",
+            "rules {",
+            "  rule \"test\" [] => [append(nil(), l, l)];",
+            "};",
+            "% test: this is a trailing comment",
+            "% test: another trailing comment"
+            ]
+      case parseProgram trailingCommentsInput of
+        Left err -> expectationFailure $ "Parse error: " ++ show err
+        Right (Program decls comments) -> do
+          length decls `shouldBe` 2
+          length comments `shouldBe` 2
+          let commentTexts = map (\(Comment content _) -> content) comments
+          commentTexts `shouldContain` [" test: this is a trailing comment"]
+          commentTexts `shouldContain` [" test: another trailing comment"]
