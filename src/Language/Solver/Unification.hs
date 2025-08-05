@@ -50,7 +50,7 @@ flattenMapping = mapM_ flattenCell
 -------------------------------------------------------------
 -- Conversions between reference cells
 -------------------------------------------------------------
-    
+
 -- | Transform a term to use IORefs instead of variables, returns
 -- the transformed term, together with a mapping from variable names
 -- to their references.
@@ -58,7 +58,7 @@ refTerm ::  PureTerm -> VariableMapping s -> ST s (Term (Cell s), VariableMappin
 refTerm term = runStateT (transformTerm term)
   where
     transformTerm :: PureTerm -> StateT (VariableMapping s) (ST s) (Term (Cell s))
-    transformTerm (Atom (Identity varName) range) = 
+    transformTerm (Atom (Identity varName) range) =
       maybe createNewCell (return . flip Atom range) =<< gets (Map.lookup varName)
       where
         createNewCell = do
@@ -81,7 +81,7 @@ type VisitedList s = [STRef s (CellValue s String)]
 
 -- | Check if a reference is in the visited list
 isVisited :: STRef s (CellValue s String) -> VisitedList s -> ST s Bool
-isVisited ref visited = return $ ref `elem` visited
+isVisited ref = return . (ref `elem`)
 
 -- | Add a reference to the visited list
 addVisited :: STRef s (CellValue s String) -> VisitedList s -> VisitedList s
@@ -94,22 +94,22 @@ pureTerm' term mapping = do
   runExceptT $ evalStateT (convertTerm term) []
   where
     convertTerm :: Term (Cell s) -> StateT (VisitedList s) (ExceptT String (ST s)) PureTerm
-    convertTerm (Atom (Ref cellRef) range) = 
+    convertTerm (Atom (Ref cellRef) range) =
       lift (lift $ readSTRef cellRef) >>= \case
-        Value term -> 
+        Value term ->
           ifM (get >>= lift . lift . isVisited cellRef)
               (lift $ throwError "Cycle detected during term conversion")
               (modify (addVisited cellRef) >> convertTerm term)
         Uninitialized varName -> return $ Atom (Identity varName) range
         Ptr _ -> error "Unreachable: flattenMapping should have eliminated all Ptr cases"
-    
-    convertTerm (Functor name subterms range) = 
+
+    convertTerm (Functor name subterms range) =
       Functor name <$> mapM convertTerm subterms <*> pure range
-    
-    convertTerm (Eqq left right range) = 
+
+    convertTerm (Eqq left right range) =
       Eqq <$> convertTerm left <*> convertTerm right <*> pure range
-    
-    convertTerm (Transition transName left right range) = 
+
+    convertTerm (Transition transName left right range) =
       Transition transName <$> convertTerm left <*> convertTerm right <*> pure range
 
 -- | Same as pureTerm' but raises an error if the term could not be converted
@@ -122,7 +122,7 @@ pureTerm term = pureTerm' term >=> either error return
 
 -- | Unify two reference-based terms
 unifyTerms :: Term (Cell s) -> Term (Cell s) -> ExceptT String (ST s) ()
-unifyTerms term1 term2 = unifyTermsImpl term1 term2
+unifyTerms = unifyTermsImpl
   where
     unifyTermsImpl :: Term (Cell s) -> Term (Cell s) -> ExceptT String (ST s) ()
     unifyTermsImpl (Atom cell1 _) (Atom cell2 _) = unifyAtoms cell1 cell2
@@ -167,7 +167,7 @@ unifyTerms term1 term2 = unifyTermsImpl term1 term2
         else throwError $ "Functors don't match: " ++ name1 ++ " vs " ++ name2
 
     unifyAtomWithTerm :: Cell s String -> Term (Cell s) -> ExceptT String (ST s) ()
-    unifyAtomWithTerm (Ref ref) term = 
+    unifyAtomWithTerm (Ref ref) term =
       lift (readSTRef ref) >>= \case
         Uninitialized _ -> lift $ writeSTRef ref (Value term)
         Value existingTerm -> unifyTermsImpl existingTerm term
