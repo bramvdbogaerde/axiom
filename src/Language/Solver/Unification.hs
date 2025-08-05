@@ -120,29 +120,20 @@ pureTerm term = pureTerm' term >=> either error return
 -- Unification 
 -------------------------------------------------------------
 
--- | Unify two pure terms and return a substitution mapping
-unify :: PureTerm -> PureTerm -> ExceptT String (ST s) (Map String PureTerm)
-unify term1 term2 = do
-  -- Convert first term to ref term with empty mapping
-  (refTerm1, mapping1) <- lift $ refTerm term1 Map.empty
-  -- Convert second term to ref term, sharing the mapping from the first
-  (refTerm2, sharedMapping) <- lift $ refTerm term2 mapping1
-  -- Attempt unification
-  unifyTerms refTerm1 refTerm2
-  -- Convert mapping back to pure terms
-  results <- lift $ mapM (\cell -> pureTerm' (Atom cell dummyRange) sharedMapping) sharedMapping
-  either throwError return $ sequenceA results
+-- | Unify two reference-based terms
+unifyTerms :: Term (Cell s) -> Term (Cell s) -> ExceptT String (ST s) ()
+unifyTerms term1 term2 = unifyTermsImpl term1 term2
   where
-    unifyTerms :: Term (Cell s) -> Term (Cell s) -> ExceptT String (ST s) ()
-    unifyTerms (Atom cell1 _) (Atom cell2 _) = unifyAtoms cell1 cell2
-    unifyTerms (Functor name1 args1 _) (Functor name2 args2 _) = unifyFunctors name1 args1 name2 args2
-    unifyTerms (Atom cell _) functor@(Functor {}) = unifyAtomWithTerm cell functor
-    unifyTerms functor@(Functor {}) (Atom cell _) = unifyAtomWithTerm cell functor
-    unifyTerms (Eqq l1 r1 _) (Eqq l2 r2 _) = unifyTerms l1 l2 >> unifyTerms r1 r2
-    unifyTerms (Transition n1 l1 r1 _) (Transition n2 l2 r2 _) =
-      if n1 == n2 then unifyTerms l1 l2 >> unifyTerms r1 r2
+    unifyTermsImpl :: Term (Cell s) -> Term (Cell s) -> ExceptT String (ST s) ()
+    unifyTermsImpl (Atom cell1 _) (Atom cell2 _) = unifyAtoms cell1 cell2
+    unifyTermsImpl (Functor name1 args1 _) (Functor name2 args2 _) = unifyFunctors name1 args1 name2 args2
+    unifyTermsImpl (Atom cell _) functor@(Functor {}) = unifyAtomWithTerm cell functor
+    unifyTermsImpl functor@(Functor {}) (Atom cell _) = unifyAtomWithTerm cell functor
+    unifyTermsImpl (Eqq l1 r1 _) (Eqq l2 r2 _) = unifyTermsImpl l1 l2 >> unifyTermsImpl r1 r2
+    unifyTermsImpl (Transition n1 l1 r1 _) (Transition n2 l2 r2 _) =
+      if n1 == n2 then unifyTermsImpl l1 l2 >> unifyTermsImpl r1 r2
       else throwError $ "Transition names don't match: " ++ n1 ++ " vs " ++ n2
-    unifyTerms t1 t2 = throwError "Cannot unify different term structures"
+    unifyTermsImpl t1 t2 = throwError "Cannot unify different term structures"
 
     unifyAtoms :: Cell s String -> Cell s String -> ExceptT String (ST s) ()
     unifyAtoms (Ref ref1) (Ref ref2) = do
@@ -166,21 +157,34 @@ unify term1 term2 = do
           lift $ writeSTRef ref2 (Value term)
         (Value term1, Value term2) ->
           -- Both have values - must unify the terms
-          unifyTerms term1 term2
+          unifyTermsImpl term1 term2
         _ -> throwError "Unexpected cell value configuration"
 
     unifyFunctors :: String -> [Term (Cell s)] -> String -> [Term (Cell s)] -> ExceptT String (ST s) ()
     unifyFunctors name1 args1 name2 args2 =
       if name1 == name2 && length args1 == length args2
-        then zipWithM_ unifyTerms args1 args2
+        then zipWithM_ unifyTermsImpl args1 args2
         else throwError $ "Functors don't match: " ++ name1 ++ " vs " ++ name2
 
     unifyAtomWithTerm :: Cell s String -> Term (Cell s) -> ExceptT String (ST s) ()
     unifyAtomWithTerm (Ref ref) term = 
       lift (readSTRef ref) >>= \case
         Uninitialized _ -> lift $ writeSTRef ref (Value term)
-        Value existingTerm -> unifyTerms existingTerm term
+        Value existingTerm -> unifyTermsImpl existingTerm term
         _ -> throwError "Unexpected cell value in atom-term unification"
+
+-- | Unify two pure terms and return a substitution mapping
+unify :: PureTerm -> PureTerm -> ExceptT String (ST s) (Map String PureTerm)
+unify term1 term2 = do
+  -- Convert first term to ref term with empty mapping
+  (refTerm1, mapping1) <- lift $ refTerm term1 Map.empty
+  -- Convert second term to ref term, sharing the mapping from the first
+  (refTerm2, sharedMapping) <- lift $ refTerm term2 mapping1
+  -- Attempt unification
+  unifyTerms refTerm1 refTerm2
+  -- Convert mapping back to pure terms
+  results <- lift $ mapM (\cell -> pureTerm' (Atom cell dummyRange) sharedMapping) sharedMapping
+  either throwError return $ sequenceA results
 
 -- | Run unification in the ST monad and return the result
 runUnification :: PureTerm -> PureTerm -> Either String (Map String PureTerm)
