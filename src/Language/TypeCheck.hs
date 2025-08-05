@@ -14,6 +14,7 @@ import Data.Set (Set)
 import Control.Monad.State
 import Control.Lens hiding (Context)
 import Language.AST
+import Data.Functor.Identity
 import qualified Data.Graph as Graph
 import Data.Graph (Graph, UnlabeledGraph)
 import Control.Monad.Except hiding (throwError)
@@ -284,17 +285,17 @@ pass0 (Program decls _) = mapM_ pass0VisitDecl decls
 -----------------------------------------
 
 -- | Process and associate the data constructors in the given sort
-pass1VisitCtor :: MonadCheck m => SortName -> Term -> m ()
+pass1VisitCtor :: MonadCheck m => SortName -> PureTerm -> m ()
 pass1VisitCtor sortName = \case 
   (Atom nam range) -> do
-    sort <- lookupSort (Just range) nam
+    sort <- lookupSort (Just range) (runIdentity nam)
     subtyped sort sortName
   (Functor nam ts range) -> do
     sorts <- mapM (\t -> collectAtoms t >>= lookupSort (Just (rangeOf t))) ts
     let ctor = DataTagged nam sorts
     typeAsUnique ctor sortName nam
   where 
-    collectAtoms (Atom nam _) = return nam
+    collectAtoms (Atom nam _) = return (runIdentity nam)
     collectAtoms t = throwErrorAt (rangeOf t) $ NoNestingAt sortName
 
 pass1VisitDecl :: MonadCheck m => Decl -> m ()
@@ -320,9 +321,9 @@ pass1 (Program decls _) = mapM_ pass1VisitDecl decls
 -- are actually defined in its head.
 
 -- | Check an individual term and returns its sort
-checkTerm :: MonadCheck m => Term -> m SortName
+checkTerm :: MonadCheck m => PureTerm -> m SortName
 checkTerm (Atom nam range) = do
-  let varName = variableName nam
+  let varName = variableName (runIdentity nam)
   -- Check that the atom is not associated with a functor (DataTagged constructor)
   ctor <- lookupCtor (Just range) varName
   case ctor of

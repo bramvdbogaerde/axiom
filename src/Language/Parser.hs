@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
-module Language.Parser(parseProgram, Error(..)) where
+module Language.Parser(parseProgram, parseTerm, Error(..)) where
 
 import Prelude hiding (lex)
 
@@ -8,6 +8,7 @@ import Language.Lexer
 import Language.Lexer.Token
 import Language.AST
 import Language.Range
+import Data.Functor.Identity
 
 import Text.Parsec.Prim hiding (runParser)
 import Text.Parsec.Combinator
@@ -199,13 +200,13 @@ implies = matchToken (\case Implies -> Just (); _ -> Nothing)
 ------------------------------------------------------------
 
 -- | Parses a term or pattern
-term :: Parser Term
+term :: Parser PureTerm
 term =  do
     pos0 <- position
-    typeOrFunctor <- (ident <?> "identifier")
+    typeOrFunctor <- ident <?> "identifier"
     -- Terms are functors or atoms
-    term0 <- (((parens ((Functor typeOrFunctor <$> (withComments ((sepBy (surroundedByComments term) (withComments com)) <?> "comma-separated terms")) <?> "functor arguments")) <?> "functor application")
-          <|> return (Atom typeOrFunctor)) <*> endRange pos0) <?> "term"
+    term0 <- (((parens (Functor typeOrFunctor <$> (withComments ((sepBy (surroundedByComments term) (withComments com)) <?> "comma-separated terms")) <?> "functor arguments") <?> "functor application")
+          <|> return (Atom (Identity typeOrFunctor))) <*> endRange pos0) <?> "term"
 
     -- Terms can still be infix operators (which are predefined)
     ((equals >> (Eqq term0 <$> term <*> endRange pos0)) <?> "equality")
@@ -213,7 +214,7 @@ term =  do
       <|> return term0
 
 -- | Parses a sequence of terms separated (and ended) by the given parser, allowing comments
-terms :: Parser a -> Parser [Term]
+terms :: Parser a -> Parser [PureTerm]
 terms sep = (withComments $ sepBy (surroundedByComments term) (withComments sep)) <?> "terms separated by separator"
 
 -- | Parse a single syntax declaration
@@ -223,7 +224,7 @@ syntaxDecl = withRange $ do
                  <*> (inn >> ident)
                  <*> (fromMaybe [] <$> parseProductions)
   where parseProductions = optionMaybe (definedAs >> withComments (sepBy (surroundedByComments parseProduction) mid))
-        parseProduction :: Parser Term
+        parseProduction :: Parser PureTerm
         parseProduction  = term
 -- | Parse a syntax block
 syntax :: Parser Decl
@@ -267,3 +268,20 @@ runParser =  parse parser "<test>"
 -- | Parse a program from string
 parseProgram :: String -> Either Error Program
 parseProgram = first parseErrorToError . runParser . lex
+
+-- | Parse a single term from string
+parseTerm :: String -> Either Error PureTerm
+parseTerm input = first parseErrorToError . runTermParser . addSyntheticSem . lex $ input
+  where
+    runTermParser :: [TokenWithRange] -> Either ParseError PureTerm
+    runTermParser = parse (term <* sem <* eof) "<term>"
+    
+    -- Add a synthetic semicolon token at the end to help with range calculation
+    addSyntheticSem :: [TokenWithRange] -> [TokenWithRange]
+    addSyntheticSem tokens = tokens ++ [TokenWithRange Sem syntheticRange]
+      where
+        syntheticRange = case tokens of
+          [] -> Range (Position 1 1 (Just "<term>")) (Position 1 1 (Just "<term>"))
+          _ -> let lastRange = tokenRange (last tokens)
+                   endPos = rangeEnd lastRange
+               in Range endPos endPos

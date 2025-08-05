@@ -1,6 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Language.Solver where
 
 import Control.Lens
@@ -9,6 +10,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import Language.AST
+import Control.Monad.State
 
 ------------------------------------------------------------
 -- Core data structures
@@ -50,7 +52,6 @@ fromRules = foldr visit emptyEngineCtx
 -- Unification
 ------------------------------------------------------------
 
-data UnificationCtx = UnificationCtx {} deriving (Ord, Eq, Show)
 
 
 ------------------------------------------------------------

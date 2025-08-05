@@ -1,4 +1,4 @@
-module Language.Range(RangeOf(..), Position(..), Range(..)) where
+module Language.Range(RangeOf(..), Position(..), Range(..), dummyRange) where
 
 -- | Compute the range of arbitrary program elements
 class RangeOf a where
@@ -16,4 +16,8 @@ data Position = Position {
 data Range = Range { rangeStart :: Position,
                      rangeEnd :: Position }
            deriving (Ord, Eq, Show)
+
+-- | A dummy range for cases where range information is not available
+dummyRange :: Range
+dummyRange = Range (Position 0 0 Nothing) (Position 0 0 Nothing)
 

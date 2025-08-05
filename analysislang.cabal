@@ -17,11 +17,14 @@ library
                   , Language.Parser
                   , Language.TypeCheck
                   , Language.Solver
+                  , Language.Solver.Unification
                   , Language.Range
                   , Language.Lexer
   other-modules:   Language.Lexer.Token
-                 , Language.Solver.Formula
                  , Data.Graph
+  extensions: TemplateHaskell
+            , GeneralizedNewtypeDeriving
+            , FlexibleContexts
   hs-source-dirs: src
   
 executable analysislang
@@ -48,11 +51,14 @@ test-suite comment-tests
   build-depends: base >= 4 && < 5
               , analysislang
               , hspec
+              , HUnit
               , directory
               , filepath
+              , containers
   build-tool-depends: hspec-discover:hspec-discover
   other-modules: CommentTestsSpec
               , ParseSmokeTestSpec
               , CheckSmokeTestSpec
+              , UnificationTestsSpec
   hs-source-dirs: test
   main-is: Spec.hs
