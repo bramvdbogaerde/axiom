@@ -9,9 +9,13 @@ import Control.Monad.State
 import Control.Monad.ST
 import Control.Monad.Except
 import Control.Monad.Extra (ifM)
-import Control.Monad ((>=>))
+import Control.Monad ((>=>), zipWithM_)
 import Data.STRef
 import Data.Functor.Identity
+
+-------------------------------------------------------------
+-- Core data types
+-------------------------------------------------------------
 
 -- | A mapping between original variable names and their references
 type VariableMapping s = Map String (Cell s String)
@@ -23,6 +27,30 @@ data CellValue s a = Value (Term (Cell s))
 
 newtype Cell s a = Ref (STRef s (CellValue s a))
 
+-------------------------------------------------------------
+-- Union find
+-------------------------------------------------------------
+
+-- | Get the final cell value with path compression
+setOf :: STRef s (CellValue s String) -> ST s (CellValue s String)
+setOf ref = readSTRef ref >>= \case
+  Ptr (Ref nextRef) -> do
+    finalValue <- setOf nextRef
+    writeSTRef ref finalValue  -- Path compression
+    return finalValue
+  v -> return v
+
+-- | Flatten indirect references in the variable mapping to speed up conversion
+flattenMapping :: VariableMapping s -> ST s ()
+flattenMapping = mapM_ flattenCell
+  where
+    flattenCell :: Cell s String -> ST s ()
+    flattenCell (Ref cellRef) = setOf cellRef >>= writeSTRef cellRef
+
+-------------------------------------------------------------
+-- Conversions between reference cells
+-------------------------------------------------------------
+    
 -- | Transform a term to use IORefs instead of variables, returns
 -- the transformed term, together with a mapping from variable names
 -- to their references.
@@ -47,22 +75,6 @@ refTerm term = runStateT (transformTerm term)
 
     transformTerm (Transition transName left right range) =
       Transition transName <$> transformTerm left <*> transformTerm right <*> pure range
-
--- | Get the final cell value with path compression
-setOf :: STRef s (CellValue s String) -> ST s (CellValue s String)
-setOf ref = readSTRef ref >>= \case
-  Ptr (Ref nextRef) -> do
-    finalValue <- setOf nextRef
-    writeSTRef ref finalValue  -- Path compression
-    return finalValue
-  v -> return v
-
--- | Flatten indirect references in the variable mapping to speed up conversion
-flattenMapping :: VariableMapping s -> ST s ()
-flattenMapping = mapM_ flattenCell
-  where
-    flattenCell :: Cell s String -> ST s ()
-    flattenCell (Ref cellRef) = setOf cellRef >>= writeSTRef cellRef
 
 -- | Visited list abstraction for cycle detection
 type VisitedList s = [STRef s (CellValue s String)]
@@ -103,6 +115,10 @@ pureTerm' term mapping = do
 -- | Same as pureTerm' but raises an error if the term could not be converted
 pureTerm :: Term (Cell s) -> VariableMapping s -> ST s PureTerm
 pureTerm term = pureTerm' term >=> either error return
+
+-------------------------------------------------------------
+-- Unification 
+-------------------------------------------------------------
 
 -- | Unify two pure terms and return a substitution mapping
 unify :: PureTerm -> PureTerm -> ExceptT String (ST s) (Map String PureTerm)
@@ -156,7 +172,7 @@ unify term1 term2 = do
     unifyFunctors :: String -> [Term (Cell s)] -> String -> [Term (Cell s)] -> ExceptT String (ST s) ()
     unifyFunctors name1 args1 name2 args2 =
       if name1 == name2 && length args1 == length args2
-        then mapM_ (uncurry unifyTerms) (zip args1 args2)
+        then zipWithM_ unifyTerms args1 args2
         else throwError $ "Functors don't match: " ++ name1 ++ " vs " ++ name2
 
     unifyAtomWithTerm :: Cell s String -> Term (Cell s) -> ExceptT String (ST s) ()
@@ -169,4 +185,3 @@ unify term1 term2 = do
 -- | Run unification in the ST monad and return the result
 runUnification :: PureTerm -> PureTerm -> Either String (Map String PureTerm)
 runUnification term1 term2 = runST $ runExceptT $ unify term1 term2
-
