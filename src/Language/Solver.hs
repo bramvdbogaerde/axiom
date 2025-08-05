@@ -41,6 +41,12 @@ fromRules = foldr visit emptyEngineCtx
           flip (foldr (`addConclusionFunctor` rule)) (foldMap functorNames consequent)
 
 ------------------------------------------------------------
+-- Monad context
+------------------------------------------------------------
+
+
+
+------------------------------------------------------------
 -- Unification
 ------------------------------------------------------------
 
