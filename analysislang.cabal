@@ -60,6 +60,7 @@ test-suite comment-tests
   build-tool-depends: hspec-discover:hspec-discover
   other-modules: CommentTestsSpec
               , ParseSmokeTestSpec
+              , ParseTestsSpec
               , CheckSmokeTestSpec
               , UnificationTestsSpec
               , RenamerTestsSpec

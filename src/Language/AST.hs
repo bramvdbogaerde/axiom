@@ -18,6 +18,7 @@ module Language.AST(
     RangeOf(..),
     functorNames,
     termEqIgnoreRange,
+    infixNames,
     module Language.Range
   ) where
 

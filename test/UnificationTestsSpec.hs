@@ -137,3 +137,8 @@ spec = do
       testUnificationFailure "detects cycles in deeper nesting" "g(x, y)" "g(f(x), x)"
       testUnificationFailure "detects cycles with multiple variables" "h(x, y)" "h(y, f(x))"
       testUnificationFailure "detects indirect cycles" "cons(x, y)" "cons(head(y), cons(x, nil()))"
+    
+    describe "Error handling" $ do
+      testUnificationFailure "fails on mixed term structures" "f(x)" "x = y"
+      -- TODO: Add test for different transition names when parser supports named transitions
+      -- testUnificationFailure "fails on different transition names" "x ~> y" "x step y"
