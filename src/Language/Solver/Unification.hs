@@ -90,7 +90,7 @@ type VisitedList s = [STRef s (CellValue s String)]
 
 -- | Check if a reference is in the visited list
 isVisited :: STRef s (CellValue s String) -> VisitedList s -> ST s Bool
-isVisited ref visited = return $ ref `elem` visited
+isVisited ref = return . (ref `elem`)
 
 -- | Add a reference to the visited list
 addVisited :: STRef s (CellValue s String) -> VisitedList s -> VisitedList s
