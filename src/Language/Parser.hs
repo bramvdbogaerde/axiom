@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
-module Language.Parser(parseProgram, parseTerm, Error(..)) where
+module Language.Parser(parseProgram, parseTerm, parseRule, Error(..)) where
 
 import Prelude hiding (lex)
 
@@ -269,19 +269,26 @@ runParser =  parse parser "<test>"
 parseProgram :: String -> Either Error Program
 parseProgram = first parseErrorToError . runParser . lex
 
+-- | Add a synthetic semicolon token at the end to help with range calculation
+addSyntheticSem :: [TokenWithRange] -> [TokenWithRange]
+addSyntheticSem tokens = tokens ++ [TokenWithRange Sem syntheticRange]
+  where
+    syntheticRange = case tokens of
+      [] -> dummyRange
+      _ -> let lastRange = tokenRange (last tokens)
+               endPos = rangeEnd lastRange
+           in Range endPos endPos
+
 -- | Parse a single term from string
 parseTerm :: String -> Either Error PureTerm
-parseTerm input = first parseErrorToError . runTermParser . addSyntheticSem . lex $ input
+parseTerm = first parseErrorToError . runTermParser . addSyntheticSem . lex
   where
     runTermParser :: [TokenWithRange] -> Either ParseError PureTerm
     runTermParser = parse (term <* sem <* eof) "<term>"
-    
-    -- Add a synthetic semicolon token at the end to help with range calculation
-    addSyntheticSem :: [TokenWithRange] -> [TokenWithRange]
-    addSyntheticSem tokens = tokens ++ [TokenWithRange Sem syntheticRange]
-      where
-        syntheticRange = case tokens of
-          [] -> Range (Position 1 1 (Just "<term>")) (Position 1 1 (Just "<term>"))
-          _ -> let lastRange = tokenRange (last tokens)
-                   endPos = rangeEnd lastRange
-               in Range endPos endPos
+
+-- | Parse a single rule from string
+parseRule :: String -> Either Error RuleDecl
+parseRule = first parseErrorToError . runRuleParser . addSyntheticSem . lex
+  where
+    runRuleParser :: [TokenWithRange] -> Either ParseError RuleDecl
+    runRuleParser = parse (rule <* sem <* eof) "<rule>"

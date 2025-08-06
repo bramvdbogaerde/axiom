@@ -12,10 +12,7 @@ import qualified Data.Map as Map
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Trans
-
--- Helper function to parse a term directly
-parseTermHelper :: String -> IO PureTerm
-parseTermHelper input = either (assertFailure . ("Parse error: " ++) . show) return (parseTerm input)
+import TestInfrastructure
 
 -- Test that refTerm and pureTerm are inverses for a given term
 testInverse :: String -> Expectation

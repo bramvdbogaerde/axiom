@@ -18,6 +18,7 @@ library
                   , Language.TypeCheck
                   , Language.Solver
                   , Language.Solver.Unification
+                  , Language.Solver.Renamer
                   , Language.Range
                   , Language.Lexer
   other-modules:   Language.Lexer.Token
@@ -61,5 +62,7 @@ test-suite comment-tests
               , ParseSmokeTestSpec
               , CheckSmokeTestSpec
               , UnificationTestsSpec
+              , RenamerTestsSpec
+              , TestInfrastructure
   hs-source-dirs: test
   main-is: Spec.hs
