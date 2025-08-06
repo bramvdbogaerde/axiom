@@ -24,9 +24,11 @@ type VariableMapping s = Map String (Cell s String)
 data CellValue s a = Value (Term (Cell s))
                    | Ptr (Cell s a)
                    | Uninitialized String
+                  deriving (Eq)
 
 newtype Cell s a = Ref (STRef s (CellValue s a))
-
+                 deriving (Eq)
+  
 readCellRef :: Cell s a -> ST s (CellValue s a)
 readCellRef (Ref ref) = readSTRef ref
 

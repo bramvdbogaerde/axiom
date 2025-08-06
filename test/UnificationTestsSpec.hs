@@ -7,7 +7,11 @@ import Language.AST
 import Language.Solver.Unification
 import Language.Parser
 import Control.Monad.ST
+import Data.STRef
 import qualified Data.Map as Map
+import Control.Monad
+import Control.Monad.Except
+import Control.Monad.Trans
 
 -- Helper function to parse a term directly
 parseTermHelper :: String -> IO PureTerm
@@ -26,14 +30,14 @@ testInverseFor termStr = it ("refTerm and pureTerm are inverses for '" ++ termSt
 
 -- Helper to test successful unification
 testUnificationSuccess :: String -> String -> String -> [(String, String)] -> Spec
-testUnificationSuccess desc term1Str term2Str expectedMappings = 
+testUnificationSuccess desc term1Str term2Str expectedMappings =
   it (desc ++ ": " ++ term1Str ++ " = " ++ term2Str) $ do
     term1 <- parseTermHelper term1Str
     term2 <- parseTermHelper term2Str
     expectedPairs <- mapM (\(var, termStr) -> (var,) <$> parseTermHelper termStr) expectedMappings
     case runUnification term1 term2 of
-      Right mapping -> 
-        mapM_ (\(var, expectedTerm) -> 
+      Right mapping ->
+        mapM_ (\(var, expectedTerm) ->
           maybe (assertFailure $ "Variable " ++ var ++ " not found in mapping")
                 (`shouldSatisfy` termEqIgnoreRange expectedTerm)
                 (Map.lookup var mapping)) expectedPairs
@@ -89,7 +93,48 @@ spec = do
       testPartialUnification "handles variable-to-variable unification" "x" "y" ["x", "y"]
       testPartialUnification "handles self-unification of variables" "x" "x" ["x"]
       -- testPartialUnification "handles circular variable references" "f(x, y)" "f(y, x)" ["x", "y"]
-    
+
+    describe "Path compression bug" $ do
+      testUnificationSuccess "handles path compression with uninitialized parent" "f(x, y)" "f(z, y)" [("x", "z")]
+      it "exposes path compression bug with pointer chains" $ do
+        -- This test creates a scenario where path compression would fail
+        -- We create: cell1 -> Ptr(cell2) where cell2 is Uninitialized
+        -- Then we call setOf on cell1, which should preserve the pointer to cell2
+        let testResult = runST $ runExceptT $ do
+              -- Create three cells: cell1 points to cell2, cell2 is uninitialized
+              ref1 <- lift $ newSTRef (Uninitialized "x")
+              ref2 <- lift $ newSTRef (Uninitialized "y")
+              ref3 <- lift $ newSTRef (Uninitialized "z")
+
+              let cell1 = Ref ref1
+              let cell2 = Ref ref2
+              let cell3 = Ref ref3
+
+              -- Create pointer chain: cell1 -> cell2 -> cell3
+              lift $ writeSTRef ref1 (Ptr cell2)
+              lift $ writeSTRef ref2 (Ptr cell3)
+
+              -- Call setOf on cell1 - this should do path compression
+              _  <- lift $ setOf cell1
+              finalCell <- lift $ readSTRef ref1
+
+              when (finalCell /= Ptr cell3) $
+                throwError "Expected paths to be compressed"
+
+              -- Now modify cell3 to have a value
+              lift $ writeSTRef ref3 (Value (Functor "atom" [] dummyRange))
+
+              -- Try to retrieve through cell1 - this should still work if path compression preserved pointers correctly
+              finalCell2 <- lift $ setOf cell1
+
+              -- Check if we can still access the updated value through cell1
+              finalValue <- lift $ readCellRef finalCell2
+              case finalValue of
+                Value _ -> return () -- Success: path compression preserved the reference chain
+                _ -> throwError "Bug: path compression broke final check in the reference chain"
+
+        testResult `shouldBe` Right ()
+
     describe "Cycle detection" $ do
       testUnificationFailure "detects simple cycles in nested terms" "f(x)" "f(f(x))"
       testUnificationFailure "detects cycles in deeper nesting" "g(x, y)" "g(f(x), x)"

@@ -55,6 +55,7 @@ test-suite comment-tests
               , directory
               , filepath
               , containers
+              , mtl
   build-tool-depends: hspec-discover:hspec-discover
   other-modules: CommentTestsSpec
               , ParseSmokeTestSpec
