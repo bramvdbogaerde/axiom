@@ -26,4 +26,5 @@ cabal.project.local~
 .HTF/
 .ghc.environment.*
 
-# End of https://www.toptal.com/developers/gitignore/api/haskell
+End of https://www.toptal.com/developers/gitignore/api/haskell
+.claude/
