@@ -19,6 +19,7 @@ library
                   , Language.Solver
                   , Language.Solver.Unification
                   , Language.Solver.Renamer
+                  , Language.Solver.BacktrackingST
                   , Language.Range
                   , Language.Lexer
   other-modules:   Language.Lexer.Token
@@ -64,6 +65,19 @@ test-suite comment-tests
               , CheckSmokeTestSpec
               , UnificationTestsSpec
               , RenamerTestsSpec
+              , BacktrackingSTSpec
               , TestInfrastructure
   hs-source-dirs: test
   main-is: Spec.hs
+
+benchmark benchmarks
+  type: exitcode-stdio-1.0
+  build-depends: base >= 4 && < 5
+              , analysislang
+              , criterion
+              , random
+  other-modules: STBenchmarks
+  hs-source-dirs: benchmarks
+  main-is: Main.hs
+  ghc-options: -O2
+

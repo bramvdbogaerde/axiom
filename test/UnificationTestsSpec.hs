@@ -5,9 +5,8 @@ import Test.Hspec
 import Test.HUnit (assertFailure)
 import Language.AST
 import Language.Solver.Unification
+import Language.Solver.BacktrackingST
 import Language.Parser
-import Control.Monad.ST
-import Data.STRef
 import qualified Data.Map as Map
 import Control.Monad
 import Control.Monad.Except
