@@ -1,5 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
-module Language.Solver.Renamer(renameRule) where
+module Language.Solver.Renamer(renameRule, renameRule') where
 
 import Control.Lens
 import Control.Monad.State
@@ -8,6 +8,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Functor.Identity
 import Language.AST
+import Data.Bifunctor
 
 
 -------------------------------------------------------------
@@ -37,13 +38,13 @@ fresh nam = gets _freshCtr <* modify (over freshCtr (+1))
 freshName :: MonadRename m => String -> m String
 freshName nam =
     gets (Map.lookup nam . _variableMapping) >>= maybe storeFreshName (return . newName)
-  where 
+  where
     newName = (nam ++) . show
     storeFreshName = fresh nam >>= \i -> modify (over variableMapping (Map.insert nam i)) >> return (newName i)
 
 -- | Run the renamer monad and obtain its result
-runRenamer :: Int -> StateT RenamerCtx Identity a -> a
-runRenamer freshCtr' m = runIdentity $ evalStateT m (emptyCtx { _freshCtr = freshCtr' })
+runRenamer :: Int -> StateT RenamerCtx Identity a -> (a, Int)
+runRenamer freshCtr' m = runIdentity (second _freshCtr <$> runStateT m (emptyCtx { _freshCtr = freshCtr' }))
 
 -------------------------------------------------------------
 -- Renaming functions
@@ -54,7 +55,7 @@ renameTerm :: MonadRename m => PureTerm -> m PureTerm
 renameTerm (Atom (Identity varName) range) = Atom . Identity <$> freshName varName <*> pure range
 renameTerm (Functor name subterms range) = Functor name <$> mapM renameTerm subterms <*> pure range
 renameTerm (Eqq left right range) = Eqq <$> renameTerm left <*> renameTerm right <*> pure range
-renameTerm (Transition transName left right range) = 
+renameTerm (Transition transName left right range) =
     Transition transName <$> renameTerm left <*> renameTerm right <*> pure range
 
 -- | Rename all variables in a list of terms
@@ -66,10 +67,14 @@ renameTerms = mapM renameTerm
 -------------------------------------------------------------
 
 -- | Rename the variables in the given rule, ensuring that they are unique
-renameRule :: Int       -- ^ the number of currently allocated fresh variables
+renameRule' :: Int       -- ^ the number of currently allocated fresh variables
            -> RuleDecl  -- ^ the rule declaration to translate
-           -> RuleDecl
-renameRule freshCtr' (RuleDecl ruleName precedent consequent range) =
-    runRenamer freshCtr' $ 
+           -> (RuleDecl, Int)
+renameRule' freshCtr' (RuleDecl ruleName precedent consequent range) =
+    runRenamer freshCtr' $
         RuleDecl ruleName <$> renameTerms precedent <*> renameTerms consequent <*> pure range
 
+
+-- | Same as renameRule' but does not return the new unique count
+renameRule :: Int -> RuleDecl -> RuleDecl
+renameRule k = fst . renameRule' k

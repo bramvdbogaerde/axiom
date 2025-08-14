@@ -20,13 +20,15 @@ import Data.Functor.Identity
 type VariableMapping s = Map String (Cell s String)
 
 -- | The value within the cell of variables
-data CellValue s a = Value (Term (Cell s))
+data CellValue s a = Value (RefTerm s)
                    | Ptr (Cell s a)
                    | Uninitialized String
                   deriving (Eq)
 
 newtype Cell s a = Ref (BST.STRef s (CellValue s a))
                  deriving (Eq)
+
+type RefTerm s = Term (Cell s)
   
 readCellRef :: Cell s a -> BST.ST s (CellValue s a)
 readCellRef (Ref ref) = BST.readSTRef ref
@@ -64,10 +66,10 @@ flattenMapping = mapM_ flattenCell
 -- | Transform a term to use IORefs instead of variables, returns
 -- the transformed term, together with a mapping from variable names
 -- to their references.
-refTerm ::  PureTerm -> VariableMapping s -> BST.ST s (Term (Cell s), VariableMapping s)
+refTerm ::  PureTerm -> VariableMapping s -> BST.ST s (RefTerm s, VariableMapping s)
 refTerm term = runStateT (transformTerm term)
   where
-    transformTerm :: PureTerm -> StateT (VariableMapping s) (BST.ST s) (Term (Cell s))
+    transformTerm :: PureTerm -> StateT (VariableMapping s) (BST.ST s) (RefTerm s)
     transformTerm (Atom (Identity varName) range) =
       maybe createNewCell (return . flip Atom range) =<< gets (Map.lookup varName)
       where
@@ -98,12 +100,12 @@ addVisited :: BST.STRef s (CellValue s String) -> VisitedList s -> VisitedList s
 addVisited ref visited = ref : visited
 
 -- | Convert a pointer-based term back to a pure term with cycle detection
-pureTerm' :: Term (Cell s) -> VariableMapping s -> BST.ST s (Either String PureTerm)
+pureTerm' :: RefTerm s -> VariableMapping s -> BST.ST s (Either String PureTerm)
 pureTerm' term mapping = do
   flattenMapping mapping
   runExceptT $ evalStateT (convertTerm term) []
   where
-    convertTerm :: Term (Cell s) -> StateT (VisitedList s) (ExceptT String (BST.ST s)) PureTerm
+    convertTerm :: RefTerm s -> StateT (VisitedList s) (ExceptT String (BST.ST s)) PureTerm
     convertTerm (Atom (Ref cellRef) range) =
       lift (lift $ BST.readSTRef cellRef) >>= \case
         Value term ->
@@ -123,7 +125,7 @@ pureTerm' term mapping = do
       Transition transName <$> convertTerm left <*> convertTerm right <*> pure range
 
 -- | Same as pureTerm' but raises an error if the term could not be converted
-pureTerm :: Term (Cell s) -> VariableMapping s -> BST.ST s PureTerm
+pureTerm :: RefTerm s -> VariableMapping s -> BST.ST s PureTerm
 pureTerm term = pureTerm' term >=> either error return
 
 -------------------------------------------------------------
@@ -131,10 +133,10 @@ pureTerm term = pureTerm' term >=> either error return
 -------------------------------------------------------------
 
 -- | Unify two reference-based terms
-unifyTerms :: Term (Cell s) -> Term (Cell s) -> ExceptT String (BST.ST s) ()
+unifyTerms :: RefTerm s -> RefTerm s -> ExceptT String (BST.ST s) ()
 unifyTerms = unifyTermsImpl
   where
-    unifyTermsImpl :: Term (Cell s) -> Term (Cell s) -> ExceptT String (BST.ST s) ()
+    unifyTermsImpl :: RefTerm s-> RefTerm s -> ExceptT String (BST.ST s) ()
     unifyTermsImpl (Atom cell1 _) (Atom cell2 _) = unifyAtoms cell1 cell2
     unifyTermsImpl (Functor name1 args1 _) (Functor name2 args2 _) = unifyFunctors name1 args1 name2 args2
     unifyTermsImpl (Atom cell _) functor@(Functor {}) = unifyAtomWithTerm cell functor
@@ -170,13 +172,13 @@ unifyTerms = unifyTermsImpl
           unifyTermsImpl term1 term2
         _ -> throwError "Unexpected cell value configuration"
 
-    unifyFunctors :: String -> [Term (Cell s)] -> String -> [Term (Cell s)] -> ExceptT String (BST.ST s) ()
+    unifyFunctors :: String -> [RefTerm s] -> String -> [RefTerm s] -> ExceptT String (BST.ST s) ()
     unifyFunctors name1 args1 name2 args2 =
       if name1 == name2 && length args1 == length args2
         then zipWithM_ unifyTermsImpl args1 args2
         else throwError $ "Functors don't match: " ++ name1 ++ " vs " ++ name2
 
-    unifyAtomWithTerm :: Cell s String -> Term (Cell s) -> ExceptT String (BST.ST s) ()
+    unifyAtomWithTerm :: Cell s String -> RefTerm s -> ExceptT String (BST.ST s) ()
     unifyAtomWithTerm (Ref ref) term =
       lift (BST.readSTRef ref) >>= \case
         Uninitialized _ -> lift $ BST.writeSTRef ref (Value term)

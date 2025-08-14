@@ -11,24 +11,24 @@ import TestInfrastructure
 spec :: Spec
 spec = do
   describe "Parser functionality" $ do
-    describe "functorNames extraction" $ do
+    describe "atomNames extraction" $ do
       it "extracts functor names from Atom" $ do
         term <- parseTermHelper "x"
         case term of
-          Atom (Identity name) _ -> functorNames term `shouldBe` Set.singleton name
+          Atom (Identity name) _ -> atomNames term `shouldBe` Set.singleton name
           _ -> expectationFailure "Expected Atom term"
       
       it "extracts functor names from Functor" $ do
         term <- parseTermHelper "f(x, y)"
-        functorNames term `shouldBe` Set.fromList ["x", "y"]
+        atomNames term `shouldBe` Set.fromList ["x", "y"]
       
       it "extracts functor names from Eqq" $ do
         term <- parseTermHelper "x = y"
-        functorNames term `shouldBe` Set.fromList ["x", "y"]
+        atomNames term `shouldBe` Set.fromList ["x", "y"]
       
       it "extracts functor names from Transition" $ do
         term <- parseTermHelper "x ~> y"
-        functorNames term `shouldBe` Set.fromList ["x", "y"]
+        atomNames term `shouldBe` Set.fromList ["x", "y"]
     
     describe "termEqIgnoreRange comparison" $ do
       it "compares Eqq terms ignoring range" $ do

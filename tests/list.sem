@@ -31,5 +31,5 @@ rules {
 	[ member(elem, cons(elem2, l)) ];
  };
 
-%test: append(cons(1, cons(2, nil())) , cons(2, cons(3, nil())), cons(1, cons(2, cons(2, cons(3, nil())))))
-%test: member(1, cons(2, cons(3, nil())))
+%test: append(cons(a(), cons(b(), nil())) , cons(b(), cons(c(), nil())), cons(a(), cons(b(), cons(b(), cons(c(), nil())))))
+%_test: member(1, cons(2, cons(3, nil())))

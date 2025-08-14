@@ -13,6 +13,7 @@ import System.Exit
 import Reporting
 import Options.Applicative
 import qualified LanguageServer
+import qualified SolverDebugger
 
 -------------------------------------------------------------
 -- Data types
@@ -43,6 +44,10 @@ inputOptionsParser = InputOptions
 checkCommand :: Parser (IO ())
 checkCommand = runCheckCommand <$> inputOptionsParser
 
+-- | Parser for the 'debug' subcommand
+debugCommand :: Parser (IO ())
+debugCommand = runDebugCommand <$> inputOptionsParser
+
 -- | Parser for the 'lsp' subcommand  
 lspCommand :: Parser (IO ())
 lspCommand = pure $ do
@@ -54,6 +59,8 @@ commandParser :: Parser (IO ())
 commandParser = subparser
   ( command "check"
     (info checkCommand (progDesc "Type check a program"))
+ <> command "debug"
+    (info debugCommand (progDesc "Start interactive solver debugger"))
  <> command "lsp"
     (info lspCommand (progDesc "Start Language Server Protocol server"))
   )
@@ -99,6 +106,10 @@ runCheckCommand :: InputOptions -> IO ()
 runCheckCommand (InputOptions filename) = do
   (contents, ast) <- loadAndParseFile filename
   either (printError contents) (const printSuccess) $ runChecker ast
+
+-- | Execute the solver debugging command
+runDebugCommand :: InputOptions -> IO ()
+runDebugCommand (InputOptions filename) = SolverDebugger.debugSession filename
 
 -------------------------------------------------------------
 -- Main entry point

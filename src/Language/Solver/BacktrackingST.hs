@@ -129,6 +129,9 @@ data SnapshotData s = SnapshotData
   , snapshotElems :: ![CellValue]
   }
 
+instance Functor SnapshotData where
+  fmap _ (SnapshotData offset elems) = SnapshotData offset elems
+
 -- | Internal state of our ST monad, included the vector based storage
 data STState s = STState
   { _storage :: Vector s CellValue

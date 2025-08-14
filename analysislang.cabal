@@ -41,10 +41,12 @@ executable analysislang
               , lens
               , uri-encode
               , transformers
+              , mtl
   other-modules: Reporting
                , LanguageServer
                , LanguageServer.Diagnostics
                , LanguageServer.Symbols
+               , SolverDebugger
   hs-source-dirs: app
   main-is: Main.hs
 
@@ -58,6 +60,8 @@ test-suite comment-tests
               , filepath
               , containers
               , mtl
+              , extra
+              , transformers
   build-tool-depends: hspec-discover:hspec-discover
   other-modules: CommentTestsSpec
               , ParseSmokeTestSpec
@@ -66,6 +70,7 @@ test-suite comment-tests
               , UnificationTestsSpec
               , RenamerTestsSpec
               , BacktrackingSTSpec
+              , SolverTestsSpec
               , TestInfrastructure
   hs-source-dirs: test
   main-is: Spec.hs

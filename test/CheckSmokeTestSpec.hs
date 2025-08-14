@@ -27,8 +27,7 @@ shouldFailTypeCheck path = "_fail_" `isPrefixOf` takeBaseName path
 -- | Read file content safely
 readFileSafe :: FilePath -> IO (Either String String)
 readFileSafe path = do
-  result <- catch (Right <$> readFile path) handler
-  return result
+  catch (Right <$> readFile path) handler
   where
     handler :: IOException -> IO (Either String String)
     handler e = return $ Left $ "Could not read file " ++ path ++ ": " ++ show e
@@ -60,7 +59,7 @@ spec = describe "Type checking smoke tests" $ do
   semFiles <- runIO findSemFiles
   let nonFailingFiles = filter (not . shouldFailTypeCheck) semFiles
   let failingFiles = filter shouldFailTypeCheck semFiles
-  
+
   if null semFiles
     then it "should find .sem files in tests directory" $ do
       expectationFailure "No .sem files found in tests directory"
@@ -69,14 +68,14 @@ spec = describe "Type checking smoke tests" $ do
       unless (null nonFailingFiles) $ do
         describe "Non-failing files should type check successfully" $ do
           mapM_ createTypeCheckTest nonFailingFiles
-      
+
       -- Test failing files  
       unless (null failingFiles) $ do
         describe "Files marked as _fail_ should fail type checking" $ do
           mapM_ createFailingTypeCheckTest failingFiles
 
 createTypeCheckTest :: FilePath -> Spec
-createTypeCheckTest filePath = 
+createTypeCheckTest filePath =
   it ("should type check " ++ takeFileName filePath) $ do
     contentResult <- readFileSafe filePath
     case contentResult of
@@ -90,7 +89,7 @@ createTypeCheckTest filePath =
               Right _ -> return () -- Success
 
 createFailingTypeCheckTest :: FilePath -> Spec
-createFailingTypeCheckTest filePath = 
+createFailingTypeCheckTest filePath =
   it ("should fail to type check " ++ takeFileName filePath) $ do
     contentResult <- readFileSafe filePath
     case contentResult of
