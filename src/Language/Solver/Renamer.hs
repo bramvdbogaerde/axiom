@@ -54,6 +54,7 @@ runRenamer freshCtr' m = runIdentity (second _freshCtr <$> runStateT m (emptyCtx
 renameTerm :: MonadRename m => PureTerm -> m PureTerm
 renameTerm (Atom (Identity varName) range) = Atom . Identity <$> freshName varName <*> pure range
 renameTerm (Functor name subterms range) = Functor name <$> mapM renameTerm subterms <*> pure range
+renameTerm (Neq left right range) = Neq <$> renameTerm left <*> renameTerm right <*> pure range
 renameTerm (Eqq left right range) = Eqq <$> renameTerm left <*> renameTerm right <*> pure range
 renameTerm (Transition transName left right range) =
     Transition transName <$> renameTerm left <*> renameTerm right <*> pure range
