@@ -39,7 +39,8 @@ data SearchGoal s = SearchGoal
 
 data SearchState s = SearchState
   { _searchGoals :: [SearchGoal s],
-    _searchSnapshot :: ST.Snapshot s
+    _searchSnapshot :: ST.Snapshot s,
+    _searchMapping :: Unification.VariableMapping s
   }
 
 -- | Queue abstraction for different search strategies
@@ -153,7 +154,9 @@ refTerm term = do
 initialWL :: Queue q => PureTerm -> Solver q s ()
 initialWL query = do
   refQuery <- refTerm query
-  initialState <- SearchState [SearchGoal "initial" refQuery] <$> takeSnapshot
+  mapping <- gets (^. searchCtx . currentMapping)
+  snapshot <- takeSnapshot
+  let initialState = SearchState [SearchGoal "initial" refQuery] snapshot mapping
   modify (over (searchCtx . searchQueue) (enqueue initialState))
 
 -- | Main entry point for solving a query - returns lazy list of all solutions
@@ -171,6 +174,7 @@ solveSingle = do
     Just (state, restQueue) -> do
       modify (set (searchCtx . searchQueue) restQueue)
       restoreSnapshot (state ^. searchSnapshot)
+      modify (set (searchCtx . currentMapping) (state ^. searchMapping))
 
       case state ^. searchGoals of
         [] -> do
@@ -191,6 +195,12 @@ solveAll = do
     Just (Left solution) -> (solution:) <$> solveAll  -- Found solution, continue
     Just (Right ()) -> solveAll  -- Processed state, continue
 
+-- | Continue solving with the given remaining goals
+continue :: (Queue q) => [SearchGoal s] -> Solver q s ()
+continue remainingGoals = do
+  newState <- SearchState remainingGoals <$> takeSnapshot <*> gets (^. searchCtx . currentMapping)
+  modify (over (searchCtx . searchQueue) (enqueue newState))
+
 -- | Expand a goal by trying all matching rules
 expandGoal :: (Queue q) => SearchGoal s -> [SearchGoal s] -> Solver q s ()
 expandGoal (SearchGoal ruleName goal) remainingGoals = do
@@ -202,24 +212,20 @@ expandGoal (SearchGoal ruleName goal) remainingGoals = do
       -- Equality: try to unify, if it succeeds then = succeeds
       unifyResult <- liftST $ runExceptT $ Unification.unifyTerms left right
       case unifyResult of
-        Left _ -> 
+        Left _ ->
           -- Unification failed, so = fails - this branch is pruned (no new states added)
           return ()
         Right _ -> do
           -- Unification succeeded, so = succeeds - continue with remaining goals
-          snapshot <- takeSnapshot
-          let newState = SearchState remainingGoals snapshot
-          modify (over (searchCtx . searchQueue) (enqueue newState))
+          continue remainingGoals
     Neq left right _ -> do
       -- Negation as failure: try to unify, if it fails then Neq succeeds
       unifyResult <- liftST $ runExceptT $ Unification.unifyTerms left right
       case unifyResult of
         Left _ -> do
           -- Unification failed, so /= succeeds - continue with remaining goals
-          snapshot <- takeSnapshot
-          let newState = SearchState remainingGoals snapshot
-          modify (over (searchCtx . searchQueue) (enqueue newState))
-        Right _ -> 
+          continue remainingGoals
+        Right _ ->
           -- Unification succeeded, so /= fails - this branch is pruned (no new states added)
           return ()
     _ -> return () -- Variables and other terms can't be expanded
@@ -239,25 +245,21 @@ processRule goal remainingGoals rule = do
   freshVarCount <- gets (^. numUniqueVariables)
   let (RuleDecl ruleName precedents consequents _, newFreshCount) = Renamer.renameRule' freshVarCount rule
   modify (set numUniqueVariables newFreshCount)
-  mapM_ (tryUnifyWithConsequent ruleName goal remainingGoals precedents) consequents
+  
+  -- Assert that there's only one consequent for now
+  case consequents of
+    [consequent] -> do
+      refConsequent <- refTerm consequent
+      precedentRefs <- mapM refTerm precedents
+      
+      -- Create unification goal: current goal = consequent
+      let unificationGoal = SearchGoal ruleName (Eqq goal refConsequent dummyRange)
+      let precedentGoals = map (SearchGoal ruleName) precedentRefs
+      let newGoals = unificationGoal : precedentGoals ++ remainingGoals
+      
+      continue newGoals
+    _ -> error $ "Rule " ++ ruleName ++ " has " ++ show (length consequents) ++ " consequents, expected exactly 1"
 
--- | Try to unify goal with a specific consequent
-tryUnifyWithConsequent :: (Queue q) => String -> RefTerm s -> [SearchGoal s] -> [PureTerm] -> PureTerm -> Solver q s ()
-tryUnifyWithConsequent ruleName goal remainingGoals precedent consequent = do
-  refConsequent <- refTerm consequent
-  result <- liftST $ runExceptT $ Unification.unifyTerms goal refConsequent
-
-  case result of
-    Left _ -> return () -- Unification failed, ignore this alternative
-    Right _ -> do
-      -- Unification succeeded - take snapshot after unification
-      snapshotAfter <- takeSnapshot
-
-      -- Add precedents as new goals using the helper function
-      precedentRefs <- mapM (\p -> SearchGoal ruleName <$> refTerm p) precedent
-      let newGoals = precedentRefs ++ remainingGoals
-      let newState = SearchState newGoals snapshotAfter
-      modify (over (searchCtx . searchQueue) (enqueue newState))
 
 ------------------------------------------------------------
 -- Inspection
