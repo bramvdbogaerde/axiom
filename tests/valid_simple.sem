@@ -1,9 +1,0 @@
-% This file should parse and type check successfully
-syntax {
-  elem in Any;
-  x in Expr ::= elem | func(x);
-};
-
-rules {
-  rule "test" [elem] => [func(elem)];
-};

@@ -93,6 +93,10 @@ withRange f = do
 equals :: Parser ()
 equals = matchToken (\case Equal -> Just (); _ -> Nothing)
 
+-- | Matches with '/='
+notEquals :: Parser ()
+notEquals = matchToken (\case NotEqual -> Just (); _ -> Nothing)
+
 -- | Matches a semicolon
 sem :: Parser ()
 sem = matchToken (\case Sem -> Just (); _ -> Nothing)
@@ -210,6 +214,7 @@ term =  do
 
     -- Terms can still be infix operators (which are predefined)
     ((equals >> (Eqq term0 <$> term <*> endRange pos0)) <?> "equality")
+      <|> ((notEquals >> (Neq term0 <$> term <*> endRange pos0)) <?> "not equal")
       <|> ((leadsto >> (Transition "~>" term0 <$> term <*> endRange pos0)) <?> "transition")
       <|> return term0
 

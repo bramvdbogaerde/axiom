@@ -85,6 +85,9 @@ refTerm term = runStateT (transformTerm term)
     transformTerm (Eqq left right range) =
       Eqq <$> transformTerm left <*> transformTerm right <*> pure range
 
+    transformTerm (Neq left right range) =
+      Neq <$> transformTerm left <*> transformTerm right <*> pure range
+
     transformTerm (Transition transName left right range) =
       Transition transName <$> transformTerm left <*> transformTerm right <*> pure range
 
@@ -121,6 +124,9 @@ pureTerm' term mapping = do
     convertTerm (Eqq left right range) =
       Eqq <$> convertTerm left <*> convertTerm right <*> pure range
 
+    convertTerm (Neq left right range) =
+      Neq <$> convertTerm left <*> convertTerm right <*> pure range
+
     convertTerm (Transition transName left right range) =
       Transition transName <$> convertTerm left <*> convertTerm right <*> pure range
 
@@ -142,6 +148,7 @@ unifyTerms = unifyTermsImpl
     unifyTermsImpl (Atom cell _) functor@(Functor {}) = unifyAtomWithTerm cell functor
     unifyTermsImpl functor@(Functor {}) (Atom cell _) = unifyAtomWithTerm cell functor
     unifyTermsImpl (Eqq l1 r1 _) (Eqq l2 r2 _) = unifyTermsImpl l1 l2 >> unifyTermsImpl r1 r2
+    unifyTermsImpl (Neq l1 r1 _) (Neq l2 r2 _) = unifyTermsImpl l1 l2 >> unifyTermsImpl r1 r2
     unifyTermsImpl (Transition n1 l1 r1 _) (Transition n2 l2 r2 _) =
       if n1 == n2 then unifyTermsImpl l1 l2 >> unifyTermsImpl r1 r2
       else throwError $ "Transition names don't match: " ++ n1 ++ " vs " ++ n2

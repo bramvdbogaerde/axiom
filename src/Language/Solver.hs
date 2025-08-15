@@ -137,6 +137,14 @@ takeSnapshot = liftST ST.snapshot
 restoreSnapshot :: ST.Snapshot s -> Solver q s ()
 restoreSnapshot = liftST . ST.restore
 
+-- | Convert a PureTerm to RefTerm and update the solver's current mapping
+refTerm :: PureTerm -> Solver q s (RefTerm s)
+refTerm term = do
+  mapping <- gets (^. searchCtx . currentMapping)
+  (refTerm, newMapping) <- liftST $ Unification.refTerm term mapping
+  modify (set (searchCtx . currentMapping) newMapping)
+  return refTerm
+
 ------------------------------------------------------------
 -- Core search functions
 ------------------------------------------------------------
@@ -144,8 +152,7 @@ restoreSnapshot = liftST . ST.restore
 -- | Initialize the queue with the query
 initialWL :: Queue q => PureTerm -> Solver q s ()
 initialWL query = do
-  (refQuery, mapping) <- liftST $ Unification.refTerm query Map.empty
-  modify (set (searchCtx . currentMapping) mapping)
+  refQuery <- refTerm query
   initialState <- SearchState [SearchGoal "initial" refQuery] <$> takeSnapshot
   modify (over (searchCtx . searchQueue) (enqueue initialState))
 
@@ -191,7 +198,31 @@ expandGoal (SearchGoal ruleName goal) remainingGoals = do
     Functor name _ _ -> do
       rules <- findMatchingRules name
       mapM_ (processRule goal remainingGoals) rules
-    _ -> return () -- Variables can't be expanded
+    Eqq left right _ -> do
+      -- Equality: try to unify, if it succeeds then = succeeds
+      unifyResult <- liftST $ runExceptT $ Unification.unifyTerms left right
+      case unifyResult of
+        Left _ -> 
+          -- Unification failed, so = fails - this branch is pruned (no new states added)
+          return ()
+        Right _ -> do
+          -- Unification succeeded, so = succeeds - continue with remaining goals
+          snapshot <- takeSnapshot
+          let newState = SearchState remainingGoals snapshot
+          modify (over (searchCtx . searchQueue) (enqueue newState))
+    Neq left right _ -> do
+      -- Negation as failure: try to unify, if it fails then Neq succeeds
+      unifyResult <- liftST $ runExceptT $ Unification.unifyTerms left right
+      case unifyResult of
+        Left _ -> do
+          -- Unification failed, so /= succeeds - continue with remaining goals
+          snapshot <- takeSnapshot
+          let newState = SearchState remainingGoals snapshot
+          modify (over (searchCtx . searchQueue) (enqueue newState))
+        Right _ -> 
+          -- Unification succeeded, so /= fails - this branch is pruned (no new states added)
+          return ()
+    _ -> return () -- Variables and other terms can't be expanded
 
 ------------------------------------------------------------
 -- Rule processing functions
@@ -213,10 +244,8 @@ processRule goal remainingGoals rule = do
 -- | Try to unify goal with a specific consequent
 tryUnifyWithConsequent :: (Queue q) => String -> RefTerm s -> [SearchGoal s] -> [PureTerm] -> PureTerm -> Solver q s ()
 tryUnifyWithConsequent ruleName goal remainingGoals precedent consequent = do
-  mapping <- Solver $ gets (^. searchCtx . currentMapping)
-  result <- liftST $ do
-    (refConsequent, newMapping) <- Unification.refTerm consequent mapping
-    runExceptT $ Unification.unifyTerms goal refConsequent
+  refConsequent <- refTerm consequent
+  result <- liftST $ runExceptT $ Unification.unifyTerms goal refConsequent
 
   case result of
     Left _ -> return () -- Unification failed, ignore this alternative
@@ -224,12 +253,11 @@ tryUnifyWithConsequent ruleName goal remainingGoals precedent consequent = do
       -- Unification succeeded - take snapshot after unification
       snapshotAfter <- takeSnapshot
 
-      -- Add precedents as new goals
-      mapping' <- Solver $ gets (^. searchCtx . currentMapping)
-      precedentRefs <- map (SearchGoal ruleName) <$> liftST (mapM (\p -> fst <$> Unification.refTerm p mapping') precedent)
+      -- Add precedents as new goals using the helper function
+      precedentRefs <- mapM (\p -> SearchGoal ruleName <$> refTerm p) precedent
       let newGoals = precedentRefs ++ remainingGoals
       let newState = SearchState newGoals snapshotAfter
-      Solver $ modify (over (searchCtx . searchQueue) (enqueue newState))
+      modify (over (searchCtx . searchQueue) (enqueue newState))
 
 ------------------------------------------------------------
 -- Inspection

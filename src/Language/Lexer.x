@@ -26,6 +26,7 @@ tokens :-
   "::="                         { mkToken IsDefinedAs }
   "~>"                          { mkToken LeadsTo }
   "=>"                          { mkToken Implies }
+  "/="                          { mkToken NotEqual }
   "="                           { mkToken Equal }
   "rules"                       { mkToken Rules }
   "rule"                        { mkToken Rule }

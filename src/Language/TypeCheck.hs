@@ -349,6 +349,12 @@ checkTerm (Eqq t1 t2 range) = do
   if t1' /= t2'
     then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
     else return t1'
+checkTerm (Neq t1 t2 range) = do
+  t1' <- checkTerm t1
+  t2' <- checkTerm t2
+  if t1' /= t2'
+    then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
+    else return t1'
 checkTerm (Transition transitionName t1 t2 range) =
   -- transitions are registered in the typing context as sorts with a single data constructor
   checkTerm (Functor transitionName [t1, t2] range)

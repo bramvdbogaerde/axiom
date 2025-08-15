@@ -84,10 +84,12 @@ instance Show RuleDecl where
 -- | term \in Term ::= atom
 --                  | atom(term0, term1, ...)
 --                  | term0 = term1
+--                  | term0 /= term1
 --                  | term0 ~> term1
 data Term f  = Atom (f String) Range
              | Functor String [Term f] Range
              | Eqq (Term f) (Term f) Range
+             | Neq (Term f) (Term f) Range
              | Transition String (Term f) (Term f) Range
 
 deriving instance (Ord (f String)) => Ord (Term f)
@@ -99,6 +101,7 @@ instance (Show (f String)) => Show (Term f) where
   show (Functor fname [] _) = fname
   show (Functor fname args _) = fname ++ "(" ++ intercalate ", " (Prelude.map show args) ++ ")"
   show (Eqq left right _) = show left ++ " = " ++ show right
+  show (Neq left right _) = show left ++ " /= " ++ show right
   show (Transition tname left right _) = show left ++ " " ++ tname ++ " " ++ show right
 
 -- | Specialized Show instance for PureTerm that doesn't show Identity wrapper
@@ -107,6 +110,7 @@ instance {-# OVERLAPPING #-} Show PureTerm where
   show (Functor fname [] _) = fname
   show (Functor fname args _) = fname ++ "(" ++ intercalate ", " (Prelude.map show args) ++ ")"
   show (Eqq left right _) = show left ++ " = " ++ show right
+  show (Neq left right _) = show left ++ " /= " ++ show right
   show (Transition tname left right _) = show left ++ " " ++ tname ++ " " ++ show right
 
 type PureTerm = Term Identity
@@ -115,6 +119,7 @@ atomNames :: PureTerm -> Set String
 atomNames = \case Atom a _ -> Set.singleton $ runIdentity a
                   Functor _ ts _ -> foldMap atomNames ts
                   Eqq t1 t2 _ -> atomNames t1 `Set.union` atomNames t2
+                  Neq t1 t2 _ -> atomNames t1 `Set.union` atomNames t2
                   Transition _ t1 t2 _ -> atomNames t1 `Set.union` atomNames t2
 
 
@@ -123,6 +128,7 @@ atomNames = \case Atom a _ -> Set.singleton $ runIdentity a
 functorName :: PureTerm -> Maybe String
 functorName = \case Functor nam _ _ -> Just nam
                     Eqq {} -> Just "="
+                    Neq {} -> Just "/="
                     Transition {} -> Just "~>"
                     _ -> Nothing
 
@@ -130,6 +136,7 @@ instance RangeOf (Term f) where
   rangeOf = \case Atom _ r -> r
                   Functor _ _ r -> r
                   Eqq _ _ r -> r
+                  Neq _ _ r -> r
                   Transition _ _ _  r -> r
 
 -- | Extract the name of the variable from variables suffixed with numbers
@@ -144,11 +151,13 @@ termEqIgnoreRange (Functor name1 args1 _) (Functor name2 args2 _) =
   name1 == name2 && length args1 == length args2 && all (uncurry termEqIgnoreRange) (zip args1 args2)
 termEqIgnoreRange (Eqq l1 r1 _) (Eqq l2 r2 _) =
   termEqIgnoreRange l1 l2 && termEqIgnoreRange r1 r2
+termEqIgnoreRange (Neq l1 r1 _) (Neq l2 r2 _) =
+  termEqIgnoreRange l1 l2 && termEqIgnoreRange r1 r2
 termEqIgnoreRange (Transition n1 l1 r1 _) (Transition n2 l2 r2 _) =
   n1 == n2 && termEqIgnoreRange l1 l2 && termEqIgnoreRange r1 r2
 termEqIgnoreRange _ _ = False
 
 -- | Allowed infix names that can be used in a term
 infixNames :: [String]
-infixNames = [ "=", "~>"]
+infixNames = [ "=", "/=", "~>"]
 
