@@ -9,6 +9,7 @@
 "::=" @operator
 "=>" @operator
 "=" @operator
+"/=" @operator
 "~>" @operator
 "|" @operator
 
@@ -26,7 +27,14 @@
 (string) @string
 
 ; Comments
-(comment) @comment
+(regular_comment) @comment
+
+; Test comments - highlight the prefix and terms separately
+(test_comment 
+  "%test:" @comment.special) 
+
+; Terms in test comments should be highlighted normally
+(test_comment (term) @none)
 
 ; Function calls (functors) - highlight the function name first
 (functor (identifier) @function)

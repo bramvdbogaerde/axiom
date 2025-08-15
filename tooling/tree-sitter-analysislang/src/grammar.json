@@ -5,15 +5,24 @@
     "source_file": {
       "type": "REPEAT",
       "content": {
-        "type": "SEQ",
+        "type": "CHOICE",
         "members": [
           {
-            "type": "SYMBOL",
-            "name": "declaration"
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "declaration"
+              },
+              {
+                "type": "STRING",
+                "value": ";"
+              }
+            ]
           },
           {
-            "type": "STRING",
-            "value": ";"
+            "type": "SYMBOL",
+            "name": "test_comment"
           }
         ]
       }
@@ -363,6 +372,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "inequality"
+        },
+        {
+          "type": "SYMBOL",
           "name": "transition_term"
         },
         {
@@ -459,6 +472,27 @@
         ]
       }
     },
+    "inequality": {
+      "type": "PREC_LEFT",
+      "value": 1,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "SYMBOL",
+            "name": "primary_term"
+          },
+          {
+            "type": "STRING",
+            "value": "/="
+          },
+          {
+            "type": "SYMBOL",
+            "name": "term"
+          }
+        ]
+      }
+    },
     "transition_term": {
       "type": "PREC_LEFT",
       "value": 2,
@@ -480,20 +514,41 @@
         ]
       }
     },
-    "comment": {
-      "type": "TOKEN",
+    "test_comment": {
+      "type": "PREC",
+      "value": 1,
       "content": {
         "type": "SEQ",
         "members": [
           {
             "type": "STRING",
-            "value": "%"
+            "value": "%test:"
           },
           {
-            "type": "PATTERN",
-            "value": ".*"
+            "type": "SYMBOL",
+            "name": "term"
           }
         ]
+      }
+    },
+    "regular_comment": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": -1,
+        "content": {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "%"
+            },
+            {
+              "type": "PATTERN",
+              "value": ".*"
+            }
+          ]
+        }
       }
     },
     "identifier": {
@@ -512,7 +567,7 @@
     },
     {
       "type": "SYMBOL",
-      "name": "comment"
+      "name": "regular_comment"
     }
   ],
   "conflicts": [],

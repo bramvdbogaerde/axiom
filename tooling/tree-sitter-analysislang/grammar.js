@@ -12,11 +12,14 @@ module.exports = grammar({
 
   extras: $ => [
     /\s/,
-    $.comment
+    $.regular_comment
   ],
 
   rules: {
-    source_file: $ => repeat(seq($.declaration, ';')),
+    source_file: $ => repeat(choice(
+      seq($.declaration, ';'),
+      $.test_comment
+    )),
 
     declaration: $ => choice(
       $.syntax_block,
@@ -89,10 +92,11 @@ module.exports = grammar({
       $.term
     ),
 
-    // Terms can be atoms, functors, equalities, or transitions
+    // Terms can be atoms, functors, equalities, inequalities, or transitions
     // Using precedence to handle operator precedence correctly
     term: $ => choice(
       $.equality,
+      $.inequality,
       $.transition_term,
       $.primary_term
     ),
@@ -117,14 +121,26 @@ module.exports = grammar({
       $.term
     )),
 
+    inequality: $ => prec.left(1, seq(
+      $.primary_term,
+      '/=',
+      $.term
+    )),
+
     transition_term: $ => prec.left(2, seq(
       $.primary_term,
       '~>',
       $.term
     )),
 
-    // Comments start with % and continue to end of line
-    comment: $ => token(seq('%', /.*/)),
+    // Test comments: %test: <term>
+    test_comment: $ => prec(1, seq(
+      '%test:',
+      $.term
+    )),
+
+    // Regular comments start with % and continue to end of line
+    regular_comment: $ => token(prec(-1, seq('%', /.*/))),
 
     // Identifiers
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
