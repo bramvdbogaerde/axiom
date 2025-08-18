@@ -6,13 +6,13 @@ module LanguageServer
   ( runLanguageServer
   ) where
 
-import Language.Parser (parseProgram)
+import Language.Parser ( parseProgram, Error(parseErrorPosition) )
 import Language.TypeCheck (runChecker)
 import qualified Language.AST
 import LanguageServer.Diagnostics (errorToDiagnostic, rangeToDiagnosticRange)
 import LanguageServer.Symbols (extractDocumentSymbols, findDefinition)
 
-import Language.LSP.Protocol.Message hiding (_code, _message)
+import Language.LSP.Protocol.Message hiding (ResponseError(..), TResponseError(..))
 import qualified Language.LSP.Protocol.Message as Messag
 import Language.LSP.Protocol.Types (Position(..), Location, Uri(..), DocumentSymbol, Diagnostic (..), Range(..), DiagnosticSeverity (DiagnosticSeverity_Error), toNormalizedUri, fromNormalizedUri, type (|?) (InL), TextDocumentSyncOptions (..), TextDocumentSyncKind (TextDocumentSyncKind_Full))
 import Language.LSP.Server
@@ -27,7 +27,6 @@ import Language.LSP.Protocol.Lens hiding (publishDiagnostics, options)
 import Language.LSP.Diagnostics (partitionBySource)
 import Control.Lens ((^.))
 import System.IO
-import Language.Parser (Error(parseErrorPosition))
 import qualified Language.AST as AST
 
 -------------------------------------------------------------
@@ -59,7 +58,7 @@ runLanguageServer = runServer $ ServerDefinition
 handlers :: Handlers (LspM ())
 handlers = mconcat
   [ notificationHandler SMethod_Initialized $ \msg -> return (),
-  
+
     -- Handle document open/change events for diagnostics
     notificationHandler SMethod_TextDocumentDidOpen $ \msg -> do
       liftIO (hPutStrLn stderr "documented opened")

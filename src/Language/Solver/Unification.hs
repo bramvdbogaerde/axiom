@@ -70,26 +70,26 @@ refTerm ::  PureTerm -> VariableMapping s -> BST.ST s (RefTerm s, VariableMappin
 refTerm term = runStateT (transformTerm term)
   where
     transformTerm :: PureTerm -> StateT (VariableMapping s) (BST.ST s) (RefTerm s)
-    transformTerm (Atom (Identity varName) range) =
-      maybe createNewCell (return . flip Atom range) =<< gets (Map.lookup varName)
+    transformTerm (Atom (Identity varName) tpy range) =
+      maybe createNewCell (return . (\c -> Atom c tpy range)) =<< gets (Map.lookup varName)
       where
         createNewCell = do
           cellRef <- lift $ BST.newSTRef (Uninitialized varName)
           let cell = Ref cellRef
           modify (Map.insert varName cell)
-          return $ Atom cell range
+          return $ Atom cell tpy range
 
-    transformTerm (Functor name subterms range) =
-      Functor name <$> mapM transformTerm subterms <*> pure range
+    transformTerm (Functor name subterms tpy range) =
+      Functor name <$> mapM transformTerm subterms <*> pure tpy <*> pure range
 
-    transformTerm (Eqq left right range) =
-      Eqq <$> transformTerm left <*> transformTerm right <*> pure range
+    transformTerm (Eqq left right tpy range) =
+      Eqq <$> transformTerm left <*> transformTerm right <*> pure tpy <*> pure range
 
-    transformTerm (Neq left right range) =
-      Neq <$> transformTerm left <*> transformTerm right <*> pure range
+    transformTerm (Neq left right tpy range) =
+      Neq <$> transformTerm left <*> transformTerm right <*> pure tpy <*> pure range
 
-    transformTerm (Transition transName left right range) =
-      Transition transName <$> transformTerm left <*> transformTerm right <*> pure range
+    transformTerm (Transition transName left right tpy range) =
+      Transition transName <$> transformTerm left <*> transformTerm right <*> pure tpy <*> pure range
 
 -- | Visited list abstraction for cycle detection
 type VisitedList s = [BST.STRef s (CellValue s String)]
@@ -109,26 +109,26 @@ pureTerm' term mapping = do
   runExceptT $ evalStateT (convertTerm term) []
   where
     convertTerm :: RefTerm s -> StateT (VisitedList s) (ExceptT String (BST.ST s)) PureTerm
-    convertTerm (Atom (Ref cellRef) range) =
+    convertTerm (Atom (Ref cellRef) tpy range) =
       lift (lift $ BST.readSTRef cellRef) >>= \case
         Value term ->
           ifM (get >>= lift . lift . isVisited cellRef)
               (lift $ throwError "Cycle detected during term conversion")
               (modify (addVisited cellRef) >> convertTerm term)
-        Uninitialized varName -> return $ Atom (Identity varName) range
+        Uninitialized varName -> return $ Atom (Identity varName) tpy range
         Ptr _ -> error "Unreachable: flattenMapping should have eliminated all Ptr cases"
 
-    convertTerm (Functor name subterms range) =
-      Functor name <$> mapM convertTerm subterms <*> pure range
+    convertTerm (Functor name subterms tpy range) =
+      Functor name <$> mapM convertTerm subterms <*> pure tpy <*> pure range
 
-    convertTerm (Eqq left right range) =
-      Eqq <$> convertTerm left <*> convertTerm right <*> pure range
+    convertTerm (Eqq left right tpy range) =
+      Eqq <$> convertTerm left <*> convertTerm right <*> pure tpy <*> pure range
 
-    convertTerm (Neq left right range) =
-      Neq <$> convertTerm left <*> convertTerm right <*> pure range
+    convertTerm (Neq left right tpy range) =
+      Neq <$> convertTerm left <*> convertTerm right <*> pure tpy <*> pure range
 
-    convertTerm (Transition transName left right range) =
-      Transition transName <$> convertTerm left <*> convertTerm right <*> pure range
+    convertTerm (Transition transName left right tpy range) =
+      Transition transName <$> convertTerm left <*> convertTerm right <*> pure tpy <*> pure range
 
 -- | Same as pureTerm' but raises an error if the term could not be converted
 pureTerm :: RefTerm s -> VariableMapping s -> BST.ST s PureTerm
@@ -143,13 +143,13 @@ unifyTerms :: RefTerm s -> RefTerm s -> ExceptT String (BST.ST s) ()
 unifyTerms = unifyTermsImpl
   where
     unifyTermsImpl :: RefTerm s-> RefTerm s -> ExceptT String (BST.ST s) ()
-    unifyTermsImpl (Atom cell1 _) (Atom cell2 _) = unifyAtoms cell1 cell2
-    unifyTermsImpl (Functor name1 args1 _) (Functor name2 args2 _) = unifyFunctors name1 args1 name2 args2
-    unifyTermsImpl (Atom cell _) functor@(Functor {}) = unifyAtomWithTerm cell functor
-    unifyTermsImpl functor@(Functor {}) (Atom cell _) = unifyAtomWithTerm cell functor
-    unifyTermsImpl (Eqq l1 r1 _) (Eqq l2 r2 _) = unifyTermsImpl l1 l2 >> unifyTermsImpl r1 r2
-    unifyTermsImpl (Neq l1 r1 _) (Neq l2 r2 _) = unifyTermsImpl l1 l2 >> unifyTermsImpl r1 r2
-    unifyTermsImpl (Transition n1 l1 r1 _) (Transition n2 l2 r2 _) =
+    unifyTermsImpl (Atom cell1 _ _) (Atom cell2 _ _) = unifyAtoms cell1 cell2
+    unifyTermsImpl (Functor name1 args1 _ _) (Functor name2 args2 _ _) = unifyFunctors name1 args1 name2 args2
+    unifyTermsImpl (Atom cell _ _) functor@(Functor {}) = unifyAtomWithTerm cell functor
+    unifyTermsImpl functor@(Functor {}) (Atom cell _  _) = unifyAtomWithTerm cell functor
+    unifyTermsImpl (Eqq l1 r1 _ _) (Eqq l2 r2 _ _) = unifyTermsImpl l1 l2 >> unifyTermsImpl r1 r2
+    unifyTermsImpl (Neq l1 r1 _ _) (Neq l2 r2 _ _) = unifyTermsImpl l1 l2 >> unifyTermsImpl r1 r2
+    unifyTermsImpl (Transition n1 l1 r1 _ _) (Transition n2 l2 r2 _ _) =
       if n1 == n2 then unifyTermsImpl l1 l2 >> unifyTermsImpl r1 r2
       else throwError $ "Transition names don't match: " ++ n1 ++ " vs " ++ n2
     unifyTermsImpl t1 t2 = throwError "Cannot unify different term structures"
@@ -202,7 +202,7 @@ unify term1 term2 = do
   -- Attempt unification
   unifyTerms refTerm1 refTerm2
   -- Convert mapping back to pure terms
-  results <- lift $ mapM (\cell -> pureTerm' (Atom cell dummyRange) sharedMapping) sharedMapping
+  results <- lift $ mapM (\cell -> pureTerm' (Atom cell () dummyRange) sharedMapping) sharedMapping
   either throwError return $ sequenceA results
 
 -- | Run unification in the ST monad and return the result

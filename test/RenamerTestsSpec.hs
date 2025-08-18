@@ -15,7 +15,7 @@ spec = do
       let renamedRule = renameRule 0 rule
       
       case renamedRule of
-        RuleDecl _ [] [Atom (Identity renamedVar) _] _ -> do
+        RuleDecl _ [] [Atom (Identity renamedVar) _ _] _ -> do
           renamedVar `shouldBe` "x0"
         _ -> expectationFailure "Unexpected rule structure after renaming"
     
@@ -24,7 +24,7 @@ spec = do
       let renamedRule = renameRule 0 rule
       
       case renamedRule of
-        RuleDecl _ [Atom (Identity renamedX) _] [Atom (Identity renamedY) _] _ -> do
+        RuleDecl _ [Atom (Identity renamedX) _ _] [Atom (Identity renamedY) _ _] _ -> do
           renamedX `shouldBe` "x0"
           renamedY `shouldBe` "y1"
         _ -> expectationFailure "Unexpected rule structure after renaming"
@@ -34,7 +34,7 @@ spec = do
       let renamedRule = renameRule 0 rule
       
       case renamedRule of
-        RuleDecl _ [Functor "f" [Atom (Identity renamedX1) _, Atom (Identity renamedY) _] _] [Atom (Identity renamedX2) _] _ -> do
+        RuleDecl _ [Functor "f" [Atom (Identity renamedX1) _ _, Atom (Identity renamedY) _ _] _ _] [Atom (Identity renamedX2) _ _] _ -> do
           renamedX1 `shouldBe` "x0"
           renamedX2 `shouldBe` "x0"  -- Same variable should be consistently renamed
           renamedY `shouldBe` "y1"
@@ -45,7 +45,7 @@ spec = do
       let renamedRule = renameRule 0 rule
       
       case renamedRule of
-        RuleDecl _ [Eqq (Atom (Identity renamedX) _) (Atom (Identity renamedY) _) _] [] _ -> do
+        RuleDecl _ [Eqq (Atom (Identity renamedX) _ _) (Atom (Identity renamedY) _ _) _ _] [] _ -> do
           renamedX `shouldBe` "x0"
           renamedY `shouldBe` "y1"
         _ -> expectationFailure "Unexpected rule structure after renaming"
@@ -55,7 +55,7 @@ spec = do
       let renamedRule = renameRule 0 rule
       
       case renamedRule of
-        RuleDecl _ [Transition _ (Atom (Identity renamedX) _) (Atom (Identity renamedY) _) _] [] _ -> do
+        RuleDecl _ [Transition _ (Atom (Identity renamedX) _ _) (Atom (Identity renamedY) _ _) _ _] [] _ -> do
           renamedX `shouldBe` "x0"
           renamedY `shouldBe` "y1"
         _ -> expectationFailure "Unexpected rule structure after renaming"
@@ -65,7 +65,7 @@ spec = do
       let renamedRule = renameRule 0 rule
       
       case renamedRule of
-        RuleDecl _ [Functor "f" [Atom (Identity renamedX1) _] _, Functor "g" [Atom (Identity renamedX2) _] _] [] _ -> do
+        RuleDecl _ [Functor "f" [Atom (Identity renamedX1) _ _] _ _, Functor "g" [Atom (Identity renamedX2) _ _] _ _] [] _ -> do
           renamedX1 `shouldBe` "x0"
           renamedX2 `shouldBe` "x0"  -- Same variable should be consistently renamed
         _ -> expectationFailure "Unexpected rule structure after renaming"

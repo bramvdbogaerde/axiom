@@ -214,16 +214,16 @@ term :: Parser PureTerm
 term = do
     pos0 <- position
     -- Parse either a Haskell expression or a regular identifier-based term
-    term0 <- (withRange (HaskellExpr <$> haskellExpr) <?> "haskell expression") <|> do
+    term0 <- (withRange (HaskellExpr <$> haskellExpr <*> pure ()) <?> "haskell expression") <|> do
       typeOrFunctor <- ident <?> "identifier"
       -- Terms are functors or atoms
-      (((parens (Functor typeOrFunctor <$> withComments (sepBy (surroundedByComments term) (withComments com) <?> "comma-separated terms") <?> "functor arguments") <?> "functor application")
-            <|> return (Atom (Identity typeOrFunctor))) <*> endRange pos0) <?> "identifier-based term"
+      (((parens (Functor typeOrFunctor <$> withComments (sepBy (surroundedByComments term) (withComments com)) <*> pure ()) <?> "functor application")
+            <|> return (Atom (Identity typeOrFunctor) ())) <*> endRange pos0) <?> "identifier-based term"
 
     -- Terms can still be infix operators (which are predefined)
-    ((equals >> (Eqq term0 <$> term <*> endRange pos0)) <?> "equality")
-      <|> ((notEquals >> (Neq term0 <$> term <*> endRange pos0)) <?> "not equal")
-      <|> ((leadsto >> (Transition "~>" term0 <$> term <*> endRange pos0)) <?> "transition")
+    ((equals >> (Eqq term0 <$> term <*> pure () <*> endRange pos0)) <?> "equality")
+      <|> ((notEquals >> (Neq term0 <$> term <*> pure () <*> endRange pos0)) <?> "not equal")
+      <|> ((leadsto >> (Transition "~>" term0 <$> term <*> pure () <*> endRange pos0)) <?> "transition")
       <|> return term0
 
 -- | Parses a sequence of terms separated (and ended) by the given parser, allowing comments

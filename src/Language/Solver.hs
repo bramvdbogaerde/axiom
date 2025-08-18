@@ -165,7 +165,7 @@ solveSingle = do
         [] -> do
           -- No goals left - we have a solution
           mapping <- gets (^. searchCtx . currentMapping)
-          result <- liftST $ mapM (\cell -> Unification.pureTerm (Atom cell dummyRange) mapping) mapping
+          result <- liftST $ mapM (\cell -> Unification.pureTerm (Atom cell () dummyRange) mapping) mapping
           return $ Just (Left result)
         (goal:remainingGoals) -> do
           expandGoal goal remainingGoals
@@ -192,19 +192,19 @@ expandGoal (SearchGoal ruleName goal) remainingGoals = do
   case goal of
     -- Functors: look for rules with the name of the functor in its
     -- conclusion, add that rule as a goal to the context.
-    Functor name _ _ -> do
+    Functor name _ _ _ -> do
       rules <- findMatchingRules name
       mapM_ (processRule goal remainingGoals) rules
     
-    Transition nam from to s -> do
+    Transition nam from to _ s -> do
       -- Transitions: look for rules with the transition name in the conclusion
       rules <- findMatchingRules nam
       mapM_ (processRule goal remainingGoals) rules
     
-    Eqq left right _ -> do
+    Eqq left right _ _ -> do
       -- Equality: try to unify, if it succeeds then = succeeds
       either (const $ return ()) (const $ continue remainingGoals) =<< unify left right
-    Neq left right _ -> do
+    Neq left right _ _ -> do
       -- Inequality: fail if unifies, otherwise succeed
       either (const $ continue remainingGoals) (const $ return ()) =<< unify left right
     _ -> return () -- Variables and other terms can't be expanded
@@ -230,7 +230,7 @@ processRule goal remainingGoals rule = do
       precedentRefs <- mapM refTerm precedents
 
       -- Create unification goal: current goal = consequent
-      let unificationGoal = SearchGoal ruleName (Eqq goal refConsequent dummyRange)
+      let unificationGoal = SearchGoal ruleName (Eqq goal refConsequent () dummyRange)
       let precedentGoals = map (SearchGoal ruleName) precedentRefs
       let newGoals = unificationGoal : precedentGoals ++ remainingGoals
 

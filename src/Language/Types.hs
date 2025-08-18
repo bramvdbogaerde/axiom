@@ -6,6 +6,7 @@ import Language.Haskell.TH.Syntax
 data Typ = Sort String -- ^ a user-defined (or system) sort
          | IntType     -- ^ values are strings 
          | StrType     -- ^ values are integers
+         | AnyType
         deriving (Ord, Eq, Show)        
 
 

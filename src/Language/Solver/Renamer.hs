@@ -52,12 +52,12 @@ runRenamer freshCtr' m = runIdentity (second _freshCtr <$> runStateT m (emptyCtx
 
 -- | Rename all variables in a term using fresh names
 renameTerm :: MonadRename m => PureTerm -> m PureTerm
-renameTerm (Atom (Identity varName) range) = Atom . Identity <$> freshName varName <*> pure range
-renameTerm (Functor name subterms range) = Functor name <$> mapM renameTerm subterms <*> pure range
-renameTerm (Neq left right range) = Neq <$> renameTerm left <*> renameTerm right <*> pure range
-renameTerm (Eqq left right range) = Eqq <$> renameTerm left <*> renameTerm right <*> pure range
-renameTerm (Transition transName left right range) =
-    Transition transName <$> renameTerm left <*> renameTerm right <*> pure range
+renameTerm (Atom (Identity varName) tpy range) = Atom . Identity <$> freshName varName <*> pure tpy <*> pure range
+renameTerm (Functor name subterms tpy range) = Functor name <$> mapM renameTerm subterms <*> pure tpy <*> pure range
+renameTerm (Neq left right tpy range) = Neq <$> renameTerm left <*> renameTerm right <*> pure tpy <*> pure range
+renameTerm (Eqq left right tpy range) = Eqq <$> renameTerm left <*> renameTerm right <*> pure tpy <*> pure range
+renameTerm (Transition transName left right tpy range) =
+    Transition transName <$> renameTerm left <*> renameTerm right <*> pure tpy <*> pure range
 
 -- | Rename all variables in a list of terms
 renameTerms :: MonadRename m => [PureTerm] -> m [PureTerm]

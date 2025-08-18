@@ -135,7 +135,7 @@ getCurrentPartialMapping :: TracedSolver q s (Map String PureTerm)
 getCurrentPartialMapping = do
   context <- ask
   mapping <- liftSolver $ gets (^. searchCtx . currentMapping)
-  fullMapping <- liftSolver $ liftST $ mapM (\cell -> Unification.pureTerm (Atom cell dummyRange) mapping) mapping
+  fullMapping <- liftSolver $ liftST $ mapM (\cell -> Unification.pureTerm (Atom cell () dummyRange) mapping) mapping
   return $ if context ^. debugConfig . configShowInternalVars
     then fullMapping
     else Map.restrictKeys fullMapping (context ^. userVariables)

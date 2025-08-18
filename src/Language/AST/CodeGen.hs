@@ -53,20 +53,20 @@ ruleDeclToExp (RuleDecl name precedent consequent range) =
 
 pureTermToExp :: PureTerm -> Q Exp
 pureTermToExp = \case
-  Atom (Identity name) range -> 
-    [| Atom (Identity $(lift name)) $(rangeToExp range) |]
+  Atom (Identity name) tpy range -> 
+    [| Atom (Identity $(lift name)) $(lift tpy) $(rangeToExp range) |]
   
-  Functor fname args range -> 
-    [| Functor $(lift fname) $(listE (map pureTermToExp args)) $(rangeToExp range) |]
+  Functor fname args tpy range -> 
+    [| Functor $(lift fname) $(listE (map pureTermToExp args)) $(lift tpy) $(rangeToExp range) |]
   
-  Eqq left right range -> 
-    [| Eqq $(pureTermToExp left) $(pureTermToExp right) $(rangeToExp range) |]
+  Eqq left right tpy range -> 
+    [| Eqq $(pureTermToExp left) $(pureTermToExp right) $(lift tpy) $(rangeToExp range) |]
   
-  Neq left right range -> 
-    [| Neq $(pureTermToExp left) $(pureTermToExp right) $(rangeToExp range) |]
+  Neq left right tpy range -> 
+    [| Neq $(pureTermToExp left) $(pureTermToExp right) $(lift tpy)  $(rangeToExp range) |]
   
-  Transition tname left right range -> 
-    [| Transition $(lift tname) $(pureTermToExp left) $(pureTermToExp right) $(rangeToExp range) |]
+  Transition tname left right tpy range -> 
+    [| Transition $(lift tname) $(pureTermToExp left) $(pureTermToExp right) $(lift tpy) $(rangeToExp range) |]
 
 rangeToExp :: Range -> Q Exp
 rangeToExp (Range (Position line1 col1 fname1) (Position line2 col2 fname2)) =

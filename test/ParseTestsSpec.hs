@@ -15,7 +15,7 @@ spec = do
       it "extracts functor names from Atom" $ do
         term <- parseTermHelper "x"
         case term of
-          Atom (Identity name) _ -> atomNames term `shouldBe` Set.singleton name
+          Atom (Identity name) _ _ -> atomNames term `shouldBe` Set.singleton name
           _ -> expectationFailure "Expected Atom term"
       
       it "extracts functor names from Functor" $ do

@@ -66,6 +66,9 @@ instance HasSorts DataCtor where
   getSorts (DataAtom s) = [s]
   getSorts (DataTagged _ ss) = ss
 
+mkSort :: SortName -> Typ
+mkSort = Sort . getSortName
+
 -----------------------------------------
 -- Environment
 -----------------------------------------
@@ -106,6 +109,10 @@ typesAs k s =
 -- | Create an empty typing context
 emptyTypingContext :: Gamma
 emptyTypingContext = Gamma Map.empty
+
+-- | Change an untyped pure term to a typed pure term
+-- typeTerm :: Typ -> PureTerm -> TypedTerm
+-- typeTerm tpy = \case Atom  
 
 -----------------------------------------
 -- Subtyping relation
@@ -288,15 +295,15 @@ pass0 (Program decls _) = mapM_ pass0VisitDecl decls
 -- | Process and associate the data constructors in the given sort
 pass1VisitCtor :: MonadCheck m => SortName -> PureTerm -> m ()
 pass1VisitCtor sortName = \case
-  (Atom nam range) -> do
+  (Atom nam _ range) -> do
     sort <- lookupSort (Just range) (runIdentity nam)
     subtyped sort sortName
-  (Functor nam ts range) -> do
+  (Functor nam ts _ range) -> do
     sorts <- mapM (\t -> collectAtoms t >>= lookupSort (Just (rangeOf t))) ts
     let ctor = DataTagged nam sorts
     typeAsUnique ctor sortName nam
   where
-    collectAtoms (Atom nam _) = return (runIdentity nam)
+    collectAtoms (Atom nam _ _) = return (runIdentity nam)
     collectAtoms t = throwErrorAt (rangeOf t) $ NoNestingAt sortName
 
 pass1VisitDecl :: MonadCheck m => Decl -> m ()
@@ -322,16 +329,18 @@ pass1 (Program decls _) = mapM_ pass1VisitDecl decls
 -- are actually defined in its head.
 
 -- | Check an individual term and returns its sort
-checkTerm :: MonadCheck m => PureTerm -> m SortName
-checkTerm (Atom nam range) = do
+checkTerm :: MonadCheck m => PureTerm -> m (TypedTerm, SortName)
+checkTerm (Atom nam _ range) = do
   let varName = variableName (runIdentity nam)
   -- Check that the atom is not associated with a functor (DataTagged constructor)
   ctor <- lookupCtor (Just range) varName
   case ctor of
     DataTagged _ _ -> throwErrorAt range (NameNotDefined varName) -- Should be used as functor, not atom
-    DataAtom _ -> lookupSort (Just range) varName
-checkTerm (Functor tpy ts range) = do
-  ts' <- mapM checkTerm ts
+    DataAtom _ -> do
+      sort <- lookupSort (Just range) varName
+      return (Atom nam (mkSort sort) range, sort)
+checkTerm (Functor tpy terms _ range) = do
+  (terms', ts') <- mapAndUnzipM checkTerm terms
   -- Check if functor is defined and get its arity from the constructor
   ctor <- lookupCtor (Just range) tpy
   let expected = getSorts ctor
@@ -342,23 +351,29 @@ checkTerm (Functor tpy ts range) = do
     else do
       ok <- and <$> zipWithM subtypeOf ts' expected
       if ok
-        then return functorSort
+        then return (Functor tpy terms' (mkSort functorSort) range, functorSort)
         else throwErrorAt range $ IncompatibleTypes expected ts'
-checkTerm (Eqq t1 t2 range) = do
-  t1' <- checkTerm t1
-  t2' <- checkTerm t2
+checkTerm (Eqq term1 term2 _ range) = do
+  (term1', t1') <- checkTerm term1
+  (term2', t2') <- checkTerm term2
   if t1' /= t2'
     then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
-    else return t1'
-checkTerm (Neq t1 t2 range) = do
-  t1' <- checkTerm t1
-  t2' <- checkTerm t2
+    else return (Eqq term1' term2' (mkSort t1') range, t1')
+checkTerm (Neq term1 term2 _ range) = do
+  (term1', t1') <- checkTerm term1
+  (term2', t2') <- checkTerm term2
   if t1' /= t2'
     then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
-    else return t1'
-checkTerm (Transition transitionName t1 t2 range) =
+    else return (Neq term1' term2' (mkSort t1') range, t1')
+checkTerm (Transition transitionName t1 t2 tpy range) = do
   -- transitions are registered in the typing context as sorts with a single data constructor
-  checkTerm (Functor transitionName [t1, t2] range)
+  -- NOTE: the assumption is that checkTerm always returns a functor of the same shape, hence the pattern match on the lines below never fails.
+  term <- checkTerm (Functor transitionName [t1, t2] tpy range)
+  let (Functor nam [term1', term2'] t range, sortname) = term
+  return (Transition nam term1' term2' t range, sortname)
+
+checkTerm_ :: MonadCheck m => PureTerm -> m SortName
+checkTerm_ = fmap snd . checkTerm
 
 -- | Generic widening function that works with any type that has SubtypeOf and HasSorts instances
 widenType :: (SubtypeOf s, HasSorts s, MonadCheck m) => Range -> s -> s -> m s
@@ -392,8 +407,8 @@ updateOrWidenSort nam newSort range = do
 
 pass2VisitDecl :: MonadCheck m => Decl -> m ()
 pass2VisitDecl (Rewrite (RewriteDecl nam args bdy range) _) = do
-  sorts <- mapM checkTerm args
-  bdySort <- checkTerm bdy
+  sorts <- mapM checkTerm_ args
+  bdySort <- checkTerm_ bdy
   let ctor = DataTagged nam sorts
   -- Update or widen the constructor for the rewrite rule head
   updateOrWidenCtor nam ctor range
@@ -416,16 +431,30 @@ assertSortDefinedAt range sortName =
       (throwErrorAt range (SortNotDefined sortName))
 
 -- | Check a rule in the given context
-checkRule :: MonadCheck m => RuleDecl -> m ()
-checkRule (RuleDecl nam precedent consequent _) = do
-  mapM_ checkTerm (precedent ++ consequent)
+checkRule :: MonadCheck m => RuleDecl -> m TypedRuleDecl
+checkRule (RuleDecl nam precedent consequent range) = do
+  RuleDecl nam <$> mapM (fmap fst . checkTerm) precedent <*> mapM (fmap fst . checkTerm) consequent <*> pure range
 
-pass3VisitDecl :: MonadCheck m => Decl -> m ()
-pass3VisitDecl (RulesDecl rules _) = mapM_ checkRule rules
-pass3VisitDecl (TransitionDecl _ (Sort fromSort, r1) (Sort toSort, r2) range) = do
+-- | Type a rewrite rule
+typeRewrite :: MonadCheck m => RewriteDecl -> m TypedRewriteDecl
+typeRewrite = undefined
+
+typeSyntax :: MonadCheck m => SyntaxDecl -> m TypedSyntaxDecl
+typeSyntax = undefined
+
+pass3VisitDecl :: MonadCheck m => Decl -> m TypedDecl
+pass3VisitDecl (RulesDecl rules range) =
+  RulesDecl <$> mapM checkRule rules <*> pure range
+pass3VisitDecl t@(TransitionDecl nam s1@(Sort fromSort, r1) s2@(Sort toSort, r2) range) = do
   assertSortDefinedAt r1 fromSort
   assertSortDefinedAt r2 toSort
-pass3VisitDecl _ = return ()
+  return (TransitionDecl nam s1 s2 range)
+pass3VisitDecl (Rewrite rewrite range) =
+  -- TODO: after the type checking phase we should
+  -- actually also annotate the rewrite rules.
+  Rewrite <$> pure rewrite <*> pure range
+pass3VisitDecl (Syntax syntax range) =
+  Syntax <$> mapM return syntax <*> pure range
 
 pass3 :: MonadCheck m => Program -> m ()
 pass3 (Program decls _) = mapM_ pass3VisitDecl decls
