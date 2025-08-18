@@ -27,9 +27,10 @@ rules {
 	[ member(elem, cons(elem, l)) ];
 
 	rule "Member-NonMatch"
-	[ member(elem, l) ; elem1 /= elem2 ] =>
+	[ member(elem, l) ; elem /= elem2 ] =>
 	[ member(elem, cons(elem2, l)) ];
  };
 
 %test: append(cons(a(), cons(b(), nil())) , cons(b(), cons(c(), nil())), cons(a(), cons(b(), cons(b(), cons(c(), nil())))))
 %test: member(a(), cons(a(), cons(b(), nil())))
+%test: member(b(), cons(a(), cons(b(), nil())))

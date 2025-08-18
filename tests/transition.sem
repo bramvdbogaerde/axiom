@@ -1,0 +1,39 @@
+%% This file tests the transition term functionality in the solver.
+%% Transitions should be treated like functors with two arguments.
+
+syntax {
+	% States
+	state in State ::= start() | step1() | step2() | end() | loop() | ready() | active() | done();
+};
+
+transition State ~> State;
+
+rules {
+	rule "Start-To-Step1"
+	[ ] =>
+	[ start() ~> step1() ];
+
+	rule "Step1-To-Step2"
+	[ ] =>
+	[ step1() ~> step2() ];
+
+	rule "Step2-To-End"
+	[ ] =>
+	[ step2() ~> end() ];
+	
+	rule "Self-Loop"
+	[ ] =>
+	[ loop() ~> loop() ];
+
+	rule "Transitivity"
+	[ state0 /= state2 ; state0 ~> state1 ; state1 ~> state2 ] =>
+	[ state0 ~> state2 ];
+};
+
+%test: start() ~> step1()
+%test: step1() ~> step2()  
+%test: step2() ~> end()
+%test: loop() ~> loop()
+%test: start() ~> step2()
+%test: step1() ~> end()
+%test: start() ~> end()

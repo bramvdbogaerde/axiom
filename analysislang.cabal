@@ -11,15 +11,19 @@ library
                  lens,
                  regex-compat,
                  array,
-                 extra
-  build-tools: alex
+                 extra,
+                 template-haskell
+  build-tools: alex, happy
   exposed-modules:  Language.AST
+                  , Language.AST.CodeGen
                   , Language.Parser
+                  , Language.ParserNext
                   , Language.TypeCheck
                   , Language.Solver
                   , Language.Solver.Unification
                   , Language.Solver.Renamer
                   , Language.Solver.BacktrackingST
+                  , Language.Solver.Worklist
                   , Language.Range
                   , Language.Lexer
   other-modules:   Language.Lexer.Token

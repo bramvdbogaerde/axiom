@@ -23,6 +23,7 @@ tokens :-
 
   $white+                       ;
   "%".*                         { mkTokenWith (\s -> Comment (drop 1 s)) } -- comments
+  "${[^}]*}"                    { mkTokenWith (\s -> HaskellExpr (init (tail (tail s)))) } -- Haskell expressions
   "::="                         { mkToken IsDefinedAs }
   "~>"                          { mkToken LeadsTo }
   "=>"                          { mkToken Implies }

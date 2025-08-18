@@ -4,8 +4,9 @@ module Language.Parser(parseProgram, parseTerm, parseRule, Error(..)) where
 
 import Prelude hiding (lex)
 
-import Language.Lexer
-import Language.Lexer.Token
+import Language.Lexer hiding (HaskellExpr)
+import Language.Lexer.Token hiding (HaskellExpr)
+import qualified Language.Lexer.Token as Token
 import Language.AST
 import Language.Range
 import Data.Functor.Identity
@@ -24,7 +25,6 @@ import Text.Parsec
       errorPos )
 import Control.Monad.Except
 import Data.Maybe
-import Data.Functor.Identity
 import Text.Parsec.Error (ParseError)
 import Text.Parsec.Pos (newPos)
 import Data.Bifunctor
@@ -148,6 +148,10 @@ identWithRange = do
   end <- position
   return (x, Range start end)
 
+-- | Matches a Haskell expression token
+haskellExpr :: Parser String
+haskellExpr = matchToken (\case Token.HaskellExpr s -> Just s; _ -> Nothing)
+
 -- | Matches with a defined as token
 definedAs :: Parser ()
 definedAs = matchToken (\case IsDefinedAs -> Just (); _ -> Nothing)
@@ -205,12 +209,14 @@ implies = matchToken (\case Implies -> Just (); _ -> Nothing)
 
 -- | Parses a term or pattern
 term :: Parser PureTerm
-term =  do
+term = do
     pos0 <- position
-    typeOrFunctor <- ident <?> "identifier"
-    -- Terms are functors or atoms
-    term0 <- (((parens (Functor typeOrFunctor <$> (withComments ((sepBy (surroundedByComments term) (withComments com)) <?> "comma-separated terms")) <?> "functor arguments") <?> "functor application")
-          <|> return (Atom (Identity typeOrFunctor))) <*> endRange pos0) <?> "term"
+    -- Parse either a Haskell expression or a regular identifier-based term
+    term0 <- ((withRange (HaskellExpr <$> haskellExpr)) <?> "haskell expression") <|> do
+      typeOrFunctor <- ident <?> "identifier"
+      -- Terms are functors or atoms
+      (((parens (Functor typeOrFunctor <$> (withComments ((sepBy (surroundedByComments term) (withComments com)) <?> "comma-separated terms")) <?> "functor arguments") <?> "functor application")
+            <|> return (Atom (Identity typeOrFunctor))) <*> endRange pos0) <?> "identifier-based term"
 
     -- Terms can still be infix operators (which are predefined)
     ((equals >> (Eqq term0 <$> term <*> endRange pos0)) <?> "equality")

@@ -22,6 +22,7 @@ import Language.AST
 import qualified Language.Solver.BacktrackingST as ST
 import qualified Language.Solver.Renamer as Renamer
 import qualified Language.Solver.Unification as Unification
+import Language.Solver.Worklist
 import qualified Data.List as List
 import Language.Solver.Unification (RefTerm)
 import qualified Debug.Trace as Debug
@@ -43,31 +44,6 @@ data SearchState s = SearchState
     _searchMapping :: Unification.VariableMapping s
   }
 
--- | Queue abstraction for different search strategies
-class Queue q where
-  emptyQueue :: q a
-  enqueue :: a -> q a -> q a
-  dequeue :: q a -> Maybe (a, q a)
-
--- | Returns the elements of the queue in the order of dequeue
-queueToList :: Queue q => q a -> [a]
-queueToList = List.unfoldr dequeue
-
--- | List-based stack (LIFO - depth-first search)
-instance Queue [] where
-  emptyQueue = []
-  enqueue x xs = x : xs
-  dequeue [] = Nothing
-  dequeue (x : xs) = Just (x, xs)
-
--- | Seq-based FIFO queue (breadth-first search)
-instance Queue Seq where
-  emptyQueue = Seq.empty
-  enqueue x q = q Seq.|> x
-  dequeue q = case Seq.viewl q of
-    Seq.EmptyL -> Nothing
-    x Seq.:< rest -> Just (x, rest)
-
 data SearchCtx q s = SearchCtx
   { _searchQueue :: q (SearchState s),
     _currentMapping :: Unification.VariableMapping s
@@ -77,6 +53,7 @@ type SolverResult = Either String (Map String PureTerm)
 
 $(makeLenses ''SearchState)
 $(makeLenses ''SearchCtx)
+
 
 ------------------------------------------------------------
 -- Core data structures
@@ -147,6 +124,14 @@ refTerm term = do
   return refTerm
 
 ------------------------------------------------------------
+-- Auxiliary functions
+------------------------------------------------------------
+
+unify :: RefTerm s -> RefTerm s -> Solver q s (Either String ())
+unify left  =
+  liftST .  runExceptT .  Unification.unifyTerms left
+
+------------------------------------------------------------
 -- Core search functions
 ------------------------------------------------------------
 
@@ -205,29 +190,23 @@ continue remainingGoals = do
 expandGoal :: (Queue q) => SearchGoal s -> [SearchGoal s] -> Solver q s ()
 expandGoal (SearchGoal ruleName goal) remainingGoals = do
   case goal of
+    -- Functors: look for rules with the name of the functor in its
+    -- conclusion, add that rule as a goal to the context.
     Functor name _ _ -> do
       rules <- findMatchingRules name
       mapM_ (processRule goal remainingGoals) rules
+    
+    Transition nam from to s -> do
+      -- Transitions: look for rules with the transition name in the conclusion
+      rules <- findMatchingRules nam
+      mapM_ (processRule goal remainingGoals) rules
+    
     Eqq left right _ -> do
       -- Equality: try to unify, if it succeeds then = succeeds
-      unifyResult <- liftST $ runExceptT $ Unification.unifyTerms left right
-      case unifyResult of
-        Left _ ->
-          -- Unification failed, so = fails - this branch is pruned (no new states added)
-          return ()
-        Right _ -> do
-          -- Unification succeeded, so = succeeds - continue with remaining goals
-          continue remainingGoals
+      either (const $ return ()) (const $ continue remainingGoals) =<< unify left right
     Neq left right _ -> do
-      -- Negation as failure: try to unify, if it fails then Neq succeeds
-      unifyResult <- liftST $ runExceptT $ Unification.unifyTerms left right
-      case unifyResult of
-        Left _ -> do
-          -- Unification failed, so /= succeeds - continue with remaining goals
-          continue remainingGoals
-        Right _ ->
-          -- Unification succeeded, so /= fails - this branch is pruned (no new states added)
-          return ()
+      -- Inequality: fail if unifies, otherwise succeed
+      either (const $ continue remainingGoals) (const $ return ()) =<< unify left right
     _ -> return () -- Variables and other terms can't be expanded
 
 ------------------------------------------------------------
@@ -242,21 +221,19 @@ findMatchingRules functorName = do
 -- | Try to unify a goal with a rule and add new search states
 processRule :: (Queue q) => RefTerm s -> [SearchGoal s] -> RuleDecl -> Solver q s ()
 processRule goal remainingGoals rule = do
-  freshVarCount <- gets (^. numUniqueVariables)
-  let (RuleDecl ruleName precedents consequents _, newFreshCount) = Renamer.renameRule' freshVarCount rule
-  modify (set numUniqueVariables newFreshCount)
-  
+  RuleDecl ruleName precedents consequents _ <- Solver $ zoom numUniqueVariables $ Renamer.renameRuleState rule
+
   -- Assert that there's only one consequent for now
   case consequents of
     [consequent] -> do
       refConsequent <- refTerm consequent
       precedentRefs <- mapM refTerm precedents
-      
+
       -- Create unification goal: current goal = consequent
       let unificationGoal = SearchGoal ruleName (Eqq goal refConsequent dummyRange)
       let precedentGoals = map (SearchGoal ruleName) precedentRefs
       let newGoals = unificationGoal : precedentGoals ++ remainingGoals
-      
+
       continue newGoals
     _ -> error $ "Rule " ++ ruleName ++ " has " ++ show (length consequents) ++ " consequents, expected exactly 1"
 

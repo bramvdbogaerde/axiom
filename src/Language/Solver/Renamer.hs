@@ -1,5 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
-module Language.Solver.Renamer(renameRule, renameRule') where
+module Language.Solver.Renamer(renameRule, renameRule', renameRuleState) where
 
 import Control.Lens
 import Control.Monad.State
@@ -74,6 +74,9 @@ renameRule' :: Int       -- ^ the number of currently allocated fresh variables
 renameRule' freshCtr' (RuleDecl ruleName precedent consequent range) =
     runRenamer freshCtr' $
         RuleDecl ruleName <$> renameTerms precedent <*> renameTerms consequent <*> pure range
+
+renameRuleState :: Monad m => RuleDecl -> StateT Int m RuleDecl
+renameRuleState rule = StateT $ return . flip renameRule' rule
 
 
 -- | Same as renameRule' but does not return the new unique count

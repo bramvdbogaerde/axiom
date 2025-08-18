@@ -11,6 +11,7 @@ import Language.AST
 import Language.Parser (parseProgram, parseTerm)
 import qualified Language.Solver.BacktrackingST as ST
 import qualified Language.Solver.Unification as Unification
+import Language.Solver.Worklist (Queue, dequeue)
 import qualified Data.Map as Map
 import Data.Map ( Map, Map )
 import Control.Monad.Writer
