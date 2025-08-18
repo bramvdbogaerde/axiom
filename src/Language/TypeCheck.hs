@@ -36,6 +36,8 @@ data ModelError = DuplicateVariable String SortName
                 | SortNotDefined String
                 | IncompatibleTypes [SortName] [SortName]
                 | NameNotDefined String
+                | ArityMismatch String Int Int  -- ^ functor name, expected arity, actual arity
+                | HaskellExprTypeInferenceError  -- ^ HaskellExpr type inference failure
                 deriving (Ord, Eq, Show)
 
 data Error = Error { err :: ModelError, raisedAt :: Maybe Range,  ctx :: CheckingContext }
@@ -157,7 +159,7 @@ emptyCheckingContext = CheckingContext emptyEnvironment emptyTypingContext empty
 -- Monadic context
 -----------------------------------------
 
-type MonadCheck m = (MonadState CheckingContext m, MonadError Error m)
+type MonadCheck m = (MonadState CheckingContext m, MonadError Error m, MonadReader (Maybe Typ) m)
 
 -------------------------
 -- Monadic error handling
@@ -328,6 +330,29 @@ pass1 (Program decls _) = mapM_ pass1VisitDecl decls
 -- TODO: Also ensure that the variables used in the body of the rewrite rule
 -- are actually defined in its head.
 
+-- | Helper function for bidirectional type checking of binary equality terms
+checkBinaryEqualityTerm :: MonadCheck m => 
+  (TypedTerm -> TypedTerm -> Typ -> Range -> TypedTerm) -> 
+  PureTerm -> PureTerm -> Range -> m (TypedTerm, SortName)
+checkBinaryEqualityTerm constructor term1 term2 range = do
+  -- Try bidirectional type checking: try term1 first, if it succeeds use its type for term2
+  result1 <- tryCheckTerm term1
+  case result1 of
+    Right (term1', t1') -> do
+      (term2', t2') <- local (const (Just (mkSort t1'))) (checkTerm term2)
+      if t1' /= t2'
+        then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
+        else return (constructor term1' term2' (mkSort t1') range, t1')
+    Left _ -> do
+      -- If term1 fails, try term2 first and use its type for term1
+      (term2', t2') <- checkTerm term2
+      (term1', t1') <- local (const (Just (mkSort t2'))) (checkTerm term1)
+      if t1' /= t2'
+        then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
+        else return (constructor term1' term2' (mkSort t1') range, t1')
+  where
+    tryCheckTerm term = catchError (Right <$> checkTerm term) (return . Left)
+
 -- | Check an individual term and returns its sort
 checkTerm :: MonadCheck m => PureTerm -> m (TypedTerm, SortName)
 checkTerm (Atom nam _ range) = do
@@ -340,37 +365,35 @@ checkTerm (Atom nam _ range) = do
       sort <- lookupSort (Just range) varName
       return (Atom nam (mkSort sort) range, sort)
 checkTerm (Functor tpy terms _ range) = do
-  (terms', ts') <- mapAndUnzipM checkTerm terms
   -- Check if functor is defined and get its arity from the constructor
   ctor <- lookupCtor (Just range) tpy
   let expected = getSorts ctor
   functorSort <- lookupSort (Just range) tpy
   -- Check arity matches
-  if length ts' /= length expected
-    then throwErrorAt range $ IncompatibleTypes expected ts'
+  if length terms /= length expected
+    then throwErrorAt range $ ArityMismatch tpy (length expected) (length terms)
     else do
+      -- Type check each argument with its expected type in the reader context
+      let expectedTypes = map (Just . mkSort) expected
+      (terms', ts') <- mapAndUnzipM (\(term, expectedType) -> 
+        local (const expectedType) (checkTerm term)) (zip terms expectedTypes)
       ok <- and <$> zipWithM subtypeOf ts' expected
       if ok
         then return (Functor tpy terms' (mkSort functorSort) range, functorSort)
         else throwErrorAt range $ IncompatibleTypes expected ts'
-checkTerm (Eqq term1 term2 _ range) = do
-  (term1', t1') <- checkTerm term1
-  (term2', t2') <- checkTerm term2
-  if t1' /= t2'
-    then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
-    else return (Eqq term1' term2' (mkSort t1') range, t1')
-checkTerm (Neq term1 term2 _ range) = do
-  (term1', t1') <- checkTerm term1
-  (term2', t2') <- checkTerm term2
-  if t1' /= t2'
-    then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
-    else return (Neq term1' term2' (mkSort t1') range, t1')
+checkTerm (Eqq term1 term2 _ range) = 
+  checkBinaryEqualityTerm Eqq term1 term2 range
+checkTerm (Neq term1 term2 _ range) = 
+  checkBinaryEqualityTerm Neq term1 term2 range
 checkTerm (Transition transitionName t1 t2 tpy range) = do
   -- transitions are registered in the typing context as sorts with a single data constructor
   -- NOTE: the assumption is that checkTerm always returns a functor of the same shape, hence the pattern match on the lines below never fails.
   term <- checkTerm (Functor transitionName [t1, t2] tpy range)
   let (Functor nam [term1', term2'] t range, sortname) = term
   return (Transition nam term1' term2' t range, sortname)
+checkTerm (HaskellExpr expr _ range) = 
+  maybe (throwErrorAt range HaskellExprTypeInferenceError)
+        (\typ -> return (HaskellExpr expr typ range, SortName (toSortName typ))) =<< ask
 
 checkTerm_ :: MonadCheck m => PureTerm -> m SortName
 checkTerm_ = fmap snd . checkTerm
@@ -467,6 +490,6 @@ pass3 (Program decls _) = mapM_ pass3VisitDecl decls
 runChecker :: Program -> Either Error CheckingContext
 runChecker program = do
   let initialContext = emptyCheckingContext
-  execStateT (pass0 program >> pass1 program >> pass2 program >> pass3 program) initialContext
+  execStateT (runReaderT (pass0 program >> pass1 program >> pass2 program >> pass3 program) Nothing) initialContext
 
 

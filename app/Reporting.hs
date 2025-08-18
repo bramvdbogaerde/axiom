@@ -43,6 +43,10 @@ formatModelError (IncompatibleTypes expected actual) =
   "Type mismatch: " ++ formatTypeDifference expected actual
 formatModelError (SortNotDefined sortName) =
   "Sort " ++ sortName ++ " is not defined"
+formatModelError (ArityMismatch functorName expected actual) =
+  "Arity mismatch for '" ++ functorName ++ "': expected " ++ show expected ++ " arguments but got " ++ show actual
+formatModelError HaskellExprTypeInferenceError =
+  "Cannot infer type for Haskell expression - no type context available"
 
 formatTypeDifference :: [SortName] -> [SortName] -> String
 formatTypeDifference expected actual

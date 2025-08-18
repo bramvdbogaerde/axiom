@@ -1,0 +1,10 @@
+%% This file tests HaskellExpr type inference failure
+
+rules {
+    % This does not work since ${42} is not in a context from which
+    % type information can be deduced.
+    rule "HaskellExpr-No-Context"
+    [ ] =>
+    [ ${42} ];
+    
+};

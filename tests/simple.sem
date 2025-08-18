@@ -1,0 +1,7 @@
+syntax {
+    x in Term;
+};
+
+rules {
+    rule "test" [] => [ x ];
+};

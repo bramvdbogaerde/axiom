@@ -20,8 +20,7 @@ findSemFiles = do
 -- | Read file content safely
 readFileSafe :: FilePath -> IO (Either String String)
 readFileSafe path = do
-  result <- catch (Right <$> readFile path) handler
-  return result
+    catch (Right <$> readFile path) handler
   where
     handler :: IOException -> IO (Either String String)
     handler e = return $ Left $ "Could not read file " ++ path ++ ": " ++ show e

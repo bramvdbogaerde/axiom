@@ -1,0 +1,11 @@
+%% This file tests HaskellExpr parsing functionality
+
+syntax {
+    x, result in Value;
+};
+
+rules {
+    rule "Simple-HaskellExpr"
+    [ ] =>
+    [ result = ${42} ];
+};
