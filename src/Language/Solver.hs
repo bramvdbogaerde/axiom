@@ -237,7 +237,6 @@ processRule goal remainingGoals rule = do
       continue newGoals
     _ -> error $ "Rule " ++ ruleName ++ " has " ++ show (length consequents) ++ " consequents, expected exactly 1"
 
-
 ------------------------------------------------------------
 -- Inspection
 ------------------------------------------------------------
