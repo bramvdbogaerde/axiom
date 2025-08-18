@@ -18,6 +18,8 @@ module Language.AST(
     RuleDecl,
     Term,
 
+    ForAllPhases,
+
     Program'(..),
     Comment'(..),
     Decl'(..),

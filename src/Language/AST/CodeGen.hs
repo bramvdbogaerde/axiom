@@ -9,23 +9,29 @@ import Language.Haskell.TH hiding (Range)
 import Language.Haskell.TH.Syntax hiding (Range)
 import Language.AST
 import Language.Range
+import Language.TypeCheck
+import Language.Types
 import Data.Functor.Identity
+import Control.Monad.Reader hiding (lift)
+import qualified Control.Monad.Reader as Reader
+ 
+type CodeGenM = ReaderT CheckingContext Q
 
-astToCode :: Program -> Q Exp
-astToCode = astToCodeQ
+astToCode :: CheckingContext -> TypedProgram -> Q Exp
+astToCode ctx prog = runReaderT (astToCodeQ prog) ctx
 
-astToCodeQ :: Program -> Q Exp
-astToCodeQ prog = [| $(programToExp prog) |]
+astToCodeQ :: TypedProgram -> CodeGenM Exp
+astToCodeQ prog = Reader.lift [| $(programToExp prog) |]
 
-programToExp :: Program -> Q Exp
+programToExp :: TypedProgram -> Q Exp
 programToExp (Program decls comments) = 
   [| Program $(listE (map declToExp decls)) $(listE (map commentToExp comments)) |]
 
-commentToExp :: Comment -> Q Exp
+commentToExp :: Comment' p -> Q Exp
 commentToExp (Comment str range) = 
   [| Comment $(lift str) $(rangeToExp range) |]
 
-declToExp :: Decl -> Q Exp
+declToExp :: TypedDecl -> Q Exp
 declToExp = \case
   Syntax syntaxDecls range -> 
     [| Syntax $(listE (map syntaxDeclToExp syntaxDecls)) $(rangeToExp range) |]
@@ -39,7 +45,7 @@ declToExp = \case
   TransitionDecl name (tpy1, range1) (tpy2, range2) range -> 
     [| TransitionDecl $(lift name) ($(lift tpy1), $(rangeToExp range1)) ($(lift tpy2), $(rangeToExp range2)) $(rangeToExp range) |]
 
-syntaxDeclToExp :: SyntaxDecl -> Q Exp
+syntaxDeclToExp :: SyntaxDecl  -> Q Exp
 syntaxDeclToExp (SyntaxDecl vars tpy prods range) = 
   [| SyntaxDecl $(lift vars) $(lift tpy) $(listE (map pureTermToExp prods)) $(rangeToExp range) |]
 
@@ -47,11 +53,11 @@ rewriteDeclToExp :: RewriteDecl -> Q Exp
 rewriteDeclToExp (RewriteDecl name args body range) = 
   [| RewriteDecl $(lift name) $(listE (map pureTermToExp args)) $(pureTermToExp body) $(rangeToExp range) |]
 
-ruleDeclToExp :: RuleDecl -> Q Exp
+ruleDeclToExp :: TypedRuleDecl -> Q Exp
 ruleDeclToExp (RuleDecl name precedent consequent range) = 
   [| RuleDecl $(lift name) $(listE (map pureTermToExp precedent)) $(listE (map pureTermToExp consequent)) $(rangeToExp range) |]
 
-pureTermToExp :: PureTerm -> Q Exp
+pureTermToExp :: (ForAllPhases Lift p) => PureTerm' p -> Q Exp
 pureTermToExp = \case
   Atom (Identity name) tpy range -> 
     [| Atom (Identity $(lift name)) $(lift tpy) $(rangeToExp range) |]
@@ -63,10 +69,13 @@ pureTermToExp = \case
     [| Eqq $(pureTermToExp left) $(pureTermToExp right) $(lift tpy) $(rangeToExp range) |]
   
   Neq left right tpy range -> 
-    [| Neq $(pureTermToExp left) $(pureTermToExp right) $(lift tpy)  $(rangeToExp range) |]
+    [| Neq $(pureTermToExp left) $(pureTermToExp right) $(lift tpy) $(rangeToExp range) |]
   
   Transition tname left right tpy range -> 
     [| Transition $(lift tname) $(pureTermToExp left) $(pureTermToExp right) $(lift tpy) $(rangeToExp range) |]
+  
+  HaskellExpr expr tpy range ->
+    [| HaskellExpr $(lift expr) $(lift tpy) $(rangeToExp range) |]
 
 rangeToExp :: Range -> Q Exp
 rangeToExp (Range (Position line1 col1 fname1) (Position line2 col2 fname2)) =
