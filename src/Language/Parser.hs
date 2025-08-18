@@ -9,6 +9,7 @@ import Language.Lexer.Token hiding (HaskellExpr)
 import qualified Language.Lexer.Token as Token
 import Language.AST
 import Language.Range
+import Language.Types
 import Data.Functor.Identity
 
 import Text.Parsec.Prim hiding (runParser)
@@ -30,6 +31,7 @@ import Text.Parsec.Pos (newPos)
 import Data.Bifunctor
 import Data.Either (partitionEithers)
 import qualified Debug.Trace as Debug
+
 
 type Parser a = ParsecT [TokenWithRange] () Identity a
 
@@ -212,10 +214,10 @@ term :: Parser PureTerm
 term = do
     pos0 <- position
     -- Parse either a Haskell expression or a regular identifier-based term
-    term0 <- ((withRange (HaskellExpr <$> haskellExpr)) <?> "haskell expression") <|> do
+    term0 <- (withRange (HaskellExpr <$> haskellExpr) <?> "haskell expression") <|> do
       typeOrFunctor <- ident <?> "identifier"
       -- Terms are functors or atoms
-      (((parens (Functor typeOrFunctor <$> (withComments ((sepBy (surroundedByComments term) (withComments com)) <?> "comma-separated terms")) <?> "functor arguments") <?> "functor application")
+      (((parens (Functor typeOrFunctor <$> withComments (sepBy (surroundedByComments term) (withComments com) <?> "comma-separated terms") <?> "functor arguments") <?> "functor application")
             <|> return (Atom (Identity typeOrFunctor))) <*> endRange pos0) <?> "identifier-based term"
 
     -- Terms can still be infix operators (which are predefined)
@@ -226,7 +228,7 @@ term = do
 
 -- | Parses a sequence of terms separated (and ended) by the given parser, allowing comments
 terms :: Parser a -> Parser [PureTerm]
-terms sep = (withComments $ sepBy (surroundedByComments term) (withComments sep)) <?> "terms separated by separator"
+terms sep = withComments (sepBy (surroundedByComments term) (withComments sep)) <?> "terms separated by separator"
 
 -- | Parse a single syntax declaration
 syntaxDecl :: Parser SyntaxDecl
@@ -263,7 +265,7 @@ rules = rulesToken >> withRange ((RulesDecl <$> between (lcba >> skipComments) r
 
 -- | Parses a declarartion for a transition
 transition :: Parser Decl
-transition = transitionToken >> withRange (flip TransitionDecl <$> identWithRange <*> (leadsto >> return "~>") <*> identWithRange)
+transition = transitionToken >> withRange (flip TransitionDecl <$> fmap (first Sort) identWithRange <*> (leadsto >> return "~>") <*> fmap (first Sort) identWithRange)
 
 parser :: Parser Program
 parser = do

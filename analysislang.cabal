@@ -16,6 +16,7 @@ library
   build-tools: alex, happy
   exposed-modules:  Language.AST
                   , Language.AST.CodeGen
+                  , Language.Types
                   , Language.Parser
                   , Language.ParserNext
                   , Language.TypeCheck

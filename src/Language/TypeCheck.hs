@@ -24,6 +24,7 @@ import Control.Monad
 import Data.Kind
 import Data.Maybe (fromMaybe)
 import Control.Monad.Extra
+import Language.Types
 
 -----------------------------------------
 -- Errors
@@ -76,13 +77,13 @@ newtype Environment = Environment { getEnvironment :: Map String DataCtor }
 
 lookupEnvironment :: String -> Environment -> Maybe DataCtor
 lookupEnvironment k = Map.lookup k . getEnvironment
- 
+
 -- | Extend the environment with the given functor name and data constructor
 extendEnvironment :: String -> DataCtor -> Environment -> Environment
 extendEnvironment k d = Environment . Map.insert k d . getEnvironment
 
 -- | Create an empty environment
-emptyEnvironment :: Environment 
+emptyEnvironment :: Environment
 emptyEnvironment = Environment Map.empty
 
 -----------------------------------------
@@ -116,7 +117,7 @@ newtype Subtyping = Subtyping { subtypingSupertypes :: UnlabeledGraph SortName }
 
 -- | Registers the first argument as a subtype of the second
 makeSubtypeOf :: SortName -> SortName -> Subtyping -> Subtyping
-makeSubtypeOf from to = Subtyping . Graph.addEdge () from to . subtypingSupertypes 
+makeSubtypeOf from to = Subtyping . Graph.addEdge () from to . subtypingSupertypes
 
 -- | Checks whether the first argument is a subtype of the second
 isSubtypeOf :: SortName -> SortName -> Subtyping -> Bool
@@ -214,7 +215,7 @@ typedAs var sortName = do
 
 -- | Registers the first argument as a subtype of the second
 subtyped :: MonadCheck m => SortName -> SortName -> m ()
-subtyped subtype parenttype = 
+subtyped subtype parenttype =
   modify (over subtypingContext (makeSubtypeOf subtype parenttype))
 
 -----------------------------------------
@@ -231,7 +232,7 @@ instance SubtypeOf DataCtor where
   subtypeOf _ _ = return False
 
 instance SubtypeOf s => SubtypeOf [s] where
-  subtypeOf l1 l2 
+  subtypeOf l1 l2
     | length l1 /= length l2 = return False
     | otherwise = and <$> zipWithM subtypeOf l1 l2
 
@@ -247,7 +248,7 @@ sortsInFunctor functorName = do
   case lookupEnvironment functorName env of
     Nothing -> throwError (NameNotDefined functorName)
     Just (DataAtom sortName) -> return [sortName]
-    Just (DataTagged _ sorts) -> return sorts 
+    Just (DataTagged _ sorts) -> return sorts
 
 -----------------------------------------
 -- Pass 0: declare all sorts and variable names
@@ -268,7 +269,7 @@ typeAsUnique ctor sortName var = do
 pass0VisitDecl :: MonadCheck m => Decl -> m ()
 pass0VisitDecl (Syntax decls _) = mapM_ pass0VisitSyntaxDecl decls
   where
-    pass0VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) = 
+    pass0VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) =
       ifM (isSortDefined (SortName tpy))
           (throwError (DuplicateSort (SortName tpy)))
           (do recordSortDefSite tpy range
@@ -286,7 +287,7 @@ pass0 (Program decls _) = mapM_ pass0VisitDecl decls
 
 -- | Process and associate the data constructors in the given sort
 pass1VisitCtor :: MonadCheck m => SortName -> PureTerm -> m ()
-pass1VisitCtor sortName = \case 
+pass1VisitCtor sortName = \case
   (Atom nam range) -> do
     sort <- lookupSort (Just range) (runIdentity nam)
     subtyped sort sortName
@@ -294,19 +295,19 @@ pass1VisitCtor sortName = \case
     sorts <- mapM (\t -> collectAtoms t >>= lookupSort (Just (rangeOf t))) ts
     let ctor = DataTagged nam sorts
     typeAsUnique ctor sortName nam
-  where 
+  where
     collectAtoms (Atom nam _) = return (runIdentity nam)
     collectAtoms t = throwErrorAt (rangeOf t) $ NoNestingAt sortName
 
 pass1VisitDecl :: MonadCheck m => Decl -> m ()
 pass1VisitDecl (Syntax decls _) = mapM_ pass1VisitSyntaxDecl decls
   where
-    pass1VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) = 
+    pass1VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) =
       mapM_ (pass1VisitCtor (SortName tpy)) ctors
-pass1VisitDecl (TransitionDecl nam from to range) = do
+pass1VisitDecl (TransitionDecl nam (Sort from, _) (Sort to, _) range) = do
   -- transition State ~> State is equivalent to the syntax rule:
   -- ~> ::= ~>(state, state) from a typing perspective
-  let ctor = DataTagged nam [SortName (fst from), SortName (fst to)]
+  let ctor = DataTagged nam [SortName from, SortName to]
   typeAsUnique ctor (SortName nam) nam
 pass1VisitDecl _ = return ()
 
@@ -342,7 +343,7 @@ checkTerm (Functor tpy ts range) = do
       ok <- and <$> zipWithM subtypeOf ts' expected
       if ok
         then return functorSort
-        else throwErrorAt range $ IncompatibleTypes expected ts' 
+        else throwErrorAt range $ IncompatibleTypes expected ts'
 checkTerm (Eqq t1 t2 range) = do
   t1' <- checkTerm t1
   t2' <- checkTerm t2
@@ -409,7 +410,7 @@ pass2 (Program decls _) = mapM_ pass2VisitDecl decls
 
 -- | Check that the given sort exists at a specific location
 assertSortDefinedAt :: MonadCheck m => Range -> String -> m ()
-assertSortDefinedAt range sortName = 
+assertSortDefinedAt range sortName =
   ifM (isSortDefined (SortName sortName))
       (return ())
       (throwErrorAt range (SortNotDefined sortName))
@@ -421,9 +422,9 @@ checkRule (RuleDecl nam precedent consequent _) = do
 
 pass3VisitDecl :: MonadCheck m => Decl -> m ()
 pass3VisitDecl (RulesDecl rules _) = mapM_ checkRule rules
-pass3VisitDecl (TransitionDecl _ (fromSort, r1) (toSort, r2) range) = do
+pass3VisitDecl (TransitionDecl _ (Sort fromSort, r1) (Sort toSort, r2) range) = do
   assertSortDefinedAt r1 fromSort
-  assertSortDefinedAt r2 toSort 
+  assertSortDefinedAt r2 toSort
 pass3VisitDecl _ = return ()
 
 pass3 :: MonadCheck m => Program -> m ()
