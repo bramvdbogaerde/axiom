@@ -27,6 +27,7 @@ library
                   , Language.Solver.Worklist
                   , Language.Range
                   , Language.Lexer
+                  , Language.TemplateHaskell.SyntaxExtra
   other-modules:   Language.Lexer.Token
                  , Data.Graph
   extensions: TemplateHaskell
@@ -67,6 +68,7 @@ test-suite comment-tests
               , mtl
               , extra
               , transformers
+              , template-haskell
   build-tool-depends: hspec-discover:hspec-discover
   other-modules: CommentTestsSpec
               , ParseSmokeTestSpec
@@ -76,6 +78,7 @@ test-suite comment-tests
               , RenamerTestsSpec
               , BacktrackingSTSpec
               , SolverTestsSpec
+              , TemplateHaskellSyntaxExtraSpec
               , TestInfrastructure
   hs-source-dirs: test
   main-is: Spec.hs
