@@ -2,7 +2,8 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE LambdaCase #-}
 module Language.AST.CodeGen (
-    astToCode
+    astToCode,
+    codegen
   ) where
 
 import Language.Haskell.TH hiding (Range)
@@ -14,7 +15,35 @@ import Language.Types
 import Data.Functor.Identity
 import Control.Monad.Reader hiding (lift)
 import qualified Control.Monad.Reader as Reader
+import qualified Data.Text as T
+import NeatInterpolation
  
+------------------------------------------------------------
+-- Prelude & module creation
+------------------------------------------------------------
+
+makeModule :: String -> String
+makeModule ast = T.unpack
+  [text|
+  -- AnalysisLang related imports
+  import Language.AST.CodeGen.Prelude
+  import qualified Language.AST
+  import qualified Language.Range
+  import qualified Language.Types
+
+  -- Haskell imports
+  
+  
+  import GHC.Maybe
+  ast :: PureTerm
+  ast = $ast'
+  |]
+  where ast' = T.pack ast
+
+------------------------------------------------------------
+-- AST lifting
+------------------------------------------------------------
+
 type CodeGenM = ReaderT CheckingContext Q
 
 astToCode :: CheckingContext -> TypedProgram -> Q Exp
@@ -80,3 +109,12 @@ pureTermToExp = \case
 rangeToExp :: Range -> Q Exp
 rangeToExp (Range (Position line1 col1 fname1) (Position line2 col2 fname2)) =
   [| Range (Position $(lift line1) $(lift col1) $(lift fname1)) (Position $(lift line2) $(lift col2) $(lift fname2)) |]
+
+------------------------------------------------------------
+-- Entrypoints
+------------------------------------------------------------
+
+-- | Generate a Haskell program representing the Typed program with executable Haskell functions in it.
+codegen :: CheckingContext -> TypedProgram -> IO String
+codegen context = fmap (makeModule . pprint) . runQ . astToCode context
+

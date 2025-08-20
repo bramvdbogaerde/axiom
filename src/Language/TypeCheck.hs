@@ -25,6 +25,7 @@ import Data.Kind
 import Data.Maybe (fromMaybe)
 import Control.Monad.Extra
 import Language.Types
+import Data.Tuple
 
 -----------------------------------------
 -- Errors
@@ -479,17 +480,20 @@ pass3VisitDecl (Rewrite rewrite range) =
 pass3VisitDecl (Syntax syntax range) =
   Syntax <$> mapM return syntax <*> pure range
 
-pass3 :: MonadCheck m => Program -> m ()
-pass3 (Program decls _) = mapM_ pass3VisitDecl decls
+pass3 :: MonadCheck m => Program -> m TypedProgram
+pass3 (Program decls comments) = Program <$> (mapM pass3VisitDecl decls) <*> pure (map typeComment comments)
 
 -----------------------------------------
 -- Entrypoint
 -----------------------------------------
 
--- | Run the type checker in its entirety
 runChecker :: Program -> Either Error CheckingContext
-runChecker program = do
+runChecker = fmap fst . runChecker'
+
+-- | Run the type checker in its entirety
+runChecker' :: Program -> Either Error (CheckingContext, TypedProgram)
+runChecker' program = do
   let initialContext = emptyCheckingContext
-  execStateT (runReaderT (pass0 program >> pass1 program >> pass2 program >> pass3 program) Nothing) initialContext
+  swap <$> runStateT (runReaderT (pass0 program >> pass1 program >> pass2 program >> pass3 program) Nothing) initialContext
 
 

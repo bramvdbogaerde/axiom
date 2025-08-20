@@ -38,6 +38,7 @@ module Language.AST(
     TypedRuleDecl,
     TypedProgram,
 
+    typeComment,
     variableName,
     Position(..),
     Range(..),
@@ -109,6 +110,10 @@ type TypedProgram = Program' TypingPhase
 -- | A comment with its position
 data Comment' p = Comment String Range deriving (Ord, Eq, Show)
 type Comment = Comment' ParsePhase
+
+typeComment :: Comment' p -> Comment' q
+-- NOTE: id does not work since "id :: a -> a"
+typeComment (Comment nam ran) = Comment nam ran
 
 -- | Names of types
 type Tpy = String

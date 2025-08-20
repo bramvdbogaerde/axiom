@@ -12,7 +12,9 @@ library
                  regex-compat,
                  array,
                  extra,
-                 template-haskell
+                 template-haskell,
+                 text,
+                 neat-interpolation
   build-tools: alex, happy
   exposed-modules:  Language.AST
                   , Language.AST.CodeGen
@@ -25,6 +27,7 @@ library
                   , Language.Solver.Renamer
                   , Language.Solver.BacktrackingST
                   , Language.Solver.Worklist
+                  , Language.AST.CodeGen.Prelude
                   , Language.Range
                   , Language.Lexer
                   , Language.TemplateHaskell.SyntaxExtra
