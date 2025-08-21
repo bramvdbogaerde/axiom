@@ -32,10 +32,11 @@ makeModule ast = T.unpack
   import qualified Language.Types
 
   -- Haskell imports
-  
+  import Data.Functor.Identity
+
   
   import GHC.Maybe
-  ast :: PureTerm
+  ast :: CodeGenProgram
   ast = $ast'
   |]
   where ast' = T.pack ast

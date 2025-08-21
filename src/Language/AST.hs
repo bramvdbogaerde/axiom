@@ -38,6 +38,8 @@ module Language.AST(
     TypedRuleDecl,
     TypedProgram,
 
+    CodeGenProgram,
+
     typeComment,
     variableName,
     Position(..),
@@ -106,6 +108,7 @@ deriving instance (ForAllPhases Eq p) => Eq (Program' p)
 deriving instance (ForAllPhases Show p) => Show (Program' p)
 type Program = Program' ParsePhase
 type TypedProgram = Program' TypingPhase
+type CodeGenProgram = Program' CodeGenPhase
 
 -- | A comment with its position
 data Comment' p = Comment String Range deriving (Ord, Eq, Show)

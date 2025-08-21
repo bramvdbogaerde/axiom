@@ -51,6 +51,8 @@ executable analysislang
               , uri-encode
               , transformers
               , mtl
+              , process
+              , filepath
   other-modules: Reporting
                , LanguageServer
                , LanguageServer.Diagnostics

@@ -5,11 +5,15 @@ import Prelude hiding (lex)
 import Language.AST
 import Language.Parser
 import Language.TypeCheck
+import Language.AST.CodeGen
 import Text.Pretty.Simple hiding (Vivid, Green)
 import Data.Either
 import Data.Bifunctor
+import Control.Monad
 import System.Console.ANSI
 import System.Exit
+import System.Process
+import System.FilePath
 import Reporting
 import Options.Applicative
 import qualified LanguageServer
@@ -54,6 +58,14 @@ lspCommand = pure $ do
   exitCode <- LanguageServer.runLanguageServer
   exitWith $ if exitCode == 0 then ExitSuccess else ExitFailure exitCode
 
+-- | Parser for the 'codegen' subcommand
+codegenCommand :: Parser (IO ())
+codegenCommand = runCodegenCommand <$> inputOptionsParser
+
+-- | Parser for the 'runcodegen' subcommand
+runcodegenCommand :: Parser (IO ())
+runcodegenCommand = runRuncodegenCommand <$> inputOptionsParser
+
 -- | Parser for all available subcommands
 commandParser :: Parser (IO ())
 commandParser = subparser
@@ -63,6 +75,10 @@ commandParser = subparser
     (info debugCommand (progDesc "Start interactive solver debugger"))
  <> command "lsp"
     (info lspCommand (progDesc "Start Language Server Protocol server"))
+ <> command "codegen"
+    (info codegenCommand (progDesc "Generate code from a typechecked program"))
+ <> command "runcodegen"
+    (info runcodegenCommand (progDesc "Generate and execute code from a typechecked program"))
   )
 
 -- | Top-level parser for global options
@@ -110,6 +126,26 @@ runCheckCommand (InputOptions filename) = do
 -- | Execute the solver debugging command
 runDebugCommand :: InputOptions -> IO ()
 runDebugCommand (InputOptions filename) = SolverDebugger.debugSession filename
+
+-- | Execute the code generation command
+runCodegenCommand :: InputOptions -> IO ()
+runCodegenCommand (InputOptions filename) = do
+  (contents, ast) <- loadAndParseFile filename
+  either (printError contents) (uncurry codegen >=> putStrLn) $ runChecker' ast
+
+-- | Execute the code generation and run command
+runRuncodegenCommand :: InputOptions -> IO ()
+runRuncodegenCommand (InputOptions filename) = do
+  (contents, ast) <- loadAndParseFile filename
+  either (printError contents) runGenerated $ runChecker' ast
+  where
+    runGenerated (context, typedProgram) = do
+      generatedCode <- codegen context typedProgram
+      let outName = replaceExtension filename "out.hs"
+      writeFile outName generatedCode
+      putStrLn $ "Generated code written to: " ++ outName
+      exitCode <- system $ "cabal exec -- runghc --ghc-arg=\"-package analysislang\" " ++ outName
+      exitWith exitCode
 
 -------------------------------------------------------------
 -- Main entry point
