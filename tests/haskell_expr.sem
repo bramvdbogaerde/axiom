@@ -1,7 +1,7 @@
 %% This file tests HaskellExpr parsing and execution functionality
 
 syntax {
-    result, sum, product in Value;
+    result, sum, product in Int;
 };
 
 rules {
