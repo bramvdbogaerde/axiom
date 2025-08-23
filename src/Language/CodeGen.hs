@@ -14,24 +14,28 @@ import Language.AST
 import Language.Range
 import Language.TypeCheck
 import Language.Types
+import Language.Parser (parseTerm)
 import Language.TemplateHaskell.SyntaxExtra (freeVars)
 import Data.Functor.Identity
 import Control.Monad.Reader hiding (lift)
 import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.Except
 import qualified Control.Monad.Reader as Reader
 import qualified Data.Text as T
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import Data.Maybe (fromJust, catMaybes)
 import Data.List (stripPrefix)
+import Data.Bifunctor (first)
 import NeatInterpolation
 import qualified Control.Monad.Trans as Trans
+import Control.Monad.Except (liftEither)
 
 ------------------------------------------------------------
 -- Prelude & module creation
 ------------------------------------------------------------
 
-makeModule :: String -> [String] -> String
+makeModule :: String -> String -> String
 makeModule ast testQueries = T.unpack
   [text|
   {-# LANGUAGE ScopedTypeVariables #-}
@@ -43,7 +47,6 @@ makeModule ast testQueries = T.unpack
   import qualified Language.Types
   import Language.Solver
   import qualified Language.Solver.BacktrackingST as ST
-  import Language.Parser (parseTerm)
 
   -- Haskell imports
   import Data.Functor.Identity
@@ -60,14 +63,14 @@ makeModule ast testQueries = T.unpack
   ast :: CodeGenProgram
   ast = $ast'
 
-  -- Test queries extracted from comments
-  testQueries :: [String]
+  -- Test queries parsed and type checked during code generation
+  testQueries :: [PureTerm' CodeGenPhase]
   testQueries = $testQueries'
 
   main :: IO ()
   main = do
     putStrLn $ "Running " ++ show (length testQueries) ++ " test queries..."
-    results <- mapM runTestQuery testQueries
+    results <- mapM runTestQuery (zip [1..] testQueries)
     let passed = length $ filter id results
         total = length results
         failed = total - passed
@@ -82,30 +85,25 @@ makeModule ast testQueries = T.unpack
         putStrLn $ show failed ++ " tests failed"
         exitWith (ExitFailure 1)
 
-  runTestQuery :: String -> IO Bool
-  runTestQuery queryStr = do
-    putStr $ "Testing: " ++ queryStr ++ " ... "
-    case parseTerm queryStr of
-      Left parseError -> do
-        putStrLn $ "FAIL (parse error: " ++ show parseError ++ ")"
+  runTestQuery :: (Int, PureTerm' CodeGenPhase) -> IO Bool
+  runTestQuery (idx, query) = do
+    putStr $ "Testing query " ++ show idx ++ ": " ++ show query ++ " ... "
+    let Program decls _ = ast
+    let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
+    let engineCtx = fromRules rules
+    let solverComputation = ST.runST $ runSolver engineCtx (solve @CodeGenPhase query)
+    
+    case solverComputation of
+      [] -> do
+        putStrLn "FAIL (no solutions)"
         return False
-      Right query -> do
-        let Program decls _ = ast
-        let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
-        let engineCtx = fromRules rules
-        let solverComputation = ST.runST $ runSolver engineCtx (solve @CodeGenPhase query)
-        
-        case solverComputation of
-          [] -> do
-            putStrLn "FAIL (no solutions)"
-            return False
-          _ -> do
-            putStrLn "PASS"
-            return True
+      _ -> do
+        putStrLn "PASS"
+        return True
   |]
-  where 
+  where
     ast' = T.pack ast
-    testQueries' = T.pack (show testQueries)
+    testQueries' = T.pack testQueries
 
 
 ------------------------------------------------------------
@@ -139,7 +137,7 @@ generateExecuteFunction haskellExp freeVarList typingCtx expectedType = do
   -- Generate unique variable names
   proxName <- newName "prox"
   mappingName <- newName "mapping"
-  
+
   -- Generate variable extraction expressions
   extractExprs <- mapM (generateExtraction typingCtx mappingName) freeVarList
   wrapExpr <- wrapResult haskellExp (primTyp expectedType) proxName
@@ -169,7 +167,7 @@ generateExtraction typingCtx mappingName varName = do
       let typeName = getSortName sortName
       let typ  = fromSortName typeName
 
-      Trans.lift $ [| 
+      Trans.lift $ [|
            maybe (Left $ UserError $ "Variable " ++ $(lift varName) ++ " not found")
                  (\case
                    TermValue value _ _ -> maybe (Left $ InvalidTypePassed $(lift typ) (typeOf value))
@@ -270,15 +268,30 @@ rangeToExp (Range (Position line1 col1 fname1) (Position line2 col2 fname2)) =
 extractTestQueries :: [Comment' p] -> [String]
 extractTestQueries comments = catMaybes $ map extractQuery comments
   where
-    extractQuery (Comment content _) = 
+    extractQuery (Comment content _) =
       case stripPrefix " test: " content of
         Just query -> Just query
         Nothing -> stripPrefix "test: " content
 
+-- | Parse and type check test queries during code generation
+processTestQueries :: CheckingContext -> [String] -> Q [Exp]
+processTestQueries ctx queryStrings = do
+    mapM (fmap (either error id) . runExceptT . processQuery ctx) queryStrings
+  where
+    processQuery :: CheckingContext -> String -> ExceptT String Q Exp
+    processQuery ctx queryStr = do
+      parsedQuery <- liftEither $ first ((("Failed to parse test query '" ++ queryStr ++ "': ") ++) . show) $ parseTerm queryStr
+      typedQuery <- liftEither $ first ((("Failed to type check test query '" ++ queryStr ++ "': ") ++) . show) $
+                    runCheckTerm ctx parsedQuery
+      Trans.lift $ pureTermToExp ctx typedQuery
+
 -- | Generate a Haskell program representing the Typed program with executable Haskell functions in it.
 codegen :: CheckingContext -> TypedProgram -> IO String
-codegen context prog@(Program _ comments) = do
-  let testQueries = extractTestQueries comments
-  astCode <- runQ (astToCode context prog)
-  return $ makeModule (pprint astCode) testQueries
+codegen context prog@(Program _ comments) = runQ $ do
+  let testQueryStrings = extractTestQueries comments
+  astCode <- astToCode context prog
+  testQueriesCode <- do
+    processedQueries' <- processTestQueries context testQueryStrings
+    [| $(listE (map return processedQueries')) |]
+  return $ makeModule (pprint astCode) (pprint testQueriesCode)
 

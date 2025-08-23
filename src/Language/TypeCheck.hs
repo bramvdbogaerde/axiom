@@ -328,8 +328,8 @@ pass1 (Program decls _) = mapM_ pass1VisitDecl decls
 -- are actually defined in its head.
 
 -- | Helper function for bidirectional type checking of binary equality terms
-checkBinaryEqualityTerm :: MonadCheck m => 
-  (TypedTerm -> TypedTerm -> Typ -> Range -> TypedTerm) -> 
+checkBinaryEqualityTerm :: MonadCheck m =>
+  (TypedTerm -> TypedTerm -> Typ -> Range -> TypedTerm) ->
   PureTerm -> PureTerm -> Range -> m (TypedTerm, SortName)
 checkBinaryEqualityTerm constructor term1 term2 range = do
   -- Try bidirectional type checking: try term1 first, if it succeeds use its type for term2
@@ -372,15 +372,15 @@ checkTerm (Functor tpy terms _ range) = do
     else do
       -- Type check each argument with its expected type in the reader context
       let expectedTypes = map (Just . mkSort) expected
-      (terms', ts') <- mapAndUnzipM (\(term, expectedType) -> 
+      (terms', ts') <- mapAndUnzipM (\(term, expectedType) ->
         local (const expectedType) (checkTerm term)) (zip terms expectedTypes)
       ok <- and <$> zipWithM subtypeOf ts' expected
       if ok
         then return (Functor tpy terms' (mkSort functorSort) range, functorSort)
         else throwErrorAt range $ IncompatibleTypes expected ts'
-checkTerm (Eqq term1 term2 _ range) = 
+checkTerm (Eqq term1 term2 _ range) =
   checkBinaryEqualityTerm Eqq term1 term2 range
-checkTerm (Neq term1 term2 _ range) = 
+checkTerm (Neq term1 term2 _ range) =
   checkBinaryEqualityTerm Neq term1 term2 range
 checkTerm (Transition transitionName t1 t2 tpy range) = do
   -- transitions are registered in the typing context as sorts with a single data constructor
@@ -388,9 +388,11 @@ checkTerm (Transition transitionName t1 t2 tpy range) = do
   term <- checkTerm (Functor transitionName [t1, t2] tpy range)
   let (Functor nam [term1', term2'] t range, sortname) = term
   return (Transition nam term1' term2' t range, sortname)
-checkTerm (HaskellExpr expr _ range) = 
+checkTerm (HaskellExpr expr _ range) =
   maybe (throwErrorAt range HaskellExprTypeInferenceError)
         (\typ -> return (HaskellExpr expr typ range, SortName (toSortName typ))) =<< ask
+checkTerm (TermValue val _ range) =
+  return (TermValue val (typeOf val) range, SortName $ toSortName (typeOf  val))
 
 checkTerm_ :: MonadCheck m => PureTerm -> m SortName
 checkTerm_ = fmap snd . checkTerm
@@ -482,7 +484,7 @@ pass3VisitDecl (Syntax syntax range) =
   Syntax <$> mapM typeSyntax syntax <*> pure range
 
 pass3 :: MonadCheck m => Program -> m TypedProgram
-pass3 (Program decls comments) = Program <$> (mapM pass3VisitDecl decls) <*> pure (map typeComment comments)
+pass3 (Program decls comments) = Program <$> mapM pass3VisitDecl decls <*> pure (map typeComment comments)
 
 -----------------------------------------
 -- Entrypoint
@@ -496,5 +498,10 @@ runChecker' :: Program -> Either Error (CheckingContext, TypedProgram)
 runChecker' program = do
   let initialContext = emptyCheckingContext
   swap <$> runStateT (runReaderT (pass0 program >> pass1 program >> pass2 program >> pass3 program) Nothing) initialContext
+
+-- | Type check a single term in the given context
+runCheckTerm :: CheckingContext -> PureTerm -> Either Error TypedTerm
+runCheckTerm ctx term =
+  fst <$> evalStateT (runReaderT (checkTerm term) Nothing) ctx
 
 
