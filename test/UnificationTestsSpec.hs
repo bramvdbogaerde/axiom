@@ -1,10 +1,12 @@
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications #-}
 module UnificationTestsSpec where
 
 import Test.Hspec
 import Test.HUnit (assertFailure)
 import Language.AST
-import Language.Solver.Unification
+import Language.Solver.Unification hiding (runUnification)
+import qualified Language.Solver.Unification as Unification
 import Language.Solver.BacktrackingST
 import Language.Parser
 import qualified Data.Map as Map
@@ -12,6 +14,10 @@ import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Trans
 import TestInfrastructure
+import Data.Map (Map)
+
+runUnification :: PureTerm -> PureTerm -> Either String (Map String PureTerm)
+runUnification = Unification.runUnification @ParsePhase
 
 -- Test that refTerm and pureTerm are inverses for a given term
 testInverse :: String -> Expectation

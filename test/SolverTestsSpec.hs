@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeApplications #-}
 module SolverTestsSpec (spec) where
 
 import Test.Hspec
@@ -50,8 +51,8 @@ runTestQuery program@(Program decls _) queryStr = do
     Left parseError -> return $ Left $ "Parse error: " ++ show parseError
     Right query -> do
       let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
-      let engineCtx = fromRules rules :: EngineCtx [] s
-      let solverComputation = ST.runST $ runSolver engineCtx (solve query)
+      let engineCtx = fromRules rules :: EngineCtx p [] s
+      let solverComputation = ST.runST $ runSolver engineCtx (solve @ParsePhase query)
       
       -- Run with 5 second timeout to catch non-termination
       timeoutResult <- timeout 5000000 (return $! solverComputation) -- 5 seconds in microseconds

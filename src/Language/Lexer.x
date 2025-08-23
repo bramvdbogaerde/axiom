@@ -43,6 +43,7 @@ tokens :-
   "|"                           { mkToken Bar }
   $alpha $alphanum*             { mkTokenWith Ident }
   \"[^\"]*\"                    { mkTokenWith (\s -> Quo (init (tail s))) }
+  $digit+                       { mkTokenWith (\s -> IntLit (read s)) }
 
 {
 

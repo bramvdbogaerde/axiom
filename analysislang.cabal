@@ -14,10 +14,12 @@ library
                  extra,
                  template-haskell,
                  text,
-                 neat-interpolation
+                 neat-interpolation,
+                 singletons,
+                 haskell-src-meta
   build-tools: alex, happy
   exposed-modules:  Language.AST
-                  , Language.AST.CodeGen
+                  , Language.CodeGen
                   , Language.Types
                   , Language.Parser
                   , Language.ParserNext
@@ -27,7 +29,9 @@ library
                   , Language.Solver.Renamer
                   , Language.Solver.BacktrackingST
                   , Language.Solver.Worklist
-                  , Language.AST.CodeGen.Prelude
+                  , Language.CodeGen.Prelude
+                  , Language.CodeGen.HaskellHatch
+                  , Language.CodeGen.Phase
                   , Language.Range
                   , Language.Lexer
                   , Language.TemplateHaskell.SyntaxExtra

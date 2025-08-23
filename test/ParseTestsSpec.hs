@@ -3,6 +3,7 @@ module ParseTestsSpec where
 import Test.Hspec
 import Language.AST
 import Language.Range
+import Language.Types (Value(..))
 import Control.Applicative (liftA2)
 import Data.Functor.Identity
 import qualified Data.Set as Set
@@ -79,3 +80,38 @@ spec = do
       it "contains expected infix operators" $ do
         infixNames `shouldContain` ["="]
         infixNames `shouldContain` ["~>"]
+    
+    describe "integer literal parsing" $ do
+      it "parses positive integer literals" $ do
+        term <- parseTermHelper "42"
+        case term of
+          TermValue (IntValue 42) _ _ -> return ()
+          _ -> expectationFailure $ "Expected TermValue (IntValue 42), got: " ++ show term
+      
+      it "parses zero" $ do
+        term <- parseTermHelper "0"
+        case term of
+          TermValue (IntValue 0) _ _ -> return ()
+          _ -> expectationFailure $ "Expected TermValue (IntValue 0), got: " ++ show term
+      
+      it "parses large integers" $ do
+        term <- parseTermHelper "123456"
+        case term of
+          TermValue (IntValue 123456) _ _ -> return ()
+          _ -> expectationFailure $ "Expected TermValue (IntValue 123456), got: " ++ show term
+      
+      it "works in equality expressions" $ do
+        term <- parseTermHelper "x = 42"
+        case term of
+          Eqq (Atom (Identity "x") _ _) (TermValue (IntValue 42) _ _) _ _ -> return ()
+          _ -> expectationFailure $ "Expected 'x = 42' with integer literal, got: " ++ show term
+      
+      it "works in functor arguments" $ do
+        term <- parseTermHelper "f(42, x)"
+        case term of
+          Functor "f" [TermValue (IntValue 42) _ _, Atom (Identity "x") _ _] _ _ -> return ()
+          _ -> expectationFailure $ "Expected 'f(42, x)' with integer literal, got: " ++ show term
+      
+      it "atomNames excludes integer literals" $ do
+        term <- parseTermHelper "f(42, x)"
+        atomNames term `shouldBe` Set.singleton "x"

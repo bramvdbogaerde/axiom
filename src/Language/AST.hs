@@ -28,6 +28,8 @@ module Language.AST(
     RuleDecl'(..),
     Term'(..),
 
+    XHaskellExpr,
+
     PureTerm,
     PureTerm',
 
@@ -38,7 +40,8 @@ module Language.AST(
     TypedRuleDecl,
     TypedProgram,
 
-    CodeGenProgram,
+    ParsePhase,
+    TypingPhase,
 
     typeComment,
     variableName,
@@ -49,6 +52,7 @@ module Language.AST(
     functorName,
     termEqIgnoreRange,
     infixNames,
+    HaskellExprExecutor(..),
     module Language.Range
   ) where
 
@@ -60,6 +64,7 @@ import Language.Range
 import Data.Kind
 import Data.Functor.Identity
 import Data.List (intercalate)
+import qualified Data.Map as Map
 
 import Language.Types
 
@@ -85,13 +90,6 @@ data TypingPhase
 type instance XHaskellExpr TypingPhase = String -- after typing the Haskell expression is still a string
 type instance XTypeAnnot TypingPhase = Typ
 
--- | Phase after code generation. Haskell expressions are turned in pure functions
--- that have unified terms are their argument. The solver makes sure that all terms
--- are ground before passing them to the function and tries to unwrap the data
--- into pure Haskell types wherever possible.
-data CodeGenPhase
-type instance XHaskellExpr CodeGenPhase  = ([PureTerm] -> PureTerm)
-
 -- | For all phase add the specified constraint
 type ForAllPhases :: (Type -> Constraint) -> Type -> Constraint
 type ForAllPhases c p = (c (XHaskellExpr p), c (XTypeAnnot p))
@@ -108,7 +106,6 @@ deriving instance (ForAllPhases Eq p) => Eq (Program' p)
 deriving instance (ForAllPhases Show p) => Show (Program' p)
 type Program = Program' ParsePhase
 type TypedProgram = Program' TypingPhase
-type CodeGenProgram = Program' CodeGenPhase
 
 -- | A comment with its position
 data Comment' p = Comment String Range deriving (Ord, Eq, Show)
@@ -123,8 +120,8 @@ type Tpy = String
 
 -- | A declaration is either a syntax section, rules section, transition
 -- declaration or or a rewrite rule.
-data Decl' p = Syntax [SyntaxDecl' ParsePhase] Range
-             | Rewrite (RewriteDecl' ParsePhase) Range
+data Decl' p = Syntax [SyntaxDecl' p] Range
+             | Rewrite (RewriteDecl' p) Range
              | RulesDecl [RuleDecl' p] Range
              | TransitionDecl String (Typ, Range) (Typ, Range) Range
 deriving instance (ForAllPhases Ord p) => Ord (Decl' p)
@@ -185,12 +182,14 @@ instance (ForAllPhases Show p) => Show (RuleDecl' p) where
 --                  | term0 /= term1
 --                  | term0 ~> term1
 --                  | ${ haskell_expr }
+--                  | value
 data Term' p f  = Atom (f String) (XTypeAnnot p)  Range
                 | Functor String [Term' p f]  (XTypeAnnot p) Range
                 | Eqq (Term' p f) (Term' p f) (XTypeAnnot p) Range
                 | Neq (Term' p f) (Term' p f) (XTypeAnnot p) Range
                 | Transition String (Term' p f) (Term' p f) (XTypeAnnot p)  Range
                 | HaskellExpr (XHaskellExpr p) (XTypeAnnot p) Range
+                | TermValue Value (XTypeAnnot p) Range
 type Term = Term' ParsePhase
 
 deriving instance (Ord (f String), ForAllPhases Ord p) => Ord (Term' p f)
@@ -205,6 +204,7 @@ instance (Show (f String), ForAllPhases Show p) => Show (Term' p f) where
   show (Neq left right _ _) = show left ++ " /= " ++ show right
   show (Transition tname left right _ _) = show left ++ " " ++ tname ++ " " ++ show right
   show (HaskellExpr expr _ _) = "${" ++ show expr ++ "}"
+  show (TermValue value _ _) = show value
 
 -- | Specialized Show instance for PureTerm that doesn't show Identity wrapper
 instance {-# OVERLAPPING #-} Show PureTerm where
@@ -215,6 +215,7 @@ instance {-# OVERLAPPING #-} Show PureTerm where
   show (Neq left right _ _) = show left ++ " /= " ++ show right
   show (Transition tname left right _ _) = show left ++ " " ++ tname ++ " " ++ show right
   show (HaskellExpr expr _ _) = "${" ++ expr ++ "}"
+  show (TermValue value _ _) = show value
 
 type PureTerm = PureTerm' ParsePhase
 type PureTerm' p = Term' p Identity
@@ -228,6 +229,7 @@ atomNames = \case Atom a _ _ -> Set.singleton $ runIdentity a
                   Neq t1 t2 _ _ -> atomNames t1 `Set.union` atomNames t2
                   Transition _ t1 t2 _ _ -> atomNames t1 `Set.union` atomNames t2
                   HaskellExpr {} -> Set.empty
+                  TermValue {} -> Set.empty
 
 
 -- | Returns the name of the functor embedded in the term (if any),
@@ -238,6 +240,7 @@ functorName = \case Functor nam _ _ _ -> Just nam
                     Neq {} -> Just "/="
                     Transition {} -> Just "~>"
                     HaskellExpr {} -> Nothing
+                    TermValue {} -> Nothing
                     _ -> Nothing
 
 instance RangeOf (Term' p f) where
@@ -247,6 +250,7 @@ instance RangeOf (Term' p f) where
                   Neq _ _ _ r -> r
                   Transition _ _ _ _  r -> r
                   HaskellExpr _ _ r -> r
+                  TermValue _ _ r -> r
 
 -- | Extract the name of the variable from variables suffixed with numbers
 variableName :: String -> String
@@ -265,9 +269,27 @@ termEqIgnoreRange (Neq l1 r1 _ _) (Neq l2 r2  _ _) =
 termEqIgnoreRange (Transition n1 l1 r1 _ _) (Transition n2 l2 r2 _ _) =
   n1 == n2 && termEqIgnoreRange l1 l2 && termEqIgnoreRange r1 r2
 termEqIgnoreRange (HaskellExpr expr1 _ _) (HaskellExpr expr2 _ _) = expr1 == expr2
+termEqIgnoreRange (TermValue value1 _ _) (TermValue value2 _ _) = value1 == value2
 termEqIgnoreRange _ _ = False
 
 -- | Allowed infix names that can be used in a term
 infixNames :: [String]
 infixNames = [ "=", "/=", "~>"]
+
+-------------------------------------------------------------
+-- Phase-dependent Haskell expression execution
+-------------------------------------------------------------
+
+-- | Type class for executing Haskell expressions in different phases
+class HaskellExprExecutor p where
+  -- | Execute a Haskell expression, potentially returning an error or a term
+  executeHaskellExpr :: XHaskellExpr p -> Map.Map String (PureTerm' p) -> Either String (PureTerm' p)
+
+-- | ParsePhase instance: Haskell expressions cannot be executed before code generation
+instance HaskellExprExecutor ParsePhase where
+  executeHaskellExpr _ _ = Left "Haskell expressions cannot be executed in ParsePhase - code generation required"
+
+-- | TypingPhase instance: Haskell expressions are not executable (they're just strings)
+instance HaskellExprExecutor TypingPhase where
+  executeHaskellExpr _ _ = Left "Haskell expressions in TypingPhase are not executable - code generation required"
 

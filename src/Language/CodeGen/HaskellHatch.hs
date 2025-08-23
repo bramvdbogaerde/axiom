@@ -1,14 +1,12 @@
--- | Module that is loaded by code generted in the 'Language.AST.CodeGen' module.
-module Language.AST.CodeGen.Prelude(
+{-# LANGUAGE RankNTypes #-}
+-- | Module for Haskell expression execution and related functionality
+module Language.CodeGen.HaskellHatch(
     HaskellHatch(..),
-    HatchError(..),
-    module Language.AST,
-    module Language.Types,
-    module Language.Range
+    HatchError(..)
   ) where
 
 import Language.AST
-import Language.Range
+import Language.Range  
 import Language.Types
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -25,6 +23,6 @@ data HaskellHatch = HaskellHatch {
     -- | The execution function, gives a mapping of free variables to their ground terms, and returns either a failure (indicated by Left) or a pure term.
     --
     -- Failures are encoded using the HatchError data type.
-    execute :: Map String PureTerm -> Either HatchError PureTerm
+    execute :: forall p . Map String (PureTerm' p) -> Either HatchError (PureTerm' p)
   }
 

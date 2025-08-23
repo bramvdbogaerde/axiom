@@ -461,10 +461,17 @@ checkRule (RuleDecl nam precedent consequent range) = do
 
 -- | Type a rewrite rule
 typeRewrite :: MonadCheck m => RewriteDecl -> m TypedRewriteDecl
-typeRewrite = undefined
+typeRewrite (RewriteDecl name args body range) = do
+  -- TODO: annotate with the correct type instead of AnyType
+  typedArgs <- mapM (fmap fst . checkTerm) args
+  typedBody <- fmap fst (checkTerm body)
+  return $ RewriteDecl name typedArgs typedBody range
 
 typeSyntax :: MonadCheck m => SyntaxDecl -> m TypedSyntaxDecl
-typeSyntax = undefined
+typeSyntax (SyntaxDecl vars tpy prods range) = do
+  -- TODO: annotate with the correct type instead of AnyType
+  typedProds <- mapM (fmap fst . checkTerm) prods
+  return $ SyntaxDecl vars tpy typedProds range
 
 pass3VisitDecl :: MonadCheck m => Decl -> m TypedDecl
 pass3VisitDecl (RulesDecl rules range) =
@@ -474,11 +481,9 @@ pass3VisitDecl t@(TransitionDecl nam s1@(Sort fromSort, r1) s2@(Sort toSort, r2)
   assertSortDefinedAt r2 toSort
   return (TransitionDecl nam s1 s2 range)
 pass3VisitDecl (Rewrite rewrite range) =
-  -- TODO: after the type checking phase we should
-  -- actually also annotate the rewrite rules.
-  Rewrite <$> pure rewrite <*> pure range
+  Rewrite <$> typeRewrite rewrite <*> pure range
 pass3VisitDecl (Syntax syntax range) =
-  Syntax <$> mapM return syntax <*> pure range
+  Syntax <$> mapM typeSyntax syntax <*> pure range
 
 pass3 :: MonadCheck m => Program -> m TypedProgram
 pass3 (Program decls comments) = Program <$> (mapM pass3VisitDecl decls) <*> pure (map typeComment comments)

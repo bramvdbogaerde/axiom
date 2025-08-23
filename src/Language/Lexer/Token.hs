@@ -22,6 +22,7 @@ data Token = IsDefinedAs -- ^ '::='
            | Bar         -- ^ '|'
            | Ident String
            | Quo String
+           | IntLit Int  -- ^ integer literal
            | HaskellExpr String -- ^ '{ HASKELL_EXP }'
            deriving (Ord, Eq, Show)
 

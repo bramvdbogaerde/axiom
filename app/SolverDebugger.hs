@@ -104,11 +104,11 @@ prettyTrace = foldMap prettyTraceEntry
 
 -- | Traced solver monad - wraps the solver with tracing capability and context
 newtype TracedSolver q s a = TracedSolver
-  { runTracedSolver :: ReaderT DebugContext (WriterT SolverTrace (Solver q s)) a }
+  { runTracedSolver :: ReaderT DebugContext (WriterT SolverTrace (Solver TypingPhase q s)) a }
   deriving (Functor, Applicative, Monad, MonadReader DebugContext, MonadWriter SolverTrace)
 
 -- | Lift a solver action into the traced solver
-liftSolver :: Solver q s a -> TracedSolver q s a
+liftSolver :: Solver TypingPhase q s a -> TracedSolver q s a
 liftSolver = TracedSolver . lift . lift
 
 -- | Add a trace entry
@@ -141,7 +141,7 @@ getCurrentPartialMapping = do
     else Map.restrictKeys fullMapping (context ^. userVariables)
 
 -- | Convert goal terms to string representation for tracing
-goalToString :: Unification.VariableMapping s -> SearchGoal s -> TracedSolver q s String
+goalToString :: Unification.VariableMapping TypingPhase s -> SearchGoal TypingPhase s -> TracedSolver q s String
 goalToString mapping (SearchGoal ruleName goal) =
    flip (Printf.printf "%s via %s") ruleName . show <$> liftSolver (liftST $ Unification.pureTerm goal mapping)
 
@@ -199,7 +199,7 @@ tracedSolve query = do
   tracedSolveAll
 
 -- | Run a traced solver computation with context and return results with trace
-runSolverWithTrace :: (Queue q) => DebugContext -> EngineCtx q s -> TracedSolver q s a -> ST.ST s (a, SolverTrace)
+runSolverWithTrace :: (Queue q) => DebugContext -> EngineCtx TypingPhase q s -> TracedSolver q s a -> ST.ST s (a, SolverTrace)
 runSolverWithTrace context ctx tracedComp = do
   runSolver ctx $ runWriterT $ runReaderT (runTracedSolver tracedComp) context
 
@@ -207,7 +207,7 @@ runSolverWithTrace context ctx tracedComp = do
 debugSolve :: DebugConfig -> [RuleDecl] -> PureTerm -> IO ([Map String PureTerm], SolverTrace)
 debugSolve config rules query = do
   return $ ST.runST $ do
-    let ctx = fromRules rules :: EngineCtx [] s
+    let ctx = fromRules rules :: EngineCtx TypingPhase [] s
     let debugCtx = createDebugContext config query
     runSolverWithTrace debugCtx ctx (tracedSolve query)
 

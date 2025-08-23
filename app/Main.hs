@@ -5,7 +5,7 @@ import Prelude hiding (lex)
 import Language.AST
 import Language.Parser
 import Language.TypeCheck
-import Language.AST.CodeGen
+import Language.CodeGen
 import Text.Pretty.Simple hiding (Vivid, Green)
 import Data.Either
 import Data.Bifunctor

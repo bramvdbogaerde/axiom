@@ -154,6 +154,10 @@ identWithRange = do
 haskellExpr :: Parser String
 haskellExpr = matchToken (\case Token.HaskellExpr s -> Just s; _ -> Nothing)
 
+-- | Matches an integer literal token
+intLit :: Parser Int
+intLit = matchToken (\case Token.IntLit i -> Just i; _ -> Nothing)
+
 -- | Matches with a defined as token
 definedAs :: Parser ()
 definedAs = matchToken (\case IsDefinedAs -> Just (); _ -> Nothing)
@@ -213,8 +217,10 @@ implies = matchToken (\case Implies -> Just (); _ -> Nothing)
 term :: Parser PureTerm
 term = do
     pos0 <- position
-    -- Parse either a Haskell expression or a regular identifier-based term
-    term0 <- (withRange (HaskellExpr <$> haskellExpr <*> pure ()) <?> "haskell expression") <|> do
+    -- Parse either a Haskell expression, integer literal, or regular identifier-based term
+    term0 <- (withRange (HaskellExpr <$> haskellExpr <*> pure ()) <?> "haskell expression") 
+         <|> (withRange (TermValue <$> (IntValue <$> intLit) <*> pure ()) <?> "integer literal")
+         <|> do
       typeOrFunctor <- ident <?> "identifier"
       -- Terms are functors or atoms
       (((parens (Functor typeOrFunctor <$> withComments (sepBy (surroundedByComments term) (withComments com)) <*> pure ()) <?> "functor application")
