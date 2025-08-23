@@ -124,7 +124,7 @@ spec = do
                 throwError "Expected paths to be compressed"
 
               -- Now modify cell3 to have a value
-              lift $ writeSTRef ref3 (Value (Functor "atom" [] () dummyRange))
+              lift $ writeSTRef ref3 (Value @ParsePhase (Functor "atom" [] () dummyRange))
 
               -- Try to retrieve through cell1 - this should still work if path compression preserved pointers correctly
               finalCell2 <- lift $ setOf cell1

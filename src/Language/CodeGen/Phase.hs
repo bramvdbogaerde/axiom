@@ -1,9 +1,12 @@
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeApplications #-}
 module Language.CodeGen.Phase(CodeGenPhase, CodeGenProgram) where
 
 import Language.AST
 import Language.CodeGen.HaskellHatch
+import Language.Types (Typ)
+import Data.Data
 
 -- | Phase after code generation. Haskell expressions are turned in pure functions
 -- that have unified terms are their argument. The solver makes sure that all terms
@@ -11,6 +14,7 @@ import Language.CodeGen.HaskellHatch
 -- into pure Haskell types wherever possible.
 data CodeGenPhase
 type instance XHaskellExpr CodeGenPhase  = HaskellHatch
+type instance XTypeAnnot CodeGenPhase  = Typ
 
 type CodeGenProgram = Program' CodeGenPhase
 
@@ -18,10 +22,13 @@ type CodeGenProgram = Program' CodeGenPhase
 -- Note: This assumes XHaskellExpr CodeGenPhase ~ HaskellHatch
 instance HaskellExprExecutor CodeGenPhase where
   executeHaskellExpr hatch mapping = 
-    case execute hatch mapping of
+    case execute hatch (Proxy @CodeGenPhase) mapping of
       Left (InvalidTypePassed expected actual) -> 
         Left $ "Type error: expected " ++ show expected ++ ", got " ++ show actual
       Left (UserError msg) -> 
         Left $ "Execution error: " ++ msg
       Right result -> 
         Right result
+
+instance AnnotateType CodeGenPhase where
+  typeAnnot _ = id

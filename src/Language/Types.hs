@@ -19,6 +19,7 @@ module Language.Types(
     asType,
     toValue,
     typeOf,
+    primTyp,
     
     -- * Template Haskell
     typHaskEx
@@ -53,6 +54,11 @@ data Typ = Sort String -- ^ a user-defined (or system) sort
          | StrType     -- ^ values are integers
          | AnyType
         deriving (Ord, Eq, Show)        
+
+-- | LEGACY (TODO): converts a user-defined type to primitive type
+primTyp :: Typ -> Typ
+primTyp (Sort str) = fromSortName str
+primType t = t
 
 -- | Association of type tags to their Haskell types
 data TypHask (k :: Typ)  where

@@ -2,6 +2,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Language.Solver where
 
@@ -13,12 +15,14 @@ import Control.Monad.State
 import Data.Functor.Identity
 import Control.Monad.Trans
 import Data.Map (Map)
+import Data.Proxy
 import qualified Data.Map as Map
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Language.AST
+import Language.Types
 import qualified Language.Solver.BacktrackingST as ST
 import qualified Language.Solver.Renamer as Renamer
 import qualified Language.Solver.Unification as Unification
@@ -62,7 +66,7 @@ $(makeLenses ''SearchCtx)
 
 data EngineCtx p q s = EngineCtx
   { -- | Mapping from functor names to their appropriate rule, used in backwards reasoning
-    _conclusionFunctors :: Map String (Set RuleDecl),
+    _conclusionFunctors :: Map String (Set (RuleDecl' p)),
     -- | Unique variables counter
     _numUniqueVariables :: Int,
     -- | Search context for query resolution
@@ -80,12 +84,12 @@ emptyEngineCtx = EngineCtx Map.empty 0 emptySearchCtx
 $(makeLenses ''EngineCtx)
 
 -- | Associate the given functor with the given rule, indicating that it can be found in the conclusion of that rule.
-addConclusionFunctor :: String -> RuleDecl -> EngineCtx p q s -> EngineCtx p q s
+addConclusionFunctor :: (ForAllPhases Ord p) => String -> RuleDecl' p -> EngineCtx p q s -> EngineCtx p q s
 addConclusionFunctor nam decl =
   over conclusionFunctors (Map.insertWith Set.union nam (Set.singleton decl))
 
 -- | Construct an initial context from the rules defined the program
-fromRules :: (Queue q) => [RuleDecl] -> EngineCtx p q s
+fromRules :: (Queue q, ForAllPhases Ord p) => [RuleDecl' p] -> EngineCtx p q s
 fromRules = foldr visit emptyEngineCtx
   where
     visit rule@(RuleDecl _ precedent consequent _) =
@@ -117,7 +121,7 @@ restoreSnapshot :: ST.Snapshot s -> Solver p q s ()
 restoreSnapshot = liftST . ST.restore
 
 -- | Convert a PureTerm to RefTerm and update the solver's current mapping
-refTerm :: PureTerm -> Solver p q s (RefTerm p s)
+refTerm :: PureTerm' p -> Solver p q s (RefTerm p s)
 refTerm term = do
   mapping <- gets (^. searchCtx . currentMapping)
   (refTerm, newMapping) <- liftST $ Unification.refTerm term mapping
@@ -128,7 +132,7 @@ refTerm term = do
 -- Auxiliary functions
 ------------------------------------------------------------
 
-unify :: HaskellExprExecutor p
+unify :: (AnnotateType p, HaskellExprExecutor p)
       => RefTerm p s
       -> RefTerm p s
       -> Solver p q s (Either String ())
@@ -141,7 +145,7 @@ unify left right  = do
 ------------------------------------------------------------
 
 -- | Initialize the queue with the query
-initialWL :: Queue q => PureTerm -> Solver p q s ()
+initialWL :: Queue q => PureTerm' p -> Solver p q s ()
 initialWL query = do
   refQuery <- refTerm query
   mapping <- gets (^. searchCtx . currentMapping)
@@ -150,13 +154,13 @@ initialWL query = do
   modify (over (searchCtx . searchQueue) (enqueue initialState))
 
 -- | Main entry point for solving a query - returns lazy list of all solutions
-solve :: (HaskellExprExecutor p, Queue q) => PureTerm -> Solver p q s [Map String PureTerm]
+solve :: (AnnotateType p, HaskellExprExecutor p, Queue q) => PureTerm' p -> Solver p q s [Map String (PureTerm' p)]
 solve query = initialWL query >> solveAll
 
 -- | Solve a single step: dequeue one state and process it
 -- Returns Nothing if queue is empty, Just (Left solution) if solution found,
 -- Just (Right ()) if search state was processed and search should continue
-solveSingle :: (HaskellExprExecutor p, Queue q) => Solver p q s (Maybe (Either (Map String PureTerm) ()))
+solveSingle :: forall p q s . (AnnotateType p, HaskellExprExecutor p, Queue q) => Solver p q s (Maybe (Either (Map String (PureTerm' p)) ()))
 solveSingle = do
   queue <- gets (^. searchCtx . searchQueue)
   case dequeue queue of
@@ -170,14 +174,14 @@ solveSingle = do
         [] -> do
           -- No goals left - we have a solution
           mapping <- gets (^. searchCtx . currentMapping)
-          result <- liftST $ mapM (\cell -> Unification.pureTerm (Atom cell () dummyRange) mapping) mapping
+          result <- liftST $ mapM (\cell -> Unification.pureTerm (Atom cell (typeAnnot (Proxy @p) AnyType) dummyRange) mapping) mapping
           return $ Just (Left result)
         (goal:remainingGoals) -> do
           expandGoal goal remainingGoals
           return $ Just (Right ())
 
 -- | Collect all solutions by repeatedly calling solveSingle
-solveAll :: (HaskellExprExecutor p, Queue q) => Solver p q s [Map String PureTerm]
+solveAll :: (AnnotateType p, HaskellExprExecutor p, Queue q) => Solver p q s [Map String (PureTerm' p)]
 solveAll = do
   result <- solveSingle
   case result of
@@ -192,7 +196,7 @@ continue remainingGoals = do
   modify (over (searchCtx . searchQueue) (enqueue newState))
 
 -- | Expand a goal by trying all matching rules
-expandGoal :: (HaskellExprExecutor p, Queue q) => SearchGoal p s -> [SearchGoal p s] -> Solver p q s ()
+expandGoal :: (AnnotateType p, HaskellExprExecutor p, Queue q) => SearchGoal p s -> [SearchGoal p s] -> Solver p q s ()
 expandGoal (SearchGoal ruleName goal) remainingGoals = do
   case goal of
     -- Functors: look for rules with the name of the functor in its
@@ -219,12 +223,12 @@ expandGoal (SearchGoal ruleName goal) remainingGoals = do
 ------------------------------------------------------------
 
 -- | Find all rules that could potentially match a functor name
-findMatchingRules :: String -> Solver p q s [RuleDecl]
+findMatchingRules :: String -> Solver p q s [RuleDecl' p]
 findMatchingRules functorName = do
   gets (Set.toList . Map.findWithDefault Set.empty functorName . (^. conclusionFunctors))
 
 -- | Try to unify a goal with a rule and add new search states
-processRule :: (Queue q) => RefTerm p s -> [SearchGoal p s] -> RuleDecl -> Solver p q s ()
+processRule :: forall p q s . (AnnotateType p, Queue q) => RefTerm p s -> [SearchGoal p s] -> RuleDecl' p -> Solver p q s ()
 processRule goal remainingGoals rule = do
   RuleDecl ruleName precedents consequents _ <- Solver $ zoom numUniqueVariables $ Renamer.renameRuleState rule
 
@@ -235,7 +239,7 @@ processRule goal remainingGoals rule = do
       precedentRefs <- mapM refTerm precedents
 
       -- Create unification goal: current goal = consequent
-      let unificationGoal = SearchGoal ruleName (Eqq goal refConsequent () dummyRange)
+      let unificationGoal = SearchGoal ruleName (Eqq goal refConsequent (typeAnnot (Proxy @p) AnyType) dummyRange)
       let precedentGoals = map (SearchGoal ruleName) precedentRefs
       let newGoals = unificationGoal : precedentGoals ++ remainingGoals
 

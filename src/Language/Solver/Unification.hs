@@ -2,11 +2,15 @@
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Language.Solver.Unification where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Proxy
 import Language.AST
+import Language.Types
 import Control.Lens
 import Control.Monad.State
 import qualified Language.Solver.BacktrackingST as BST
@@ -37,12 +41,12 @@ getVariableMapping = ask
 data CellValue p s a = Value (RefTerm p s)
                    | Ptr (Cell p s a)
                    | Uninitialized String
-                  deriving (Eq)
+deriving instance (ForAllPhases Eq p) => Eq (CellValue p s a)
 
 newtype Cell p s a = Ref (BST.STRef s (CellValue p s a))
                  deriving (Eq)
 
-type RefTerm p s = Term (Cell p s)
+type RefTerm p s = Term' p (Cell p s)
 
 readCellRef :: Cell p s a -> BST.ST s (CellValue p s a)
 readCellRef (Ref ref) = BST.readSTRef ref
@@ -80,10 +84,10 @@ flattenMapping = mapM_ flattenCell
 -- | Transform a term to use IORefs instead of variables, returns
 -- the transformed term, together with a mapping from variable names
 -- to their references.
-refTerm ::  PureTerm -> VariableMapping p s -> BST.ST s (RefTerm p s, VariableMapping p s)
+refTerm ::  PureTerm' p -> VariableMapping p s -> BST.ST s (RefTerm p s, VariableMapping p s)
 refTerm term = runStateT (transformTerm term)
   where
-    transformTerm :: PureTerm -> StateT (VariableMapping p s) (BST.ST s) (RefTerm p s)
+    transformTerm :: PureTerm' p -> StateT (VariableMapping p s) (BST.ST s) (RefTerm p s)
     transformTerm (Atom (Identity varName) tpy range) =
       maybe createNewCell (return . (\c -> Atom c tpy range)) =<< gets (Map.lookup varName)
       where
@@ -123,12 +127,12 @@ addVisited :: BST.STRef s (CellValue p s String) -> VisitedList p s -> VisitedLi
 addVisited ref visited = ref : visited
 
 -- | Convert a pointer-based term back to a pure term with cycle detection
-pureTerm' :: RefTerm p s -> VariableMapping p s -> BST.ST s (Either String PureTerm)
+pureTerm' :: RefTerm p s -> VariableMapping p s -> BST.ST s (Either String (PureTerm' p))
 pureTerm' term mapping = do
   flattenMapping mapping
   runExceptT $ evalStateT (convertTerm term) []
   where
-    convertTerm :: RefTerm p s -> StateT (VisitedList p s) (ExceptT String (BST.ST s)) PureTerm
+    convertTerm :: RefTerm p s -> StateT (VisitedList p s) (ExceptT String (BST.ST s)) (PureTerm' p)
     convertTerm (Atom (Ref cellRef) tpy range) =
       lift (lift $ BST.readSTRef cellRef) >>= \case
         Value term ->
@@ -157,7 +161,7 @@ pureTerm' term mapping = do
       return $ HaskellExpr expr tpy range
 
 -- | Same as pureTerm' but raises an error if the term could not be converted
-pureTerm :: RefTerm p s -> VariableMapping p s -> BST.ST s PureTerm
+pureTerm :: RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
 pureTerm term = pureTerm' term >=> either error return
 
 -------------------------------------------------------------
@@ -185,10 +189,10 @@ termOrder :: Term' p x -> Term' p x -> (Term' p x, Term' p x)
 termOrder a b = let [a', b'] = sortWith termTypeOf [a, b] in (a', b')
 
 -- | Unify two reference-based terms
-unifyTerms :: forall p s . HaskellExprExecutor p => RefTerm p s -> RefTerm p s -> UnificationM p s ()
+unifyTerms :: forall p s . (AnnotateType p, HaskellExprExecutor p) => RefTerm p s -> RefTerm p s -> UnificationM p s ()
 unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
   where
-    unifyTermsImpl :: HaskellExprExecutor p => RefTerm p s  -> RefTerm p s -> UnificationM p s ()
+    unifyTermsImpl :: (AnnotateType p, HaskellExprExecutor p) => RefTerm p s  -> RefTerm p s -> UnificationM p s ()
     --
     -- Same term types
     -- 
@@ -268,18 +272,19 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
         _ -> throwError "Unexpected cell value in atom-term unification"
 
 -- | Convert variable mapping to pure term mapping for Haskell expression execution
-buildPureMapping :: VariableMapping p s -> BST.ST s (Map String PureTerm)
+buildPureMapping :: forall p s . AnnotateType p => VariableMapping p s -> BST.ST s (Map String (PureTerm' p))
 buildPureMapping varMapping = do
-  results <- mapM (\cell -> pureTerm' (Atom cell () dummyRange) varMapping) varMapping
+  results <- mapM (\cell -> pureTerm' (Atom cell (typeAnnot (Proxy @p) AnyType) dummyRange) varMapping) varMapping
   case sequenceA results of
     Left err -> error $ "Failed to build pure mapping: " ++ err
     Right pureMapping -> return pureMapping
 
 -- | Unify two pure terms and return a substitution mapping
-unify :: HaskellExprExecutor p
-      => PureTerm
-      -> PureTerm
-      -> UnificationM p s (Map String PureTerm)
+unify :: forall p s .
+         (AnnotateType p, HaskellExprExecutor p)
+      => PureTerm' p
+      -> PureTerm' p
+      -> UnificationM p s (Map String (PureTerm' p))
 unify term1 term2 = do
   -- Convert first term to ref term with empty mapping
   (refTerm1, mapping1) <- lift $ lift $ refTerm term1 Map.empty
@@ -288,12 +293,13 @@ unify term1 term2 = do
   -- Attempt unification using UnificationM
   runReaderT (lift $ unifyTerms refTerm1 refTerm2) sharedMapping
   -- Convert mapping back to pure terms
-  results <- lift $ mapM (\cell -> lift $ pureTerm' (Atom cell () dummyRange) sharedMapping) sharedMapping
+  results <- lift $ mapM (\cell -> lift $ pureTerm' (Atom cell (typeAnnot (Proxy @p) AnyType) dummyRange) sharedMapping) sharedMapping
   either throwError return $ sequenceA results
 
 -- | Run unification in the ST monad and return the result
-runUnification :: forall p . HaskellExprExecutor p
-               => PureTerm
-               -> PureTerm
-               -> Either String (Map String PureTerm)
+runUnification :: forall p .
+                  (HaskellExprExecutor p, AnnotateType p)
+               => PureTerm' p
+               -> PureTerm' p
+               -> Either String (Map String (PureTerm' p))
 runUnification term1 term2 = BST.runST $ runExceptT $ runReaderT (unify @p term1 term2) Map.empty

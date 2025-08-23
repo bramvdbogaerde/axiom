@@ -8,6 +8,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 module Language.AST(
     Tpy,
     Program,
@@ -29,6 +31,7 @@ module Language.AST(
     Term'(..),
 
     XHaskellExpr,
+    XTypeAnnot,
 
     PureTerm,
     PureTerm',
@@ -45,6 +48,7 @@ module Language.AST(
 
     typeComment,
     variableName,
+    safeVariableName,
     Position(..),
     Range(..),
     RangeOf(..),
@@ -53,6 +57,7 @@ module Language.AST(
     termEqIgnoreRange,
     infixNames,
     HaskellExprExecutor(..),
+    AnnotateType(..),
     module Language.Range
   ) where
 
@@ -67,6 +72,7 @@ import Data.List (intercalate)
 import qualified Data.Map as Map
 
 import Language.Types
+import Data.Data
 
 -------------------------------------------------------------
 -- Phase seperation
@@ -192,6 +198,17 @@ data Term' p f  = Atom (f String) (XTypeAnnot p)  Range
                 | TermValue Value (XTypeAnnot p) Range
 type Term = Term' ParsePhase
 
+-- | Change the type of the given term to the given type
+annotateTerm :: forall p f. AnnotateType p => Typ -> Term' p f -> Term' p f
+annotateTerm typ = \case
+  Atom name _ range -> Atom name (typeAnnot (Proxy @p) typ) range
+  Functor fname args _ range -> Functor fname args (typeAnnot (Proxy @p) typ) range
+  Eqq left right _ range -> Eqq left right (typeAnnot (Proxy @p) typ) range
+  Neq left right _ range -> Neq left right (typeAnnot (Proxy @p) typ) range
+  Transition tname left right _ range -> Transition tname left right (typeAnnot (Proxy @p) typ) range
+  HaskellExpr expr _ range -> HaskellExpr expr (typeAnnot (Proxy @p) typ) range
+  TermValue value _ range -> TermValue value (typeAnnot (Proxy @p) typ) range
+
 deriving instance (Ord (f String), ForAllPhases Ord p) => Ord (Term' p f)
 deriving instance (Eq (f String), ForAllPhases  Eq p) => Eq (Term' p f)
 
@@ -254,7 +271,11 @@ instance RangeOf (Term' p f) where
 
 -- | Extract the name of the variable from variables suffixed with numbers
 variableName :: String -> String
-variableName s = head $ fromMaybe (error $ "could not get variable name of " ++ s) $ matchRegex r s
+variableName s = fromMaybe (error $ "could not get variable name of " ++ s) $ safeVariableName s
+
+-- | Same as 'variableName' but returns 'Nothing' if the variable cannot be extracted
+safeVariableName :: String -> Maybe String
+safeVariableName s = head <$> matchRegex r s
   where r = mkRegex "([a-zA-Z]+)\\d*"
 
 -- | Compare two terms for equality ignoring range information
@@ -292,4 +313,15 @@ instance HaskellExprExecutor ParsePhase where
 -- | TypingPhase instance: Haskell expressions are not executable (they're just strings)
 instance HaskellExprExecutor TypingPhase where
   executeHaskellExpr _ _ = Left "Haskell expressions in TypingPhase are not executable - code generation required"
+
+-- | Type class for associating a type with a term in a phase-independent manner 
+class AnnotateType p where
+  typeAnnot :: Proxy p -> Typ -> XTypeAnnot p
+  
+instance AnnotateType ParsePhase where
+  typeAnnot _ = const ()
+instance AnnotateType TypingPhase where
+  typeAnnot _ = id
+
+
 

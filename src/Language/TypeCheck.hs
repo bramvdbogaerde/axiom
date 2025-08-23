@@ -113,10 +113,6 @@ typesAs k s =
 emptyTypingContext :: Gamma
 emptyTypingContext = Gamma Map.empty
 
--- | Change an untyped pure term to a typed pure term
--- typeTerm :: Typ -> PureTerm -> TypedTerm
--- typeTerm tpy = \case Atom  
-
 -----------------------------------------
 -- Subtyping relation
 -----------------------------------------

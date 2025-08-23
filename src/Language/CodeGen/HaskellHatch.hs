@@ -10,6 +10,7 @@ import Language.Range
 import Language.Types
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Data
 
 -- | Errors that can be produced by embedded Haskell expressions
 data HatchError = InvalidTypePassed Typ Typ -- ^ invalid type: expected, actual
@@ -23,6 +24,6 @@ data HaskellHatch = HaskellHatch {
     -- | The execution function, gives a mapping of free variables to their ground terms, and returns either a failure (indicated by Left) or a pure term.
     --
     -- Failures are encoded using the HatchError data type.
-    execute :: forall p . Map String (PureTerm' p) -> Either HatchError (PureTerm' p)
+    execute :: forall p . AnnotateType p => Proxy p -> Map String (PureTerm' p) -> Either HatchError (PureTerm' p)
   }
 

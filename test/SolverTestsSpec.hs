@@ -51,7 +51,7 @@ runTestQuery program@(Program decls _) queryStr = do
     Left parseError -> return $ Left $ "Parse error: " ++ show parseError
     Right query -> do
       let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
-      let engineCtx = fromRules rules :: EngineCtx p [] s
+      let engineCtx = fromRules rules :: EngineCtx ParsePhase [] s
       let solverComputation = ST.runST $ runSolver engineCtx (solve @ParsePhase query)
       
       -- Run with 5 second timeout to catch non-termination
