@@ -1,24 +1,30 @@
 %% This file tests HaskellExpr parsing and execution functionality
 
 syntax {
-    result, sum, product in Int;
+    a, result, sum, product in Int;
+    test in Rules ::= t(result, result);
 };
 
 rules {
     rule "Simple-HaskellExpr"
     [ ] =>
-    [ result = ${42} ];
+    [ t(result, ${42}) ];
     
     rule "Arithmetic-HaskellExpr"
     [ ] =>
-    [ sum = ${10 + 5} ];
+    [ t(result, ${10 + 5}) ];
+
+    rule "Var-Access"
+    [ a = 5 ] =>
+    [ t(result, ${a * 2}) ];
     
     rule "Complex-Arithmetic"
     [ ] =>
-    [ product = ${6 * 7 + 2} ];
+    [ t(result, ${6 * 7 + 2}) ];
 };
 
 %% Test queries to verify Haskell expressions execute correctly
-%test: result = 42
-%test: sum = 15
-%test: product = 44
+%test: t(result, 42)
+%test: t(sum , 15)
+%test: t(product, 44)
+%test: t(result, 10)

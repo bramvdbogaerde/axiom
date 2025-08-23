@@ -40,6 +40,7 @@ makeModule ast testQueries = T.unpack
   [text|
   {-# LANGUAGE ScopedTypeVariables #-}
   {-# LANGUAGE TypeApplications #-}
+  {-# LANGUAGE LambdaCase #-}
   -- AnalysisLang related imports
   import Language.CodeGen.Prelude
   import qualified Language.AST
@@ -57,6 +58,7 @@ makeModule ast testQueries = T.unpack
   import System.Exit
   import Data.List (stripPrefix)
   import Data.Maybe (catMaybes)
+  import qualified Data.Map.Internal
 
   
   import GHC.Maybe
@@ -90,8 +92,8 @@ makeModule ast testQueries = T.unpack
     putStr $ "Testing query " ++ show idx ++ ": " ++ show query ++ " ... "
     let Program decls _ = ast
     let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
-    let engineCtx = fromRules rules
-    let solverComputation = ST.runST $ runSolver engineCtx (solve @CodeGenPhase query)
+    let engineCtx = fromRules @[] rules
+    let solverComputation = ST.runST $ runSolver engineCtx (solve @CodeGenPhase @[] query)
     
     case solverComputation of
       [] -> do
@@ -129,7 +131,7 @@ embedExpression haskellCode expectedType = do
         typingCtx = _typingContext ctx
 
     -- Generate the HaskellHatch data structure
-    [| HaskellHatch $(lift freeVarList) $(generateExecuteFunction haskellExp freeVarList typingCtx expectedType) |]
+    [| HaskellHatch $(lift haskellCode) $(lift freeVarList) $(generateExecuteFunction haskellExp freeVarList typingCtx expectedType) |]
 
 -- | Generate the execute function for a Haskell expression  
 generateExecuteFunction :: Exp -> [String] -> Gamma -> Typ -> Q Exp
