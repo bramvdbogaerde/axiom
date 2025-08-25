@@ -163,7 +163,4 @@ spec = describe "Code generation tests" $ do
 -- | Check if a file has codegen test queries
 hasCodegenTests :: FilePath -> IO Bool
 hasCodegenTests filePath = do
-  result <- runExceptT $ loadCodegenTestFile filePath
-  case result of
-    Left _ -> return False
-    Right (_, queries) -> return $ not $ null queries
+  either (const False) (not . null) <$> (runExceptT $ loadCodegenTestFile filePath)
