@@ -137,7 +137,7 @@ unify :: (AnnotateType p, HaskellExprExecutor p)
       -> RefTerm p s
       -> Solver p q s (Either String ())
 unify left right  = do
-  mapping <- gets (^. searchCtx . currentMapping)    
+  mapping <- gets (^. searchCtx . currentMapping)
   liftST $ runExceptT $ flip runReaderT mapping $ Unification.unifyTerms left right
 
 ------------------------------------------------------------
@@ -154,13 +154,15 @@ initialWL query = do
   modify (over (searchCtx . searchQueue) (enqueue initialState))
 
 -- | Main entry point for solving a query - returns lazy list of all solutions
-solve :: (AnnotateType p, HaskellExprExecutor p, Queue q) => PureTerm' p -> Solver p q s [Map String (PureTerm' p)]
+solve :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p)
+      => PureTerm' p -> Solver p q s [Map String (PureTerm' p)]
 solve query = initialWL query >> solveAll
 
 -- | Solve a single step: dequeue one state and process it
 -- Returns Nothing if queue is empty, Just (Left solution) if solution found,
 -- Just (Right ()) if search state was processed and search should continue
-solveSingle :: forall p q s . (AnnotateType p, HaskellExprExecutor p, Queue q) => Solver p q s (Maybe (Either (Map String (PureTerm' p)) ()))
+solveSingle :: forall p q s . (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p)
+            => Solver p q s (Maybe (Either (Map String (PureTerm' p)) ()))
 solveSingle = do
   queue <- gets (^. searchCtx . searchQueue)
   case dequeue queue of
@@ -181,7 +183,8 @@ solveSingle = do
           return $ Just (Right ())
 
 -- | Collect all solutions by repeatedly calling solveSingle
-solveAll :: (AnnotateType p, HaskellExprExecutor p, Queue q) => Solver p q s [Map String (PureTerm' p)]
+solveAll :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p)
+         => Solver p q s [Map String (PureTerm' p)]
 solveAll = do
   result <- solveSingle
   case result of
@@ -196,7 +199,10 @@ continue remainingGoals = do
   modify (over (searchCtx . searchQueue) (enqueue newState))
 
 -- | Expand a goal by trying all matching rules
-expandGoal :: (AnnotateType p, HaskellExprExecutor p, Queue q) => SearchGoal p s -> [SearchGoal p s] -> Solver p q s ()
+expandGoal :: (AnnotateType p, HaskellExprRename p, HaskellExprExecutor p, Queue q)
+           => SearchGoal p s
+           -> [SearchGoal p s]
+           -> Solver p q s ()
 expandGoal (SearchGoal ruleName goal) remainingGoals = do
   case goal of
     -- Functors: look for rules with the name of the functor in its
@@ -204,15 +210,15 @@ expandGoal (SearchGoal ruleName goal) remainingGoals = do
     Functor name _ _ _ -> do
       rules <- findMatchingRules name
       mapM_ (processRule goal remainingGoals) rules
-    
+
     Transition nam from to _ s -> do
       -- Transitions: look for rules with the transition name in the conclusion
       rules <- findMatchingRules nam
       mapM_ (processRule goal remainingGoals) rules
-    
+
     Eqq left right _ _ -> do
       -- Equality: try to unify, if it succeeds then = succeeds
-      either (const $ return ()) (const $ continue remainingGoals) =<< unify left right
+      either (const (return ()) . Debug.traceShowId) (const $ continue remainingGoals) =<< unify left right
     Neq left right _ _ -> do
       -- Inequality: fail if unifies, otherwise succeed
       either (const $ continue remainingGoals) (const $ return ()) =<< unify left right
@@ -228,7 +234,11 @@ findMatchingRules functorName = do
   gets (Set.toList . Map.findWithDefault Set.empty functorName . (^. conclusionFunctors))
 
 -- | Try to unify a goal with a rule and add new search states
-processRule :: forall p q s . (AnnotateType p, Queue q) => RefTerm p s -> [SearchGoal p s] -> RuleDecl' p -> Solver p q s ()
+processRule :: forall p q s . (AnnotateType p, Queue q, HaskellExprRename p)
+            => RefTerm p s
+            -> [SearchGoal p s]
+            -> RuleDecl' p
+            -> Solver p q s ()
 processRule goal remainingGoals rule = do
   RuleDecl ruleName precedents consequents _ <- Solver $ zoom numUniqueVariables $ Renamer.renameRuleState rule
 

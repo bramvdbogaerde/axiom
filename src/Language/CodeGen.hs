@@ -17,6 +17,7 @@ import Language.Types
 import Language.Parser (parseTerm)
 import Language.TemplateHaskell.SyntaxExtra (freeVars)
 import Data.Functor.Identity
+import Control.Monad
 import Control.Monad.Reader hiding (lift)
 import Control.Monad.Trans.Maybe
 import Control.Monad.Trans.Except
@@ -131,7 +132,7 @@ embedExpression haskellCode expectedType = do
         typingCtx = _typingContext ctx
 
     -- Generate the HaskellHatch data structure
-    [| HaskellHatch $(lift haskellCode) $(lift freeVarList) $(generateExecuteFunction haskellExp freeVarList typingCtx expectedType) |]
+    [| HaskellHatch $(lift haskellCode) $(lift freeVarList) Map.empty $(generateExecuteFunction haskellExp freeVarList typingCtx expectedType) |]
 
 -- | Generate the execute function for a Haskell expression  
 generateExecuteFunction :: Exp -> [String] -> Gamma -> Typ -> Q Exp
@@ -169,7 +170,7 @@ generateExtraction typingCtx mappingName varName = do
       let typeName = getSortName sortName
       let typ  = fromSortName typeName
 
-      Trans.lift $ [|
+      Trans.lift [|
            maybe (Left $ UserError $ "Variable " ++ $(lift varName) ++ " not found")
                  (\case
                    TermValue value _ _ -> maybe (Left $ InvalidTypePassed $(lift typ) (typeOf value))

@@ -7,6 +7,10 @@ import Language.AST
 import Language.CodeGen.HaskellHatch
 import Language.Types (Typ)
 import Data.Data
+import qualified Data.Set as Set
+import qualified Data.Map as Map
+import Data.Maybe (fromJust, fromMaybe)
+import qualified Debug.Trace as Debug
 
 -- | Phase after code generation. Haskell expressions are turned in pure functions
 -- that have unified terms are their argument. The solver makes sure that all terms
@@ -19,16 +23,21 @@ type instance XTypeAnnot CodeGenPhase  = Typ
 type CodeGenProgram = Program' CodeGenPhase
 
 -- | CodeGen phase instance: Haskell expressions are executable via HaskellHatch
--- Note: This assumes XHaskellExpr CodeGenPhase ~ HaskellHatch
 instance HaskellExprExecutor CodeGenPhase where
-  executeHaskellExpr hatch mapping = 
-    case execute hatch (Proxy @CodeGenPhase) mapping of
-      Left (InvalidTypePassed expected actual) -> 
+  executeHaskellExpr hatch mapping =
+    let mapping' = Map.mapKeys (\k -> fromMaybe k  $ Map.lookup k (renamedVariables hatch)) mapping
+    in case execute hatch (Proxy @CodeGenPhase) (Debug.traceShowId mapping') of
+      Left (InvalidTypePassed expected actual) ->
         Left $ "Type error: expected " ++ show expected ++ ", got " ++ show actual
-      Left (UserError msg) -> 
+      Left (UserError msg) ->
         Left $ "Execution error: " ++ msg
-      Right result -> 
+      Right result ->
         Right result
 
 instance AnnotateType CodeGenPhase where
   typeAnnot _ = id
+
+instance HaskellExprRename CodeGenPhase where
+  haskellExprRename mapping hatch = hatch {  renamedVariables = mapping }
+  haskellExprFreeVars = Set.fromList . freeVars
+

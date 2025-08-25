@@ -15,8 +15,8 @@ rules {
     [ t(result, ${10 + 5}) ];
 
     rule "Var-Access"
-    [ a = 5 ] =>
-    [ t(result, ${a * 2}) ];
+    [ product = ${a*2} ; a = 5 ] =>
+    [ t(result, product) ];
     
     rule "Complex-Arithmetic"
     [ ] =>

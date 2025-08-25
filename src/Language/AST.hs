@@ -10,6 +10,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 module Language.AST(
     Tpy,
     Program,
@@ -57,6 +58,7 @@ module Language.AST(
     termEqIgnoreRange,
     infixNames,
     HaskellExprExecutor(..),
+    HaskellExprRename(..),
     AnnotateType(..),
     module Language.Range
   ) where
@@ -69,6 +71,7 @@ import Language.Range
 import Data.Kind
 import Data.Functor.Identity
 import Data.List (intercalate)
+import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Language.Types
@@ -323,5 +326,18 @@ instance AnnotateType ParsePhase where
 instance AnnotateType TypingPhase where
   typeAnnot _ = id
 
-
-
+-- | Phase-indexed type class for associating a renaming mapping with the Haskell expression
+class HaskellExprRename p where
+  -- | Associate the given renaming mapping with the haskell expression (if possible)
+  haskellExprRename :: Map String String
+                    -> XHaskellExpr p
+                    -> XHaskellExpr p
+  -- | Returns the free variables of the Haskell expression if the c
+  -- current representation supports it.
+  haskellExprFreeVars :: XHaskellExpr p -> Set String
+instance HaskellExprRename ParsePhase where
+  haskellExprRename = const id
+  haskellExprFreeVars = const Set.empty
+instance HaskellExprRename TypingPhase where
+  haskellExprRename = const id
+  haskellExprFreeVars = const Set.empty
