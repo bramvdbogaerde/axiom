@@ -2,6 +2,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TupleSections #-}
 module Language.CodeGen (
     astToCode,
     codegen
@@ -21,6 +22,7 @@ import Control.Monad
 import Control.Monad.Reader hiding (lift)
 import Control.Monad.Trans.Maybe
 import Control.Monad.Trans.Except
+import Control.Applicative ((<|>))
 import qualified Control.Monad.Reader as Reader
 import qualified Data.Text as T
 import qualified Data.Set as Set
@@ -55,6 +57,7 @@ makeModule ast testQueries = T.unpack
   import qualified Data.Either
   import qualified Data.Maybe
   import qualified GHC.Base
+  import qualified GHC.Types  
   import qualified Data.Map as Map
   import System.Exit
   import Data.List (stripPrefix)
@@ -67,7 +70,7 @@ makeModule ast testQueries = T.unpack
   ast = $ast'
 
   -- Test queries parsed and type checked during code generation
-  testQueries :: [PureTerm' CodeGenPhase]
+  testQueries :: [(PureTerm' CodeGenPhase, Bool)]  -- (query, shouldPass)
   testQueries = $testQueries'
 
   main :: IO ()
@@ -88,21 +91,25 @@ makeModule ast testQueries = T.unpack
         putStrLn $ show failed ++ " tests failed"
         exitWith (ExitFailure 1)
 
-  runTestQuery :: (Int, PureTerm' CodeGenPhase) -> IO Bool
-  runTestQuery (idx, query) = do
-    putStr $ "Testing query " ++ show idx ++ ": " ++ show query ++ " ... "
+  runTestQuery :: (Int, (PureTerm' CodeGenPhase, Bool)) -> IO Bool
+  runTestQuery (idx, (query, shouldPass)) = do
+    putStr $ "Testing query " ++ show idx ++ ": " ++ show query ++ 
+             " (expected: " ++ (if shouldPass then "PASS" else "FAIL") ++ ") ... "
     let Program decls _ = ast
     let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
     let engineCtx = fromRules @[] rules
     let solverComputation = ST.runST $ runSolver engineCtx (solve @CodeGenPhase @[] query)
     
-    case solverComputation of
-      [] -> do
-        putStrLn "FAIL (no solutions)"
-        return False
-      _ -> do
-        putStrLn "PASS"
+    let hasSolution = not $ null solverComputation
+    let testPassed = hasSolution == shouldPass
+    
+    if testPassed
+      then do
+        putStrLn $ if shouldPass then "PASS" else "FAIL (as expected)"
         return True
+      else do
+        putStrLn $ if shouldPass then "FAIL (unexpected)" else "PASS (unexpected)"
+        return False
   |]
   where
     ast' = T.pack ast
@@ -147,18 +154,16 @@ generateExecuteFunction haskellExp freeVarList typingCtx expectedType = do
 
   -- Generate the lambda function
   baseExpr <- [| Right $(return wrapExpr) |]
-  resultExpr <- foldM (\acc (varName, extractExpr) -> buildLet (varName, extractExpr) acc)
-                      baseExpr
-                      (zip freeVarList extractExprs)
-  return $ LamE [VarP proxName, VarP mappingName] resultExpr
+  LamE [VarP proxName, VarP mappingName] <$>
+    foldM (\acc (varName, extractExpr) -> buildLet (varName, extractExpr) acc)
+          baseExpr
+          (zip freeVarList extractExprs)
   where
     buildLet :: (String, Maybe Exp) -> Exp -> Q Exp
-    buildLet (varName, Just extractExpr) bodyExpr = do
+    buildLet (varName, Just extractExpr) bodyExpr =
       let varNameE = mkName varName
-      [| $(return extractExpr) >>= \ $(varP varNameE) -> $(return bodyExpr) |]
-    buildLet (varName, Nothing) bodyExpr = do
-      let varNameE = mkName varName
-      [| $(return bodyExpr) |]
+      in [| $(return extractExpr) >>= \ $(varP varNameE) -> $(return bodyExpr) |]
+    buildLet (varName, Nothing) bodyExpr = [| $(return bodyExpr) |]
 
 
 -- | Generate extraction code for a single variable
@@ -267,34 +272,33 @@ rangeToExp (Range (Position line1 col1 fname1) (Position line2 col2 fname2)) =
 -- Entrypoints
 ------------------------------------------------------------
 
--- | Extract test queries from comments that start with "test: "
-extractTestQueries :: [Comment' p] -> [String]
-extractTestQueries comments = catMaybes $ map extractQuery comments
+-- | Extract test queries from comments that start with "codegen_test: " or "codegen_fail_test: "
+extractTestQueries :: [Comment' p] -> [(String, Bool)]  -- (query, shouldPass)
+extractTestQueries = catMaybes . map extractQuery
   where
     extractQuery (Comment content _) =
-      case stripPrefix " codegen_test: " content of
-        Just query -> Just query
-        Nothing -> stripPrefix "codegen_test: " content
+      let prefixes = [(" codegen_test: ", True), ("codegen_test: ", True),
+                      (" codegen_fail_test: ", False), ("codegen_fail_test: ", False)]
+          tryPrefix (prefix, shouldPass) = ((,shouldPass) <$> stripPrefix prefix content)
+      in foldr ((<|>) . tryPrefix) Nothing prefixes
 
 -- | Parse and type check test queries during code generation
-processTestQueries :: CheckingContext -> [String] -> Q [Exp]
-processTestQueries ctx queryStrings = do
-    mapM (fmap (either error id) . runExceptT . processQuery ctx) queryStrings
+processTestQueries :: CheckingContext -> [(String, Bool)] -> Q [Exp]
+processTestQueries ctx = mapM (fmap (either error id) . runExceptT . processQuery ctx)
   where
-    processQuery :: CheckingContext -> String -> ExceptT String Q Exp
-    processQuery ctx queryStr = do
+    processQuery :: CheckingContext -> (String, Bool) -> ExceptT String Q Exp
+    processQuery ctx (queryStr, shouldPass) = do
       parsedQuery <- liftEither $ first ((("Failed to parse test query '" ++ queryStr ++ "': ") ++) . show) $ parseTerm queryStr
       typedQuery <- liftEither $ first ((("Failed to type check test query '" ++ queryStr ++ "': ") ++) . show) $
                     runCheckTerm ctx parsedQuery
-      Trans.lift $ pureTermToExp ctx typedQuery
+      Trans.lift $ do
+        queryExp <- pureTermToExp ctx typedQuery
+        [| ($(return queryExp), $( if shouldPass then [| True |] else [| False |] )) |]
 
 -- | Generate a Haskell program representing the Typed program with executable Haskell functions in it.
 codegen :: CheckingContext -> TypedProgram -> IO String
 codegen context prog@(Program _ comments) = runQ $ do
   let testQueryStrings = extractTestQueries comments
-  astCode <- astToCode context prog
-  testQueriesCode <- do
-    processedQueries' <- processTestQueries context testQueryStrings
-    [| $(listE (map return processedQueries')) |]
-  return $ makeModule (pprint astCode) (pprint testQueriesCode)
+  (makeModule . pprint <$> astToCode context prog)
+    <*> (pprint <$> (processTestQueries context testQueryStrings >>= listE . map return))
 

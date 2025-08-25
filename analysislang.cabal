@@ -79,6 +79,8 @@ test-suite comment-tests
               , extra
               , transformers
               , template-haskell
+              , temporary
+              , process
   build-tool-depends: hspec-discover:hspec-discover
   other-modules: CommentTestsSpec
               , ParseSmokeTestSpec
@@ -90,6 +92,7 @@ test-suite comment-tests
               , SolverTestsSpec
               , TemplateHaskellSyntaxExtraSpec
               , TestInfrastructure
+              , CodeGenTestsSpec
   hs-source-dirs: test
   main-is: Spec.hs
 

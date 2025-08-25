@@ -1,0 +1,18 @@
+%% Test file for codegen_fail_test functionality
+
+syntax {
+    result in Int;
+    test in Rules ::= t(result, result);
+};
+
+rules {
+    rule "Pass-Test"
+    [ ] =>
+    [ t(result, 42) ];
+};
+
+%% Tests that should pass
+%codegen_test: t(result, 42)
+
+%% Tests that should fail (no rule produces result = 99)
+%codegen_fail_test: t(result, 99)
