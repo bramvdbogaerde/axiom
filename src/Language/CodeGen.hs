@@ -272,9 +272,9 @@ extractTestQueries :: [Comment' p] -> [String]
 extractTestQueries comments = catMaybes $ map extractQuery comments
   where
     extractQuery (Comment content _) =
-      case stripPrefix " test: " content of
+      case stripPrefix " codegen_test: " content of
         Just query -> Just query
-        Nothing -> stripPrefix "test: " content
+        Nothing -> stripPrefix "codegen_test: " content
 
 -- | Parse and type check test queries during code generation
 processTestQueries :: CheckingContext -> [String] -> Q [Exp]

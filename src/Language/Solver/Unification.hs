@@ -174,7 +174,7 @@ pureTerm term = pureTerm' term >=> either error return
 --
 -- Atom < Eqq < Neq < Transition < HaskellExpr < Value
 data TermType = AtomTp | EqqTp | NeqTp | TransitionTp | ValueTp | FunctorTp | HaskellExprTp
-              deriving (Ord, Eq)
+              deriving (Ord, Eq, Enum)
 termTypeOf ::Term' p x -> TermType
 termTypeOf Atom{} = AtomTp
 termTypeOf Eqq{}  = EqqTp
@@ -186,7 +186,7 @@ termTypeOf Functor{} = FunctorTp
 
 -- | Puts two terms into a predictable order, therefore elliminating some symmetric cases in the unification algorithm.
 termOrder :: Term' p x -> Term' p x -> (Term' p x, Term' p x)
-termOrder a b = let [a', b'] = sortWith termTypeOf [a, b] in (a', b')
+termOrder a b = let [a', b'] = sortWith (fromEnum . termTypeOf) [a, b] in (a', b')
 
 -- | Unify two reference-based terms
 unifyTerms :: forall p s . (AnnotateType p, HaskellExprExecutor p) => RefTerm p s -> RefTerm p s -> UnificationM p s ()
@@ -215,6 +215,8 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
     unifyTermsImpl (Atom cell _ _) functor@(Functor {}) =
       unifyAtomWithTerm cell functor
     unifyTermsImpl (Atom cell _ _) termValue@(TermValue {}) =
+      unifyAtomWithTerm cell termValue
+    unifyTermsImpl termValue@(TermValue {}) (Atom cell _ _) =
       unifyAtomWithTerm cell termValue
     unifyTermsImpl functor@(Functor {}) (Atom cell _  _) = unifyAtomWithTerm cell functor
     --

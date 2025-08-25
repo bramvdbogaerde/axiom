@@ -14,8 +14,14 @@ rules {
     [ ] =>
     [ t(result, ${10 + 5}) ];
 
+    %% TODO: this is only works when the
+    %% Haskell expression that references variables
+    %% from the antecedents is the last goal in the
+    %% antecedent list. However the order of goals such
+    %% not be important to the result of the queries,
+    %% to solve this a dependency graph should be constructed so that the Haskell expression is always the last goal (cf. design.md). 
     rule "Var-Access"
-    [ product = ${a*2} ; a = 5 ] =>
+    [ a = 5 ; product = ${a * 2} ] =>
     [ t(result, product) ];
     
     rule "Complex-Arithmetic"
@@ -24,7 +30,7 @@ rules {
 };
 
 %% Test queries to verify Haskell expressions execute correctly
-%test: t(result, 42)
-%test: t(sum , 15)
-%test: t(product, 44)
-%test: t(result, 10)
+%codegen_test: t(result, 42)
+%codegen_test: t(sum , 15)
+%codegen_test: t(product, 44)
+%codegen_test: t(result, 10)

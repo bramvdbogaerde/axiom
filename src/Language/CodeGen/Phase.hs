@@ -26,7 +26,7 @@ type CodeGenProgram = Program' CodeGenPhase
 instance HaskellExprExecutor CodeGenPhase where
   executeHaskellExpr hatch mapping =
     let mapping' = Map.mapKeys (\k -> fromMaybe k  $ Map.lookup k (renamedVariables hatch)) mapping
-    in case execute hatch (Proxy @CodeGenPhase) (Debug.traceShowId mapping') of
+    in case execute hatch (Proxy @CodeGenPhase) mapping' of
       Left (InvalidTypePassed expected actual) ->
         Left $ "Type error: expected " ++ show expected ++ ", got " ++ show actual
       Left (UserError msg) ->
