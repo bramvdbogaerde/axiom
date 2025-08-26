@@ -281,6 +281,14 @@ safeVariableName :: String -> Maybe String
 safeVariableName s = head <$> matchRegex r s
   where r = mkRegex "([a-zA-Z]+)\\d*"
 
+-- | Allowed infix names that can be used in a term
+infixNames :: [String]
+infixNames = [ "=", "/=", "~>"]
+
+-------------------------------------------------------------
+-- Predicates
+-------------------------------------------------------------
+
 -- | Compare two terms for equality ignoring range information
 termEqIgnoreRange :: (Eq (f String), ForAllPhases Eq p) => Term' p f -> Term' p f -> Bool
 termEqIgnoreRange (Atom a1 _ _) (Atom a2 _ _) = a1 == a2
@@ -296,9 +304,17 @@ termEqIgnoreRange (HaskellExpr expr1 _ _) (HaskellExpr expr2 _ _) = expr1 == exp
 termEqIgnoreRange (TermValue value1 _ _) (TermValue value2 _ _) = value1 == value2
 termEqIgnoreRange _ _ = False
 
--- | Allowed infix names that can be used in a term
-infixNames :: [String]
-infixNames = [ "=", "/=", "~>"]
+-- | Check whether the term is fully ground (i.e., does not contain any atoms)
+isTermGround :: Term' p f -> Bool
+isTermGround = \case
+  Atom {} -> False
+  Functor _ args _ _ -> all isTermGround args
+  Eqq left right _ _ -> isTermGround left && isTermGround right
+  Neq left right _ _ -> isTermGround left && isTermGround right
+  Transition _ left right _ _ -> isTermGround left && isTermGround right
+  HaskellExpr {} -> True
+  TermValue {} -> True
+
 
 -------------------------------------------------------------
 -- Phase-dependent Haskell expression execution

@@ -43,10 +43,18 @@ data SearchGoal p s = SearchGoal
   { _goalRuleName :: String,
     _goalTerm :: RefTerm p s }
 
+type InOut p s = (PureTerm' p)
+
 data SearchState p s = SearchState
-  { _searchGoals :: [SearchGoal p s],
+  { -- | Remaining goals to be solved
+    _searchGoals :: [SearchGoal p s],
+    -- | Snapshot to restore when resuming this search    
     _searchSnapshot :: ST.Snapshot s,
-    _searchMapping :: Unification.VariableMapping p s
+    -- | Mapping from variable names to their 'Cell's
+    _searchMapping :: Unification.VariableMapping p s,
+    -- | Goals to add to the cache when all the search goals in this state
+    -- have been solved.
+    _searchWhenSucceeds :: [InOut p s]
   }
 
 data SearchCtx p q s = SearchCtx
@@ -70,7 +78,9 @@ data EngineCtx p q s = EngineCtx
     -- | Unique variables counter
     _numUniqueVariables :: Int,
     -- | Search context for query resolution
-    _searchCtx :: SearchCtx p q s
+    _searchCtx :: SearchCtx p q s,
+    -- | Out-caching mechanism as a mapping from terms to ground terms
+    _outCache :: Map (PureTerm' p) (Set (PureTerm' p))
   }
 
 -- | Create an empty search context
@@ -79,7 +89,7 @@ emptySearchCtx = SearchCtx emptyQueue Map.empty
 
 -- | Create an empty solver engine context
 emptyEngineCtx :: (Queue q) => EngineCtx p q s
-emptyEngineCtx = EngineCtx Map.empty 0 emptySearchCtx
+emptyEngineCtx = EngineCtx Map.empty 0 emptySearchCtx Map.empty
 
 $(makeLenses ''EngineCtx)
 
@@ -150,7 +160,7 @@ initialWL query = do
   refQuery <- refTerm query
   mapping <- gets (^. searchCtx . currentMapping)
   snapshot <- takeSnapshot
-  let initialState = SearchState [SearchGoal "initial" refQuery] snapshot mapping
+  let initialState = SearchState [SearchGoal "initial" refQuery] snapshot mapping []
   modify (over (searchCtx . searchQueue) (enqueue initialState))
 
 -- | Main entry point for solving a query - returns lazy list of all solutions
@@ -177,9 +187,11 @@ solveSingle = do
           -- No goals left - we have a solution
           mapping <- gets (^. searchCtx . currentMapping)
           result <- liftST $ mapM (\cell -> Unification.pureTerm (Atom cell (typeAnnot (Proxy @p) AnyType) dummyRange) mapping) mapping
+          -- Update the out-cache by adding the 'whenSucceeds' goals to it
+          -- gets (state ^. searchWhenSucceeds) >>= mapM addToCache 
           return $ Just (Left result)
         (goal:remainingGoals) -> do
-          expandGoal goal remainingGoals
+          expandGoal goal remainingGoals (state ^. searchWhenSucceeds)
           return $ Just (Right ())
 
 -- | Collect all solutions by repeatedly calling solveSingle
@@ -193,35 +205,43 @@ solveAll = do
     Just (Right ()) -> solveAll  -- Processed state, continue
 
 -- | Continue solving with the given remaining goals
-continue :: (Queue q) => [SearchGoal p s] -> Solver p q s ()
-continue remainingGoals = do
-  newState <- SearchState remainingGoals <$> takeSnapshot <*> gets (^. searchCtx . currentMapping)
+continue :: (Queue q) => [SearchGoal p s] -> [InOut p s] -> Solver p q s ()
+continue remainingGoals whenSucceeds = do
+  -- TODO: pass along the searchWhenSucceeds terms
+  newState <- SearchState remainingGoals <$> takeSnapshot <*> gets (^. searchCtx . currentMapping) <*> pure whenSucceeds
   modify (over (searchCtx . searchQueue) (enqueue newState))
 
 -- | Expand a goal by trying all matching rules
 expandGoal :: (AnnotateType p, HaskellExprRename p, HaskellExprExecutor p, Queue q)
            => SearchGoal p s
            -> [SearchGoal p s]
+           -> [InOut p s]
            -> Solver p q s ()
-expandGoal (SearchGoal ruleName goal) remainingGoals = do
+expandGoal (SearchGoal ruleName goal) remainingGoals whenSucceeds = do
+
+  -- Add the current goal to the list of terms that has to be added to the out-cache 
+  -- whenever they get a solution.
+  mapping <- gets (^. searchCtx . currentMapping)
+  pureGoal <- liftST $ Unification.pureTerm goal mapping
+  let whenSucceeds' = pureGoal : whenSucceeds
   case goal of
     -- Functors: look for rules with the name of the functor in its
     -- conclusion, add that rule as a goal to the context.
     Functor name _ _ _ -> do
       rules <- findMatchingRules name
-      mapM_ (processRule goal remainingGoals) rules
+      mapM_ (processRule goal remainingGoals whenSucceeds') rules
 
     Transition nam from to _ s -> do
       -- Transitions: look for rules with the transition name in the conclusion
       rules <- findMatchingRules nam
-      mapM_ (processRule goal remainingGoals) rules
+      mapM_ (processRule goal remainingGoals whenSucceeds') rules
 
     Eqq left right _ _ -> do
       -- Equality: try to unify, if it succeeds then = succeeds
-      either (const (return ()) . Debug.traceShowId) (const $ continue remainingGoals) =<< unify left right
+      either (const (return ()) . Debug.traceShowId) (const $ continue remainingGoals whenSucceeds') =<< unify left right
     Neq left right _ _ -> do
       -- Inequality: fail if unifies, otherwise succeed
-      either (const $ continue remainingGoals) (const $ return ()) =<< unify left right
+      either (const $ continue remainingGoals whenSucceeds') (const $ return ()) =<< unify left right
     _ -> return () -- Variables and other terms can't be expanded
 
 ------------------------------------------------------------
@@ -237,9 +257,10 @@ findMatchingRules functorName = do
 processRule :: forall p q s . (AnnotateType p, Queue q, HaskellExprRename p)
             => RefTerm p s
             -> [SearchGoal p s]
+            -> [InOut p s]
             -> RuleDecl' p
             -> Solver p q s ()
-processRule goal remainingGoals rule = do
+processRule goal remainingGoals whenSucceeds rule = do
   RuleDecl ruleName precedents consequents _ <- Solver $ zoom numUniqueVariables $ Renamer.renameRuleState rule
 
   -- Assert that there's only one consequent for now
@@ -253,7 +274,7 @@ processRule goal remainingGoals rule = do
       let precedentGoals = map (SearchGoal ruleName) precedentRefs
       let newGoals = unificationGoal : precedentGoals ++ remainingGoals
 
-      continue newGoals
+      continue newGoals whenSucceeds
     _ -> error $ "Rule " ++ ruleName ++ " has " ++ show (length consequents) ++ " consequents, expected exactly 1"
 
 ------------------------------------------------------------
