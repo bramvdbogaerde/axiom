@@ -219,7 +219,7 @@ deriving instance (Eq (f String), ForAllPhases  Eq p) => Eq (Term' p f)
 -- | Show instance that displays terms as they appear in source code
 instance (Show (f String), ForAllPhases Show p) => Show (Term' p f) where
   show (Atom name _ _) = show name
-  show (Functor fname [] _ _) = fname
+  show (Functor fname [] _ _) = fname ++ "()"
   show (Functor fname args _ _) = fname ++ "(" ++ intercalate ", " (Prelude.map show args) ++ ")"
   show (Eqq left right  _ _) = show left ++ " = " ++ show right
   show (Neq left right _ _) = show left ++ " /= " ++ show right
@@ -230,7 +230,7 @@ instance (Show (f String), ForAllPhases Show p) => Show (Term' p f) where
 -- | Specialized Show instance for PureTerm that doesn't show Identity wrapper
 instance {-# OVERLAPPING #-} Show PureTerm where
   show (Atom (Identity name)_ _) = name
-  show (Functor fname [] _ _) = fname
+  show (Functor fname [] _ _) = fname ++ "()"
   show (Functor fname args _ _) = fname ++ "(" ++ intercalate ", " (Prelude.map show args) ++ ")"
   show (Eqq left right _ _) = show left ++ " = " ++ show right
   show (Neq left right _ _) = show left ++ " /= " ++ show right

@@ -166,11 +166,12 @@ pureTerm term = pureTerm' term >=> either error return
 
 
 -- | Same as pureTerm but ensures that all elements of the term are ground
-pureTermGround :: RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
-pureTermGround term mapping =
-  if isTermGround term
-  then pureTerm term mapping
-  else error "Term is not ground"
+pureTermGround :: Show (PureTerm' p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
+pureTermGround term mapping = do
+  term' <- pureTerm term mapping
+  if isTermGround term'
+    then return term'
+    else error $ "Term is not ground " ++ show term'
 
 
 -------------------------------------------------------------

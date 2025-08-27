@@ -75,6 +75,7 @@ data TraceEntry = TraceEntry
   , traceQueueSize :: Int
   , traceSolution :: Maybe (Map String PureTerm)
   , tracePartialMapping :: Map String PureTerm  -- ^ Current partial unification results
+  , traceCacheSize :: Int  -- ^ Number of entries in the out-cache
   } deriving (Show)
 
 -- | The complete trace of a solving session
@@ -86,6 +87,7 @@ prettyTraceEntry entry = unlines
   [ "Step " ++ show (traceStep entry) ++ ": " ++ traceAction entry
   , "  Goals: [" ++ intercalate ", " (traceGoals entry) ++ "]"
   , "  Queue size: " ++ show (traceQueueSize entry)
+  , "  Cache size: " ++ show (traceCacheSize entry)
   , if Map.null (tracePartialMapping entry)
       then "  Partial mapping: {}"
       else "  Partial mapping: " ++ show (tracePartialMapping entry)
@@ -126,7 +128,8 @@ withStepLimit stepNum continueAction stopAction = do
   case context ^. debugConfig . configStepLimit of
     Just limit | stepNum > limit -> do
       partialMapping <- getCurrentPartialMapping
-      trace $ TraceEntry stepNum ("Step limit reached: " ++ show limit ++ " steps") [] 0 Nothing partialMapping
+      cacheSize <- getCurrentCacheSize
+      trace $ TraceEntry stepNum ("Step limit reached: " ++ show limit ++ " steps") [] 0 Nothing partialMapping cacheSize
       stopAction
     _ -> continueAction
 
@@ -139,6 +142,10 @@ getCurrentPartialMapping = do
   return $ if context ^. debugConfig . configShowInternalVars
     then fullMapping
     else Map.restrictKeys fullMapping (context ^. userVariables)
+
+-- | Get current cache size for tracing
+getCurrentCacheSize :: TracedSolver q s Int
+getCurrentCacheSize = liftSolver $ gets (Map.size . (^. outCache))
 
 -- | Convert goal terms to string representation for tracing
 goalToString :: Unification.VariableMapping ParsePhase s -> SearchGoal ParsePhase s -> TracedSolver q s String
@@ -162,19 +169,20 @@ tracedSolveSingle stepNum = do
 
   result <- liftSolver solveSingle
 
-  -- Get partial mapping for trace
+  -- Get partial mapping and cache size for trace
   partialMapping <- getCurrentPartialMapping
+  cacheSize <- getCurrentCacheSize
 
   case result of
     Nothing -> do
-      trace $ TraceEntry stepNum "Queue empty - search finished" [] 0 Nothing partialMapping
+      trace $ TraceEntry stepNum "Queue empty - search finished" [] 0 Nothing partialMapping cacheSize
       return Nothing
     Just (Left solution) -> do
-      trace $ TraceEntry stepNum "Solution found!" goalStrings queueSize (Just solution) partialMapping
+      trace $ TraceEntry stepNum "Solution found!" goalStrings queueSize (Just solution) partialMapping cacheSize
       return $ Just (Left solution)
     Just (Right ()) -> do
       newQueueSize <- liftSolver getQueueSize
-      trace $ TraceEntry stepNum "Processed search state" goalStrings newQueueSize Nothing partialMapping
+      trace $ TraceEntry stepNum "Processed search state" goalStrings newQueueSize Nothing partialMapping cacheSize
       return $ Just (Right ())
 
 -- | Traced version of solveAll with step limit from config
@@ -190,13 +198,35 @@ tracedSolveAll = go 1 []
             Just (Left solution) -> go (stepNum + 1) (solution : solutions)
             Just (Right ()) -> go (stepNum + 1) solutions
 
--- | Main traced solve function with step limit from config
+-- | Main traced solve function with step limit from config and caching loop
 tracedSolve :: (Queue q) => PureTerm -> TracedSolver q s [Map String PureTerm]
 tracedSolve query = do
-  liftSolver $ initialWL query
   partialMapping <- getCurrentPartialMapping
-  trace $ TraceEntry 0 ("Starting to solve: " ++ show query) [] 1 Nothing partialMapping
-  tracedSolveAll
+  cacheSize <- getCurrentCacheSize
+  trace $ TraceEntry 0 ("Starting to solve: " ++ show query) [] 0 Nothing partialMapping cacheSize
+  tracedSolveUntilStable query 1
+
+-- | Traced version of solveUntilStable with cache iteration tracking
+tracedSolveUntilStable :: (Queue q) => PureTerm -> Int -> TracedSolver q s [Map String PureTerm]
+tracedSolveUntilStable query iteration = do
+  partialMapping <- getCurrentPartialMapping
+  cacheSize <- getCurrentCacheSize
+  trace $ TraceEntry 0 ("Cache iteration " ++ show iteration ++ ": solving " ++ show query) [] 0 Nothing partialMapping cacheSize
+  
+  initialCache <- liftSolver $ gets (^. outCache)
+  liftSolver $ initialWL query
+  solutions <- tracedSolveAll
+  finalCache <- liftSolver $ gets (^. outCache)
+  
+  if initialCache == finalCache
+    then do
+      finalCacheSize <- getCurrentCacheSize
+      trace $ TraceEntry 0 ("Cache stabilized after " ++ show iteration ++ " iteration(s)") [] 0 Nothing partialMapping finalCacheSize
+      return solutions
+    else do
+      newCacheSize <- getCurrentCacheSize
+      trace $ TraceEntry 0 ("Cache changed, restarting (iteration " ++ show (iteration + 1) ++ ")") [] 0 Nothing partialMapping newCacheSize
+      tracedSolveUntilStable query (iteration + 1)
 
 -- | Run a traced solver computation with context and return results with trace
 runSolverWithTrace :: (Queue q) => DebugContext -> EngineCtx ParsePhase q s -> TracedSolver q s a -> ST.ST s (a, SolverTrace)

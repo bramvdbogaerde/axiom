@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, RecordWildCards #-}
+{-# LANGUAGE LambdaCase, RecordWildCards, TypeApplications #-}
 module Main where
 
 import Prelude hiding (lex)
@@ -10,6 +10,8 @@ import Text.Pretty.Simple hiding (Vivid, Green)
 import Data.Either
 import Data.Bifunctor
 import Control.Monad
+import Data.Maybe (catMaybes)
+import Data.List (stripPrefix)
 import System.Console.ANSI
 import System.Exit
 import System.Process
@@ -18,6 +20,9 @@ import Reporting
 import Options.Applicative
 import qualified LanguageServer
 import qualified SolverDebugger
+import Language.Solver
+import qualified Language.Solver.BacktrackingST as ST
+import System.Timeout (timeout)
 
 -------------------------------------------------------------
 -- Data types
@@ -66,6 +71,10 @@ codegenCommand = runCodegenCommand <$> inputOptionsParser
 runcodegenCommand :: Parser (IO ())
 runcodegenCommand = runRuncodegenCommand <$> inputOptionsParser
 
+-- | Parser for the 'runsolver' subcommand
+runsolverCommand :: Parser (IO ())
+runsolverCommand = runRunsolverCommand <$> inputOptionsParser
+
 -- | Parser for all available subcommands
 commandParser :: Parser (IO ())
 commandParser = subparser
@@ -79,6 +88,8 @@ commandParser = subparser
     (info codegenCommand (progDesc "Generate code from a typechecked program"))
  <> command "runcodegen"
     (info runcodegenCommand (progDesc "Generate and execute code from a typechecked program"))
+ <> command "runsolver"
+    (info runsolverCommand (progDesc "Run solver on test queries from a program"))
   )
 
 -- | Top-level parser for global options
@@ -113,6 +124,36 @@ printGreen txt = setSGR [SetColor Foreground Vivid Green]
 printSuccess :: IO ()
 printSuccess = printGreen "Program typechecked successfully"
 
+-- | Extract test queries from comments that start with "test:"
+extractTestQueries :: [Comment' p] -> [String]
+extractTestQueries comments = catMaybes $ map extractQuery comments
+  where
+    extractQuery (Comment content _) = stripPrefix "test: " content
+
+-- | Parse and run a single test query against a program with timeout protection
+runTestQuery :: Program -> String -> IO Bool
+runTestQuery program@(Program decls _) queryStr = do
+  putStr $ "Testing query: " ++ queryStr ++ " ... "
+  case parseTerm queryStr of
+    Left parseError -> do
+      putStrLn $ "PARSE ERROR: " ++ show parseError
+      return False
+    Right query -> do
+      let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
+      let engineCtx = fromRules rules :: EngineCtx ParsePhase [] s
+      let solverComputation = ST.runST $ runSolver engineCtx (solve @ParsePhase query)
+      
+      -- Run with 5 second timeout to catch non-termination
+      timeoutResult <- timeout 5000000 (return $! solverComputation) -- 5 seconds in microseconds
+      case timeoutResult of
+        Nothing -> do
+          putStrLn "TIMEOUT (non-termination detected)"
+          return False
+        Just solutions -> do
+          let hasSolution = not $ null solutions
+          putStrLn $ if hasSolution then "PASS" else "FAIL"
+          return hasSolution
+
 -------------------------------------------------------------
 -- Command implementations
 -------------------------------------------------------------
@@ -146,6 +187,30 @@ runRuncodegenCommand (InputOptions filename) = do
       putStrLn $ "Generated code written to: " ++ outName
       exitCode <- system $ "cabal exec -- runghc --ghc-arg=\"-package analysislang\" " ++ outName
       exitWith exitCode
+
+-- | Execute the solver test command
+runRunsolverCommand :: InputOptions -> IO ()
+runRunsolverCommand (InputOptions filename) = do
+  (contents, ast@(Program _ comments)) <- loadAndParseFile filename
+  let queries = extractTestQueries comments
+  if null queries
+    then putStrLn "No test queries found in file (looking for %test: comments)"
+    else do
+      putStrLn $ "Running " ++ show (length queries) ++ " test queries..."
+      results <- mapM (runTestQuery ast) queries
+      let passed = length $ filter id results
+          total = length results
+          failed = total - passed
+      
+      putStrLn $ "Results: " ++ show passed ++ "/" ++ show total ++ " passed"
+      
+      if failed == 0
+        then do
+          printGreen "All tests passed!"
+          exitWith ExitSuccess
+        else do
+          putStrLn $ show failed ++ " tests failed"
+          exitWith (ExitFailure 1)
 
 -------------------------------------------------------------
 -- Main entry point

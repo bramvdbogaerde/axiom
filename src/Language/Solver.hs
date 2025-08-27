@@ -4,6 +4,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module Language.Solver where
 
@@ -31,7 +33,7 @@ import qualified Data.List as List
 import Language.Solver.Unification (RefTerm)
 import qualified Debug.Trace as Debug
 import Control.Monad.Reader (ReaderT(..))
-import Control.Monad.Extra (ifM)
+import Control.Monad.Extra (ifM, when)
 import Data.Either
 import Data.Maybe (catMaybes)
 import Control.Monad ((>=>))
@@ -142,19 +144,26 @@ refTerm term = do
   modify (set (searchCtx . currentMapping) newMapping)
   return refTerm
 
+data CacheResult p   = InCache (PureTerm' p)        -- ^ indicates that the item is in the in-cache, together with its cached result
+                     | InCacheMissing               -- ^ indicates that the item is in the in-cache but not in the out-cache
+                     | NotInCache                   -- ^ indicates that the item is not in the in-cache 
+
 -- | Add a term to the cache together with its unification result 
-addToCache :: (HaskellExprRename p, ForAllPhases Ord p) => PureTerm' p -> Solver p q s ()
+addToCache :: (HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p)) => PureTerm' p -> Solver p q s ()
 addToCache t = do
   -- TODO: don't use uniqueTerm, use a normalizer that results in variables without unique names
   -- this is important so that the cache satisfies the ascending chain condition
   let t' = Renamer.unrenameTerm t
   tr <- refTerm t
   mapping <- gets (^. searchCtx . currentMapping)
-  cachedTerm <- liftST $ Unification.pureTermGround tr mapping
-  modify (over outCache (Map.insertWith Set.union t' (Set.singleton cachedTerm)))
+  tground <- liftST $ Unification.pureTerm tr mapping
+  -- Only if the term is ground can it be added to the cache
+  when (isTermGround tground) $ do  
+    cachedTerm <- liftST $ Unification.pureTermGround tr mapping
+    modify (over outCache (Map.insertWith Set.union t' (Set.singleton cachedTerm)))
 
 -- | Looks up the result(s) from the term in the out-cache
-lookupCache :: (HaskellExprRename p, AnnotateType p, HaskellExprExecutor p, ForAllPhases Ord p) 
+lookupCache :: (HaskellExprRename p, AnnotateType p, HaskellExprExecutor p, ForAllPhases Ord p)
             => PureTerm' p -> Solver p q s (Set (PureTerm' p))
 lookupCache queryTerm = do
   cache <- gets (^. outCache)
@@ -226,14 +235,14 @@ initialWL query = do
   modify (over (searchCtx . searchQueue) (enqueue initialState))
 
 -- | Main entry point for solving a query - returns lazy list of all solutions
-solve :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p)
+solve :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
       => PureTerm' p -> Solver p q s [Map String (PureTerm' p)]
 solve query = solveUntilStable query
 
 -- | Solve a single step: dequeue one state and process it
 -- Returns Nothing if queue is empty, Just (Left solution) if solution found,
 -- Just (Right ()) if search state was processed and search should continue
-solveSingle :: forall p q s . (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p)
+solveSingle :: forall p q s . (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
             => Solver p q s (Maybe (Either (Map String (PureTerm' p)) ()))
 solveSingle = do
   queue <- gets (^. searchCtx . searchQueue)
@@ -257,21 +266,21 @@ solveSingle = do
           return $ Just (Right ())
 
 -- | Solve until the out-cache stabilizes (no longer changes between iterations)
-solveUntilStable :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p)
+solveUntilStable :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
                  => PureTerm' p -> Solver p q s [Map String (PureTerm' p)]
 solveUntilStable query = do
   initialCache <- gets (^. outCache)
   initialWL query
   solutions <- solveAll
   finalCache <- gets (^. outCache)
-  
+
   -- If cache changed, restart from the original query
   if initialCache == finalCache
     then return solutions
     else solveUntilStable query
 
 -- | Collect all solutions by repeatedly calling solveSingle
-solveAll :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p)
+solveAll :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
          => Solver p q s [Map String (PureTerm' p)]
 solveAll = do
   result <- solveSingle
@@ -342,7 +351,7 @@ processRule goal remainingGoals whenSucceeds rule = do
 
       -- Create unification goal: current goal = consequent
       let unificationGoal = SearchGoal ruleName (Eqq goal refConsequent (typeAnnot (Proxy @p) AnyType) dummyRange)
-      
+
       -- Add the current goal to the list of terms that has to be added to the out-cache 
       mapping <- gets (^. searchCtx . currentMapping)
       pureGoal <- liftST $ Unification.pureTerm goal mapping
@@ -350,23 +359,30 @@ processRule goal remainingGoals whenSucceeds rule = do
 
       -- For each precedent, check if it's in cache and collect possible values
       precedentOptions <- mapM (\precedentRef -> do
-        ifM (inCache precedentRef whenSucceeds mapping)
-            (do purePrecedent <- liftST $ Unification.pureTerm precedentRef mapping
-                cachedResults <- lookupCache purePrecedent
-                return $ map (\cachedResult -> (precedentRef, Just cachedResult)) (Set.toList cachedResults))
-            (return [(precedentRef, Nothing)])) precedentRefs
+        fmap (precedentRef,) <$>
+          ifM (inCache precedentRef whenSucceeds mapping)
+              (do purePrecedent <- liftST $ Unification.pureTerm precedentRef mapping
+                  cachedResults <- lookupCache purePrecedent
+                  if Set.null cachedResults
+                    then return [InCacheMissing]
+                    else return $ map InCache (Set.toList cachedResults))
+              (return [NotInCache])) precedentRefs
 
       -- Generate all combinations of precedent assignments
       let combinations = sequence precedentOptions
-      
       -- For each combination, create Eqq goals for cached results
       mapM_ (\combo -> do
-        eqqGoals <- mapM (\(precRef, maybeCached) -> case maybeCached of
-          Just cachedResult -> do
+        eqqGoals <- mapM (\(precRef, cachedResult) -> case cachedResult of
+          InCache cachedResult -> do
+            -- the term was in in the in-cache, and there was a useful out-cache entry that we can use
             cachedRef <- refTerm cachedResult
-            return $ SearchGoal ruleName (Eqq precRef cachedRef (typeAnnot (Proxy @p) AnyType) dummyRange)
-          Nothing -> return $ SearchGoal ruleName precRef) combo
-        let newGoals = unificationGoal : eqqGoals ++ remainingGoals
+            return $ Just $ SearchGoal ruleName (Eqq precRef cachedRef (typeAnnot (Proxy @p) AnyType) dummyRange)
+          InCacheMissing -> do
+            -- the term was in the in-cache but not yet in the out-cache, proceed with the remaining goals
+            return Nothing
+            -- not in the cache add as another goal
+          NotInCache -> return $ Just $ SearchGoal ruleName precRef) combo
+        let newGoals = unificationGoal : catMaybes eqqGoals ++ remainingGoals
         continue newGoals whenSucceeds') combinations
     _ -> error $ "Rule " ++ ruleName ++ " has " ++ show (length consequents) ++ " consequents, expected exactly 1"
 
