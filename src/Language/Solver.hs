@@ -31,6 +31,10 @@ import qualified Data.List as List
 import Language.Solver.Unification (RefTerm)
 import qualified Debug.Trace as Debug
 import Control.Monad.Reader (ReaderT(..))
+import Control.Monad.Extra (ifM)
+import Data.Either
+import Data.Maybe (catMaybes)
+import Control.Monad ((>=>))
 
 ------------------------------------------------------------
 -- Search data structures
@@ -66,7 +70,6 @@ type SolverResult = Either String (Map String PureTerm)
 
 $(makeLenses ''SearchState)
 $(makeLenses ''SearchCtx)
-
 
 ------------------------------------------------------------
 -- Core data structures
@@ -105,6 +108,7 @@ fromRules = foldr visit emptyEngineCtx
     visit rule@(RuleDecl _ precedent consequent _) =
       flip (foldr (`addConclusionFunctor` rule)) (foldMap functorName consequent)
 
+
 ------------------------------------------------------------
 -- Monad context
 ------------------------------------------------------------
@@ -138,10 +142,61 @@ refTerm term = do
   modify (set (searchCtx . currentMapping) newMapping)
   return refTerm
 
+-- | Add a term to the cache together with its unification result 
+addToCache :: (HaskellExprRename p, ForAllPhases Ord p) => PureTerm' p -> Solver p q s ()
+addToCache t = do
+  -- TODO: don't use uniqueTerm, use a normalizer that results in variables without unique names
+  -- this is important so that the cache satisfies the ascending chain condition
+  let t' = Renamer.unrenameTerm t
+  tr <- refTerm t
+  mapping <- gets (^. searchCtx . currentMapping)
+  cachedTerm <- liftST $ Unification.pureTermGround tr mapping
+  modify (over outCache (Map.insertWith Set.union t' (Set.singleton cachedTerm)))
+
+-- | Looks up the result(s) from the term in the out-cache
+lookupCache :: (HaskellExprRename p, AnnotateType p, HaskellExprExecutor p, ForAllPhases Ord p) 
+            => PureTerm' p -> Solver p q s (Set (PureTerm' p))
+lookupCache queryTerm = do
+  cache <- gets (^. outCache)
+  -- ensure that the variables are unique in both the queryTerm and the key so that
+  -- they are not unified forever.
+  queryTerm' <- uniqueTerm queryTerm
+  queryRef <- refTerm queryTerm'
+  -- check whether one of the keys matches the query
+  results <- mapM (checkCacheEntry queryRef) (Map.toList cache)
+  return $ Set.unions (catMaybes results)
+  where
+    checkCacheEntry queryRef (cacheKey, cacheResults) = do
+      -- ensures that variables in the key are unique so that they
+      -- are not unified forever. Alternatively we could also store
+      -- and save snapshots here.
+      cacheKey' <- uniqueTerm cacheKey
+      cacheKeyRef <- refTerm cacheKey'
+      unified <- doesUnify queryRef cacheKeyRef
+      return $ if unified then Just cacheResults else Nothing
+
+-- | Checks whether the given term unifies with a term in the in-cache
+inCache :: (HaskellExprRename p, AnnotateType p, HaskellExprExecutor p)
+        => RefTerm p s
+        -> [InOut p s]
+        -> Unification.VariableMapping p s
+        -> Solver p q s Bool
+inCache t inCache mapping = or <$> mapM (uniqueTerm >=> refTerm >=> doesUnify t) inCache
+
+-- | Generate unique variables in a given pure term
+uniqueTerm :: HaskellExprRename p => PureTerm' p -> Solver p q s (PureTerm' p)
+uniqueTerm term = do
+  i <- gets (^. numUniqueVariables)
+  let (term', i') = Renamer.runRenamer i (Renamer.renameTerm term)
+  modify (over numUniqueVariables (const i'))
+  return term'
+
 ------------------------------------------------------------
 -- Auxiliary functions
 ------------------------------------------------------------
 
+-- | Unifies two terms together or returns Left if the terms
+-- cannot be unified.
 unify :: (AnnotateType p, HaskellExprExecutor p)
       => RefTerm p s
       -> RefTerm p s
@@ -149,6 +204,13 @@ unify :: (AnnotateType p, HaskellExprExecutor p)
 unify left right  = do
   mapping <- gets (^. searchCtx . currentMapping)
   liftST $ runExceptT $ flip runReaderT mapping $ Unification.unifyTerms left right
+
+-- | Returns "True" if the given terms can/are unified
+doesUnify :: (AnnotateType p, HaskellExprExecutor p)
+          => RefTerm p s
+          -> RefTerm p s
+          -> Solver p q s Bool
+doesUnify t1 = unify t1 >=> (return . isLeft)
 
 ------------------------------------------------------------
 -- Core search functions
@@ -164,14 +226,14 @@ initialWL query = do
   modify (over (searchCtx . searchQueue) (enqueue initialState))
 
 -- | Main entry point for solving a query - returns lazy list of all solutions
-solve :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p)
+solve :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p)
       => PureTerm' p -> Solver p q s [Map String (PureTerm' p)]
-solve query = initialWL query >> solveAll
+solve query = solveUntilStable query
 
 -- | Solve a single step: dequeue one state and process it
 -- Returns Nothing if queue is empty, Just (Left solution) if solution found,
 -- Just (Right ()) if search state was processed and search should continue
-solveSingle :: forall p q s . (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p)
+solveSingle :: forall p q s . (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p)
             => Solver p q s (Maybe (Either (Map String (PureTerm' p)) ()))
 solveSingle = do
   queue <- gets (^. searchCtx . searchQueue)
@@ -188,14 +250,28 @@ solveSingle = do
           mapping <- gets (^. searchCtx . currentMapping)
           result <- liftST $ mapM (\cell -> Unification.pureTerm (Atom cell (typeAnnot (Proxy @p) AnyType) dummyRange) mapping) mapping
           -- Update the out-cache by adding the 'whenSucceeds' goals to it
-          -- gets (state ^. searchWhenSucceeds) >>= mapM addToCache 
+          mapM_ addToCache  (state ^. searchWhenSucceeds)
           return $ Just (Left result)
         (goal:remainingGoals) -> do
           expandGoal goal remainingGoals (state ^. searchWhenSucceeds)
           return $ Just (Right ())
 
+-- | Solve until the out-cache stabilizes (no longer changes between iterations)
+solveUntilStable :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p)
+                 => PureTerm' p -> Solver p q s [Map String (PureTerm' p)]
+solveUntilStable query = do
+  initialCache <- gets (^. outCache)
+  initialWL query
+  solutions <- solveAll
+  finalCache <- gets (^. outCache)
+  
+  -- If cache changed, restart from the original query
+  if initialCache == finalCache
+    then return solutions
+    else solveUntilStable query
+
 -- | Collect all solutions by repeatedly calling solveSingle
-solveAll :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p)
+solveAll :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p)
          => Solver p q s [Map String (PureTerm' p)]
 solveAll = do
   result <- solveSingle
@@ -212,37 +288,32 @@ continue remainingGoals whenSucceeds = do
   modify (over (searchCtx . searchQueue) (enqueue newState))
 
 -- | Expand a goal by trying all matching rules
-expandGoal :: (AnnotateType p, HaskellExprRename p, HaskellExprExecutor p, Queue q)
+expandGoal :: (AnnotateType p, HaskellExprRename p, HaskellExprExecutor p, Queue q, ForAllPhases Ord p)
            => SearchGoal p s
            -> [SearchGoal p s]
            -> [InOut p s]
            -> Solver p q s ()
 expandGoal (SearchGoal ruleName goal) remainingGoals whenSucceeds = do
-
-  -- Add the current goal to the list of terms that has to be added to the out-cache 
-  -- whenever they get a solution.
   mapping <- gets (^. searchCtx . currentMapping)
-  pureGoal <- liftST $ Unification.pureTerm goal mapping
-  let whenSucceeds' = pureGoal : whenSucceeds
   case goal of
-    -- Functors: look for rules with the name of the functor in its
-    -- conclusion, add that rule as a goal to the context.
-    Functor name _ _ _ -> do
-      rules <- findMatchingRules name
-      mapM_ (processRule goal remainingGoals whenSucceeds') rules
+      -- Functors: look for rules with the name of the functor in its
+      -- conclusion, add that rule as a goal to the context.
+      Functor name _ _ _ -> do
+        rules <- findMatchingRules name
+        mapM_ (processRule goal remainingGoals whenSucceeds) rules
 
-    Transition nam from to _ s -> do
-      -- Transitions: look for rules with the transition name in the conclusion
-      rules <- findMatchingRules nam
-      mapM_ (processRule goal remainingGoals whenSucceeds') rules
+      Transition nam from to _ s -> do
+        -- Transitions: look for rules with the transition name in the conclusion
+        rules <- findMatchingRules nam
+        mapM_ (processRule goal remainingGoals whenSucceeds) rules
 
-    Eqq left right _ _ -> do
-      -- Equality: try to unify, if it succeeds then = succeeds
-      either (const (return ()) . Debug.traceShowId) (const $ continue remainingGoals whenSucceeds') =<< unify left right
-    Neq left right _ _ -> do
-      -- Inequality: fail if unifies, otherwise succeed
-      either (const $ continue remainingGoals whenSucceeds') (const $ return ()) =<< unify left right
-    _ -> return () -- Variables and other terms can't be expanded
+      Eqq left right _ _ -> do
+        -- Equality: try to unify, if it succeeds then = succeeds
+        either (const (return ()) . Debug.traceShowId) (const $ continue remainingGoals whenSucceeds) =<< unify left right
+      Neq left right _ _ -> do
+        -- Inequality: fail if unifies, otherwise succeed
+        either (const $ continue remainingGoals whenSucceeds) (const $ return ()) =<< unify left right
+      _ -> return () -- Variables and other terms can't be expanded
 
 ------------------------------------------------------------
 -- Rule processing functions
@@ -254,7 +325,7 @@ findMatchingRules functorName = do
   gets (Set.toList . Map.findWithDefault Set.empty functorName . (^. conclusionFunctors))
 
 -- | Try to unify a goal with a rule and add new search states
-processRule :: forall p q s . (AnnotateType p, Queue q, HaskellExprRename p)
+processRule :: forall p q s . (AnnotateType p, Queue q, HaskellExprRename p, HaskellExprExecutor p, ForAllPhases Ord p)
             => RefTerm p s
             -> [SearchGoal p s]
             -> [InOut p s]
@@ -271,10 +342,32 @@ processRule goal remainingGoals whenSucceeds rule = do
 
       -- Create unification goal: current goal = consequent
       let unificationGoal = SearchGoal ruleName (Eqq goal refConsequent (typeAnnot (Proxy @p) AnyType) dummyRange)
-      let precedentGoals = map (SearchGoal ruleName) precedentRefs
-      let newGoals = unificationGoal : precedentGoals ++ remainingGoals
+      
+      -- Add the current goal to the list of terms that has to be added to the out-cache 
+      mapping <- gets (^. searchCtx . currentMapping)
+      pureGoal <- liftST $ Unification.pureTerm goal mapping
+      let whenSucceeds' = pureGoal : whenSucceeds
 
-      continue newGoals whenSucceeds
+      -- For each precedent, check if it's in cache and collect possible values
+      precedentOptions <- mapM (\precedentRef -> do
+        ifM (inCache precedentRef whenSucceeds mapping)
+            (do purePrecedent <- liftST $ Unification.pureTerm precedentRef mapping
+                cachedResults <- lookupCache purePrecedent
+                return $ map (\cachedResult -> (precedentRef, Just cachedResult)) (Set.toList cachedResults))
+            (return [(precedentRef, Nothing)])) precedentRefs
+
+      -- Generate all combinations of precedent assignments
+      let combinations = sequence precedentOptions
+      
+      -- For each combination, create Eqq goals for cached results
+      mapM_ (\combo -> do
+        eqqGoals <- mapM (\(precRef, maybeCached) -> case maybeCached of
+          Just cachedResult -> do
+            cachedRef <- refTerm cachedResult
+            return $ SearchGoal ruleName (Eqq precRef cachedRef (typeAnnot (Proxy @p) AnyType) dummyRange)
+          Nothing -> return $ SearchGoal ruleName precRef) combo
+        let newGoals = unificationGoal : eqqGoals ++ remainingGoals
+        continue newGoals whenSucceeds') combinations
     _ -> error $ "Rule " ++ ruleName ++ " has " ++ show (length consequents) ++ " consequents, expected exactly 1"
 
 ------------------------------------------------------------

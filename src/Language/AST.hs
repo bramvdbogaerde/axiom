@@ -57,6 +57,7 @@ module Language.AST(
     functorName,
     termEqIgnoreRange,
     infixNames,
+    isTermGround,
     HaskellExprExecutor(..),
     HaskellExprRename(..),
     AnnotateType(..),

@@ -2,13 +2,13 @@
 
 syntax {
     result in Int;
-    test in Rules ::= t(result, result);
+    test in Rules ::= t(result);
 };
 
 rules {
     rule "Pass-Test"
     [ ] =>
-    [ t(result, 42) ];
+    [ t(42) ];
 };
 
 %% Tests that should pass

@@ -164,6 +164,15 @@ pureTerm' term mapping = do
 pureTerm :: RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
 pureTerm term = pureTerm' term >=> either error return
 
+
+-- | Same as pureTerm but ensures that all elements of the term are ground
+pureTermGround :: RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
+pureTermGround term mapping =
+  if isTermGround term
+  then pureTerm term mapping
+  else error "Term is not ground"
+
+
 -------------------------------------------------------------
 -- Unification 
 -------------------------------------------------------------
