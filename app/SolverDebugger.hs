@@ -71,6 +71,7 @@ createDebugContext config query = DebugContext config (atomNames query)
 data TraceEntry = TraceEntry
   { traceStep :: Int
   , traceAction :: String
+  , traceStateId :: Maybe Int  -- ^ Current search state ID being processed
   , traceGoals :: [String]
   , traceQueueSize :: Int
   , traceSolution :: Maybe (Map String PureTerm)
@@ -86,7 +87,11 @@ type SolverTrace = [TraceEntry]
 -- | Pretty print a trace entry
 prettyTraceEntry :: TraceEntry -> String
 prettyTraceEntry entry = unlines $
-  [ "Step " ++ show (traceStep entry) ++ ": " ++ traceAction entry
+  [ "Step " ++ show (traceStep entry) ++ 
+    (case traceStateId entry of 
+       Just stateId -> " [State #" ++ show stateId ++ "]"
+       Nothing -> "") ++ 
+    ": " ++ traceAction entry
   , "  Goals: [" ++ intercalate ", " (traceGoals entry) ++ "]"
   , "  Queue size: " ++ show (traceQueueSize entry)
   , "  Cache size: " ++ show (traceCacheSize entry)
@@ -154,7 +159,7 @@ withStepLimit stepNum continueAction stopAction = do
       cacheSize <- getCurrentCacheSize
       outCache <- getCurrentOutCache
       inCache <- getInCacheContents []  -- No specific whenSucceeds context here
-      trace $ TraceEntry stepNum ("Step limit reached: " ++ show limit ++ " steps") [] 0 Nothing partialMapping cacheSize outCache inCache
+      trace $ TraceEntry stepNum ("Step limit reached: " ++ show limit ++ " steps") Nothing [] 0 Nothing partialMapping cacheSize outCache inCache
       stopAction
     _ -> continueAction
 
@@ -192,11 +197,11 @@ tracedSolveSingle :: (Queue q) => Int -> TracedSolver q s (Maybe (Either (Map St
 tracedSolveSingle stepNum = do
   queueSize <- liftSolver getQueueSize
 
-  -- Get the current state's goals and whenSucceeds before processing
-  (currentGoals, currentWhenSucceeds) <- liftSolver $ do
+  -- Get the current state's info before processing
+  (currentStateId, currentGoals, currentWhenSucceeds) <- liftSolver $ do
     gets (^. searchCtx . searchQueue) >>=
-      (\case Nothing -> return ([], [])
-             Just (state, _) -> return (state ^. searchGoals, state ^. searchWhenSucceeds)) . dequeue
+      (\case Nothing -> return (Nothing, [], [])
+             Just (state, _) -> return (Just (state ^. searchStateId), state ^. searchGoals, state ^. searchWhenSucceeds)) . dequeue
 
   -- Get current mapping for goal conversion
   mapping <- liftSolver $ gets (^. searchCtx . currentMapping)
@@ -212,14 +217,14 @@ tracedSolveSingle stepNum = do
 
   case result of
     Nothing -> do
-      trace $ TraceEntry stepNum "Queue empty - search finished" [] 0 Nothing partialMapping cacheSize outCache inCache
+      trace $ TraceEntry stepNum "Queue empty - search finished" currentStateId [] 0 Nothing partialMapping cacheSize outCache inCache
       return Nothing
     Just (Left solution) -> do
-      trace $ TraceEntry stepNum "Solution found!" goalStrings queueSize (Just solution) partialMapping cacheSize outCache inCache
+      trace $ TraceEntry stepNum "Solution found!" currentStateId goalStrings queueSize (Just solution) partialMapping cacheSize outCache inCache
       return $ Just (Left solution)
     Just (Right ()) -> do
       newQueueSize <- liftSolver getQueueSize
-      trace $ TraceEntry stepNum "Processed search state" goalStrings newQueueSize Nothing partialMapping cacheSize outCache inCache
+      trace $ TraceEntry stepNum "Processed search state" currentStateId goalStrings newQueueSize Nothing partialMapping cacheSize outCache inCache
       return $ Just (Right ())
 
 -- | Traced version of solveAll with step limit from config
@@ -242,7 +247,7 @@ tracedSolve query = do
   cacheSize <- getCurrentCacheSize
   outCache <- getCurrentOutCache
   inCache <- getInCacheContents []
-  trace $ TraceEntry 0 ("Starting to solve: " ++ show query) [] 0 Nothing partialMapping cacheSize outCache inCache
+  trace $ TraceEntry 0 ("Starting to solve: " ++ show query) Nothing [] 0 Nothing partialMapping cacheSize outCache inCache
   tracedSolveUntilStable query 1
 
 -- | Traced version of solveUntilStable with cache iteration tracking
@@ -252,7 +257,7 @@ tracedSolveUntilStable query iteration = do
   cacheSize <- getCurrentCacheSize
   outCache <- getCurrentOutCache
   inCache <- getInCacheContents []
-  trace $ TraceEntry 0 ("Cache iteration " ++ show iteration ++ ": solving " ++ show query) [] 0 Nothing partialMapping cacheSize outCache inCache
+  trace $ TraceEntry 0 ("Cache iteration " ++ show iteration ++ ": solving " ++ show query) Nothing [] 0 Nothing partialMapping cacheSize outCache inCache
   
   initialCache <- liftSolver $ gets (^. Language.Solver.outCache)
   liftSolver $ initialWL query
@@ -264,13 +269,13 @@ tracedSolveUntilStable query iteration = do
       finalCacheSize <- getCurrentCacheSize
       finalOutCache <- getCurrentOutCache
       finalInCache <- getInCacheContents []
-      trace $ TraceEntry 0 ("Cache stabilized after " ++ show iteration ++ " iteration(s)") [] 0 Nothing partialMapping finalCacheSize finalOutCache finalInCache
+      trace $ TraceEntry 0 ("Cache stabilized after " ++ show iteration ++ " iteration(s)") Nothing [] 0 Nothing partialMapping finalCacheSize finalOutCache finalInCache
       return solutions
     else do
       newCacheSize <- getCurrentCacheSize
       newOutCache <- getCurrentOutCache
       newInCache <- getInCacheContents []
-      trace $ TraceEntry 0 ("Cache changed, restarting (iteration " ++ show (iteration + 1) ++ ")") [] 0 Nothing partialMapping newCacheSize newOutCache newInCache
+      trace $ TraceEntry 0 ("Cache changed, restarting (iteration " ++ show (iteration + 1) ++ ")") Nothing [] 0 Nothing partialMapping newCacheSize newOutCache newInCache
       tracedSolveUntilStable query (iteration + 1)
 
 -- | Run a traced solver computation with context and return results with trace

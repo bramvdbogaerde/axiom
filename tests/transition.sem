@@ -21,12 +21,8 @@ rules {
 	[ ] =>
 	[ step2() ~> end() ];
 	
-	rule "Self-Loop"
-	[ ] =>
-	[ loop() ~> loop() ];
-
 	rule "Transitivity"
-	[ state0 ~> state1 ; state0 /= state1 ; state1 ~> state2 ] =>
+	[ state0 ~> state1 ; state1 ~> state2 ] =>
 	[ state0 ~> state2 ];
 };
 
