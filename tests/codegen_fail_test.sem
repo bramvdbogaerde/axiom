@@ -12,7 +12,7 @@ rules {
 };
 
 %% Tests that should pass
-%codegen_test: t(result, 42)
+%codegen_test: t(42)
 
 %% Tests that should fail (no rule produces result = 99)
-%codegen_fail_test: t(result, 99)
+%codegen_fail_test: t(99)

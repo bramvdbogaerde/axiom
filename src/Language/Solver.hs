@@ -146,7 +146,7 @@ refTerm term = do
 
 data CacheResult p   = InCache (PureTerm' p)        -- ^ indicates that the item is in the in-cache, together with its cached result
                      | InCacheMissing               -- ^ indicates that the item is in the in-cache but not in the out-cache
-                     | NotInCache                   -- ^ indicates that the item is not in the in-cache 
+                     | NotInCache                   -- ^ indicates that the item is not in the in-cache
 
 -- | Add a term to the cache together with its unification result 
 addToCache :: (HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p)) => PureTerm' p -> Solver p q s ()
@@ -158,9 +158,20 @@ addToCache t = do
   mapping <- gets (^. searchCtx . currentMapping)
   tground <- liftST $ Unification.pureTerm tr mapping
   -- Only if the term is ground can it be added to the cache
-  when (isTermGround tground) $ do  
+  when (isTermGround tground) $ do
     cachedTerm <- liftST $ Unification.pureTermGround tr mapping
     modify (over outCache (Map.insertWith Set.union t' (Set.singleton cachedTerm)))
+
+-- | Adds an element to the in-cache if there is no already existing term that unifies with this one
+-- in the cache 
+addToInCache :: (HaskellExprRename p, ForAllPhases Ord p, HaskellExprExecutor p, AnnotateType p)
+             => PureTerm' p
+            -> Unification.VariableMapping p s
+            -> [InOut p s]
+            -> Solver p q s [InOut p s]
+addToInCache t mapping theInCache = do
+  t' <- refTerm t
+  ifM (inCache t' theInCache mapping) (return theInCache) (return $ t : theInCache)
 
 -- | Looks up the result(s) from the term in the out-cache
 lookupCache :: (HaskellExprRename p, AnnotateType p, HaskellExprExecutor p, ForAllPhases Ord p)
@@ -219,7 +230,9 @@ doesUnify :: (AnnotateType p, HaskellExprExecutor p)
           => RefTerm p s
           -> RefTerm p s
           -> Solver p q s Bool
-doesUnify t1 = unify t1 >=> (return . isLeft)
+doesUnify t1 t2 = do
+ snapshot <- takeSnapshot
+ isRight <$> unify t1 t2 <* restoreSnapshot snapshot
 
 ------------------------------------------------------------
 -- Core search functions
@@ -237,7 +250,7 @@ initialWL query = do
 -- | Main entry point for solving a query - returns lazy list of all solutions
 solve :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
       => PureTerm' p -> Solver p q s [Map String (PureTerm' p)]
-solve query = solveUntilStable query
+solve = solveUntilStable
 
 -- | Solve a single step: dequeue one state and process it
 -- Returns Nothing if queue is empty, Just (Left solution) if solution found,
@@ -304,24 +317,26 @@ expandGoal :: (AnnotateType p, HaskellExprRename p, HaskellExprExecutor p, Queue
            -> Solver p q s ()
 expandGoal (SearchGoal ruleName goal) remainingGoals whenSucceeds = do
   mapping <- gets (^. searchCtx . currentMapping)
+  goal' <- liftST $ Unification.pureTerm goal mapping
+  whenSucceeds' <- addToInCache goal' mapping whenSucceeds
   case goal of
       -- Functors: look for rules with the name of the functor in its
       -- conclusion, add that rule as a goal to the context.
       Functor name _ _ _ -> do
         rules <- findMatchingRules name
-        mapM_ (processRule goal remainingGoals whenSucceeds) rules
+        mapM_ (processRule goal remainingGoals whenSucceeds') rules
 
       Transition nam from to _ s -> do
         -- Transitions: look for rules with the transition name in the conclusion
         rules <- findMatchingRules nam
-        mapM_ (processRule goal remainingGoals whenSucceeds) rules
+        mapM_ (processRule goal remainingGoals whenSucceeds') rules
 
       Eqq left right _ _ -> do
         -- Equality: try to unify, if it succeeds then = succeeds
-        either (const (return ()) . Debug.traceShowId) (const $ continue remainingGoals whenSucceeds) =<< unify left right
+        either (const (return ()) . Debug.traceShowId) (const $ continue remainingGoals whenSucceeds') =<< unify left right
       Neq left right _ _ -> do
         -- Inequality: fail if unifies, otherwise succeed
-        either (const $ continue remainingGoals whenSucceeds) (const $ return ()) =<< unify left right
+        either (const $ continue remainingGoals whenSucceeds') (const $ return ()) =<< unify left right
       _ -> return () -- Variables and other terms can't be expanded
 
 ------------------------------------------------------------
@@ -355,18 +370,20 @@ processRule goal remainingGoals whenSucceeds rule = do
       -- Add the current goal to the list of terms that has to be added to the out-cache 
       mapping <- gets (^. searchCtx . currentMapping)
       pureGoal <- liftST $ Unification.pureTerm goal mapping
-      let whenSucceeds' = pureGoal : whenSucceeds
 
       -- For each precedent, check if it's in cache and collect possible values
       precedentOptions <- mapM (\precedentRef -> do
+        purePrecedent <- liftST $ Unification.pureTerm precedentRef mapping
+        cachedResults <- lookupCache purePrecedent
         fmap (precedentRef,) <$>
           ifM (inCache precedentRef whenSucceeds mapping)
-              (do purePrecedent <- liftST $ Unification.pureTerm precedentRef mapping
-                  cachedResults <- lookupCache purePrecedent
-                  if Set.null cachedResults
-                    then return [InCacheMissing]
-                    else return $ map InCache (Set.toList cachedResults))
-              (return [NotInCache])) precedentRefs
+              (if Set.null cachedResults
+                  then return [InCacheMissing]
+                  else return $ map InCache (Set.toList cachedResults))
+              (if Set.null cachedResults
+                  then return [NotInCache]
+                  -- incorperate the result of the previous iteration but do as if the item was not in the cache
+                  else return $ NotInCache : map InCache (Set.toList cachedResults))) precedentRefs
 
       -- Generate all combinations of precedent assignments
       let combinations = sequence precedentOptions
@@ -376,14 +393,17 @@ processRule goal remainingGoals whenSucceeds rule = do
           InCache cachedResult -> do
             -- the term was in in the in-cache, and there was a useful out-cache entry that we can use
             cachedRef <- refTerm cachedResult
-            return $ Just $ SearchGoal ruleName (Eqq precRef cachedRef (typeAnnot (Proxy @p) AnyType) dummyRange)
+            return $ Just (SearchGoal ruleName (Eqq precRef cachedRef (typeAnnot (Proxy @p) AnyType) dummyRange))
+
           InCacheMissing -> do
             -- the term was in the in-cache but not yet in the out-cache, proceed with the remaining goals
             return Nothing
             -- not in the cache add as another goal
-          NotInCache -> return $ Just $ SearchGoal ruleName precRef) combo
+          NotInCache -> do
+            t <- liftST $ Unification.pureTerm precRef mapping
+            return $ Just (SearchGoal ruleName precRef)) combo
         let newGoals = unificationGoal : catMaybes eqqGoals ++ remainingGoals
-        continue newGoals whenSucceeds') combinations
+        continue newGoals whenSucceeds) combinations
     _ -> error $ "Rule " ++ ruleName ++ " has " ++ show (length consequents) ++ " consequents, expected exactly 1"
 
 ------------------------------------------------------------
