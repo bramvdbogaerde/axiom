@@ -13,6 +13,7 @@ import Data.Maybe (catMaybes)
 import Control.Exception (catch, IOException)
 import Control.Monad.Extra (ifM)
 import Control.Monad.Trans.Except
+import Control.Applicative ((<|>))
 import Data.Bifunctor (first)
 import System.Timeout (timeout)
 
@@ -37,12 +38,15 @@ readFileSafe path = do
     handler :: IOException -> IO (Either String String)
     handler e = return $ Left $ "Could not read file " ++ path ++ ": " ++ show e
 
--- | Extract test queries from comments that start with "test:"
-extractTestQueries :: [Comment] -> [String]
+-- | Extract test queries from comments that start with "test:" or "test_fail:"
+extractTestQueries :: [Comment] -> [(String, Bool)]  -- (query, shouldPass)
 extractTestQueries comments = catMaybes $ map extractQuery comments
   where
     extractQuery (Comment content _) = 
-      stripPrefix "test: " content
+      let prefixes = [(" test: ", True), ("test: ", True), 
+                      (" test_fail: ", False), ("test_fail: ", False)]
+          tryPrefix (prefix, shouldPass) = fmap (,shouldPass) $ stripPrefix prefix content
+      in foldr (<|>) Nothing $ map tryPrefix prefixes
 
 -- | Parse and run a single test query against a program with timeout protection
 runTestQuery :: Program -> String -> IO (Either String Bool)
@@ -61,7 +65,7 @@ runTestQuery program@(Program decls _) queryStr = do
         Just solutions -> return $ Right (not $ null solutions)
 
 -- | Load and parse a test file, returning either an error or (program, queries)
-loadTestFile :: FilePath -> ExceptT String IO (Program, [String])
+loadTestFile :: FilePath -> ExceptT String IO (Program, [(String, Bool)])
 loadTestFile filePath = do
   content <- ExceptT $ readFileSafe filePath
   program@(Program _ comments) <- ExceptT $ return $ first show $ parseProgram content
@@ -83,9 +87,9 @@ createSolverTest filePath =
           else mapM_ (createQueryTest program) queries
 
 -- | Create a test for a single query
-createQueryTest :: Program -> String -> Spec
-createQueryTest program queryStr = 
-  it ("should solve: " ++ queryStr) $ do
+createQueryTest :: Program -> (String, Bool) -> Spec
+createQueryTest program (queryStr, shouldPass) = 
+  it (testDescription ++ queryStr) $ do
     result <- runTestQuery program queryStr
     case result of
       Left err | "Solver timeout:" `isPrefixOf` err -> 
@@ -93,7 +97,11 @@ createQueryTest program queryStr =
       Left err -> 
         expectationFailure $ "Error testing query: " ++ err
       Right hasSolution -> 
-        hasSolution `shouldBe` True
+        if shouldPass
+          then hasSolution `shouldBe` True
+          else hasSolution `shouldBe` False
+  where
+    testDescription = if shouldPass then "should solve: " else "should fail: "
 
 spec :: Spec
 spec = describe "Solver tests" $ do

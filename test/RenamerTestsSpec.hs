@@ -16,7 +16,7 @@ spec = do
       
       case renamedRule of
         RuleDecl _ [] [Atom (Identity renamedVar) _ _] _ -> do
-          renamedVar `shouldBe` "x0"
+          renamedVar `shouldBe` "x_0"
         _ -> expectationFailure "Unexpected rule structure after renaming"
     
     it "renames variables 'x' and 'y' with different names in 'x => y'" $ do
@@ -25,8 +25,8 @@ spec = do
       
       case renamedRule of
         RuleDecl _ [Atom (Identity renamedX) _ _] [Atom (Identity renamedY) _ _] _ -> do
-          renamedX `shouldBe` "x0"
-          renamedY `shouldBe` "y1"
+          renamedX `shouldBe` "x_0"
+          renamedY `shouldBe` "y_1"
         _ -> expectationFailure "Unexpected rule structure after renaming"
     
     it "handles functor term 'f(x, y)' and variable 'x' consistently" $ do
@@ -35,9 +35,9 @@ spec = do
       
       case renamedRule of
         RuleDecl _ [Functor "f" [Atom (Identity renamedX1) _ _, Atom (Identity renamedY) _ _] _ _] [Atom (Identity renamedX2) _ _] _ -> do
-          renamedX1 `shouldBe` "x0"
-          renamedX2 `shouldBe` "x0"  -- Same variable should be consistently renamed
-          renamedY `shouldBe` "y1"
+          renamedX1 `shouldBe` "x_0"
+          renamedX2 `shouldBe` "x_0"  -- Same variable should be consistently renamed
+          renamedY `shouldBe` "y_1"
         _ -> expectationFailure "Unexpected rule structure after renaming"
     
     it "handles equality term 'x = y'" $ do
@@ -46,8 +46,8 @@ spec = do
       
       case renamedRule of
         RuleDecl _ [Eqq (Atom (Identity renamedX) _ _) (Atom (Identity renamedY) _ _) _ _] [] _ -> do
-          renamedX `shouldBe` "x0"
-          renamedY `shouldBe` "y1"
+          renamedX `shouldBe` "x_0"
+          renamedY `shouldBe` "y_1"
         _ -> expectationFailure "Unexpected rule structure after renaming"
     
     it "handles transition term 'x ~> y'" $ do
@@ -56,8 +56,8 @@ spec = do
       
       case renamedRule of
         RuleDecl _ [Transition _ (Atom (Identity renamedX) _ _) (Atom (Identity renamedY) _ _) _ _] [] _ -> do
-          renamedX `shouldBe` "x0"
-          renamedY `shouldBe` "y1"
+          renamedX `shouldBe` "x_0"
+          renamedY `shouldBe` "y_1"
         _ -> expectationFailure "Unexpected rule structure after renaming"
     
     it "maintains variable consistency across multiple terms 'f(x), g(x)'" $ do
@@ -66,6 +66,6 @@ spec = do
       
       case renamedRule of
         RuleDecl _ [Functor "f" [Atom (Identity renamedX1) _ _] _ _, Functor "g" [Atom (Identity renamedX2) _ _] _ _] [] _ -> do
-          renamedX1 `shouldBe` "x0"
-          renamedX2 `shouldBe` "x0"  -- Same variable should be consistently renamed
+          renamedX1 `shouldBe` "x_0"
+          renamedX2 `shouldBe` "x_0"  -- Same variable should be consistently renamed
         _ -> expectationFailure "Unexpected rule structure after renaming"

@@ -129,18 +129,19 @@ addVisited ref visited = ref : visited
 -- | Convert a pointer-based term back to a pure term with cycle detection
 pureTerm' :: RefTerm p s -> VariableMapping p s -> BST.ST s (Either String (PureTerm' p))
 pureTerm' term mapping = do
-  flattenMapping mapping
+  -- flattenMapping mapping
   runExceptT $ evalStateT (convertTerm term) []
   where
     convertTerm :: RefTerm p s -> StateT (VisitedList p s) (ExceptT String (BST.ST s)) (PureTerm' p)
     convertTerm (Atom (Ref cellRef) tpy range) =
-      lift (lift $ BST.readSTRef cellRef) >>= \case
-        Value term ->
-          ifM (get >>= lift . lift . isVisited cellRef)
-              (lift $ throwError "Cycle detected during term conversion")
-              (modify (addVisited cellRef) >> convertTerm term)
-        Uninitialized varName -> return $ Atom (Identity varName) tpy range
-        Ptr _ -> error "Unreachable: flattenMapping should have eliminated all Ptr cases"
+        lift (lift $ BST.readSTRef cellRef) >>= convertCell
+      where convertCell = \case
+              Value term ->
+                ifM (get >>= lift . lift . isVisited cellRef)
+                    (lift $ throwError "Cycle detected during term conversion")
+                    (modify (addVisited cellRef) >> convertTerm term)
+              Uninitialized varName -> return $ Atom (Identity varName) tpy range
+              Ptr cell -> lift (lift $ parentValue cell) >>= convertCell 
 
     convertTerm (Functor name subterms tpy range) =
       Functor name <$> mapM convertTerm subterms <*> pure tpy <*> pure range
@@ -163,6 +164,16 @@ pureTerm' term mapping = do
 -- | Same as pureTerm' but raises an error if the term could not be converted
 pureTerm :: RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
 pureTerm term = pureTerm' term >=> either error return
+
+
+-- | Same as pureTerm but ensures that all elements of the term are ground
+pureTermGround :: Show (PureTerm' p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
+pureTermGround term mapping = do
+  term' <- pureTerm term mapping
+  if isTermGround term'
+    then return term'
+    else error $ "Term is not ground " ++ show term'
+
 
 -------------------------------------------------------------
 -- Unification 
@@ -267,9 +278,10 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
         else throwError $ "Functors don't match: " ++ name1 ++ " vs " ++ name2
 
     unifyAtomWithTerm :: Cell p s String -> RefTerm p s -> UnificationM p s ()
-    unifyAtomWithTerm (Ref ref) term =
-      lift (lift $ BST.readSTRef ref) >>= \case
-        Uninitialized _ -> lift $ lift $ BST.writeSTRef ref (Value term)
+    unifyAtomWithTerm cell term = do
+      ref <- lift $ lift $ setOf cell 
+      lift (lift $ readCellRef ref) >>= \case
+        Uninitialized _ -> lift $ lift $ writeCellRef ref (Value term)
         Value existingTerm -> unifyTermsImpl existingTerm term
         _ -> throwError "Unexpected cell value in atom-term unification"
 
@@ -297,6 +309,10 @@ unify term1 term2 = do
   -- Convert mapping back to pure terms
   results <- lift $ mapM (\cell -> lift $ pureTerm' (Atom cell (typeAnnot (Proxy @p) AnyType) dummyRange) sharedMapping) sharedMapping
   either throwError return $ sequenceA results
+
+-- | Construct the mapping resulting from the unification process
+buildMapping :: forall p s . (AnnotateType p) => VariableMapping p s -> BST.ST s (Map String (PureTerm' p))
+buildMapping mapping = mapM (\cell -> pureTerm (Atom cell (typeAnnot (Proxy @p) AnyType) dummyRange) mapping) mapping
 
 -- | Run unification in the ST monad and return the result
 runUnification :: forall p .

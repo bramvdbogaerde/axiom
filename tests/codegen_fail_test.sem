@@ -2,17 +2,17 @@
 
 syntax {
     result in Int;
-    test in Rules ::= t(result, result);
+    test in Rules ::= t(result);
 };
 
 rules {
     rule "Pass-Test"
     [ ] =>
-    [ t(result, 42) ];
+    [ t(42) ];
 };
 
 %% Tests that should pass
-%codegen_test: t(result, 42)
+%codegen_test: t(42)
 
 %% Tests that should fail (no rule produces result = 99)
-%codegen_fail_test: t(result, 99)
+%codegen_fail_test: t(99)

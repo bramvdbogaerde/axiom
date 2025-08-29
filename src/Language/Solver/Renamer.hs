@@ -1,7 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-module Language.Solver.Renamer(renameRule, renameRule', renameRuleState) where
+module Language.Solver.Renamer(renameRule, renameRule', renameTerm, unrenameTerm, runRenamer, renameRuleState, baseName) where
 
 import Control.Lens
 import Control.Monad.State
@@ -13,6 +13,8 @@ import Language.AST
 import Data.Bifunctor
 import qualified Data.Set as Set
 import Control.Applicative
+import Text.Regex (mkRegex, matchRegex)
+import Data.Maybe (fromMaybe)
 
 
 -------------------------------------------------------------
@@ -43,7 +45,7 @@ freshName :: MonadRename m => String -> m String
 freshName nam =
     gets (Map.lookup nam . _variableMapping) >>= maybe storeFreshName (return . newName)
   where
-    newName = (nam ++) . show
+    newName = ((nam ++ "_") ++) . show
     storeFreshName = fresh nam >>= \i -> modify (over variableMapping (Map.insert nam i)) >> return (newName i)
 
 -- | Run the renamer monad and obtain its result
@@ -70,7 +72,7 @@ renameTerm (HaskellExpr expr tpy range) =
     where freeVars = Set.toList (haskellExprFreeVars @p expr)
           vars = mapM freshName freeVars
           mapping' = Map.fromList <$> liftA2 zip vars (return freeVars)
-          
+
 renameTerm (TermValue value tpy range) = pure $ TermValue value tpy range
 
 -- | Rename all variables in a list of terms
@@ -97,3 +99,24 @@ renameRuleState rule = StateT $ return . flip renameRule' rule
 -- | Same as renameRule' but does not return the new unique count
 renameRule :: HaskellExprRename p => Int -> RuleDecl' p -> RuleDecl' p
 renameRule k = fst . renameRule' k
+
+-------------------------------------------------------------
+-- Base name functions
+-------------------------------------------------------------
+
+-- | Inverse of "renameTerm"
+unrenameTerm :: PureTerm' p -> PureTerm' p
+unrenameTerm (Atom (Identity varName) tpy range) = Atom (Identity (baseName varName)) tpy range
+unrenameTerm (Functor name subterms tpy range) = Functor name (map unrenameTerm subterms) tpy range
+unrenameTerm (Neq left right tpy range) = Neq (unrenameTerm left) (unrenameTerm right) tpy range
+unrenameTerm (Eqq left right tpy range) = Eqq (unrenameTerm left) (unrenameTerm right) tpy range
+unrenameTerm (Transition transName left right tpy range) = 
+    Transition transName (unrenameTerm left) (unrenameTerm right) tpy range
+unrenameTerm (HaskellExpr expr tpy range) = HaskellExpr expr tpy range
+unrenameTerm (TermValue value tpy range) = TermValue value tpy range
+
+-- | Removes the part of the variable name that makes it unique
+baseName :: String -> String
+baseName s = maybe s head (matchRegex r s)
+    where r = mkRegex "(.*)_.*"
+

@@ -2,17 +2,17 @@
 
 syntax {
     a, result, sum, product in Int;
-    test in Rules ::= t(result, result);
+    test in Rules ::= t(result);
 };
 
 rules {
     rule "Simple-HaskellExpr"
     [ ] =>
-    [ t(result, ${42}) ];
+    [ t(${42}) ];
     
     rule "Arithmetic-HaskellExpr"
     [ ] =>
-    [ t(result, ${10 + 5}) ];
+    [ t(${10 + 5}) ];
 
     %% TODO: this is only works when the
     %% Haskell expression that references variables
@@ -22,15 +22,15 @@ rules {
     %% to solve this a dependency graph should be constructed so that the Haskell expression is always the last goal (cf. design.md). 
     rule "Var-Access"
     [ a = 5 ; product = ${a * 2} ] =>
-    [ t(result, product) ];
+    [ t(product) ];
     
     rule "Complex-Arithmetic"
     [ ] =>
-    [ t(result, ${6 * 7 + 2}) ];
+    [ t(${6 * 7 + 2}) ];
 };
 
 %% Test queries to verify Haskell expressions execute correctly
-%codegen_test: t(result, 42)
-%codegen_test: t(sum , 15)
-%codegen_test: t(product, 44)
-%codegen_test: t(result, 10)
+%codegen_test: t(42)
+%codegen_test: t(15)
+%codegen_test: t(44)
+%codegen_test: t(10)

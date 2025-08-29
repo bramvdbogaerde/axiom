@@ -41,6 +41,7 @@ library
   extensions: TemplateHaskell
             , GeneralizedNewtypeDeriving
             , FlexibleContexts
+            , TupleSections
   hs-source-dirs: src
   
 executable analysislang
@@ -82,6 +83,7 @@ test-suite comment-tests
               , temporary
               , process
   build-tool-depends: hspec-discover:hspec-discover
+  extensions: TupleSections
   other-modules: CommentTestsSpec
               , ParseSmokeTestSpec
               , ParseTestsSpec
