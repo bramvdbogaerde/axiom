@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 
 module SolverDebugger where
 
@@ -165,13 +166,13 @@ withStepLimit stepNum continueAction stopAction = do
 
 -- | Get current partial mapping for tracing, filtered by configuration
 getCurrentPartialMapping :: TracedSolver q s (Map String PureTerm)
-getCurrentPartialMapping = do
-  context <- ask
-  mapping <- liftSolver $ gets (^. searchCtx . currentMapping)
-  fullMapping <- liftSolver $ liftST $ mapM (\cell -> Unification.pureTerm (Atom cell () dummyRange) mapping) mapping
-  return $ if context ^. debugConfig . configShowInternalVars
-    then fullMapping
-    else Map.restrictKeys fullMapping (context ^. userVariables)
+getCurrentPartialMapping = return Map.empty
+  -- context <- ask
+  -- mapping <- liftSolver $ gets (^. searchCtx . currentMapping)
+  -- fullMapping <- liftSolver $ liftST $ mapM (\cell -> Unification.pureTerm (Atom cell () dummyRange) mapping) mapping
+  -- return $ if context ^. debugConfig . configShowInternalVars
+  --   then fullMapping
+  --   else Map.restrictKeys fullMapping (context ^. userVariables)
 
 -- | Get current cache size for tracing
 getCurrentCacheSize :: TracedSolver q s Int
@@ -249,6 +250,8 @@ tracedSolve query = do
   inCache <- getInCacheContents []
   trace $ TraceEntry 0 ("Starting to solve: " ++ show query) Nothing [] 0 Nothing partialMapping cacheSize outCache inCache
   tracedSolveUntilStable query 1
+  liftSolver (cachedSolutions query)
+  
 
 -- | Traced version of solveUntilStable with cache iteration tracking
 tracedSolveUntilStable :: (Queue q) => PureTerm -> Int -> TracedSolver q s [Map String PureTerm]
@@ -340,7 +343,7 @@ debugSession semFile = do
               mapM_ (putStrLn . ("  " ++) . show) (if config ^. configShowInternalVars
                                                       then solutions
                                                       else map (`Map.restrictKeys` atomNames term) solutions)
-          putStrLn ""
+          
       debugLoop config rules
 
 -- | Parse a command and update the given config

@@ -34,3 +34,7 @@ rules {
 %test: append(cons(a(), cons(b(), nil())) , cons(b(), cons(c(), nil())), cons(a(), cons(b(), cons(b(), cons(c(), nil())))))
 %test: member(a(), cons(a(), cons(b(), nil())))
 %test: member(b(), cons(a(), cons(b(), nil())))
+
+%% Tests that should fail (no rules can solve these)
+%test_fail: member(c(), cons(a(), cons(b(), nil())))
+%test_fail: append(cons(a(), nil()), cons(b(), nil()), cons(c(), nil()))
