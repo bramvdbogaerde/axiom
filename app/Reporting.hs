@@ -1,6 +1,7 @@
 module Reporting where
 
-import Language.TypeCheck (ModelError(..), Error(..), CheckingContext(..), SortName(..))
+import Language.TypeCheck (ModelError(..), Error(..), CheckingContext(..))
+import Language.Types (Typ(..), toSortName)
 import Language.AST (Range(..), Position(..))
 import System.Console.ANSI
 import qualified Data.Map as Map
@@ -32,11 +33,11 @@ printColored sgr text =
 
 formatModelError :: ModelError -> String
 formatModelError (DuplicateVariable var sortName) =
-  "Variable '" ++ var ++ "' is already defined for sort '" ++ getSortName sortName ++ "'"
+  "Variable '" ++ var ++ "' is already defined for sort '" ++ toSortName sortName ++ "'"
 formatModelError (DuplicateSort sortName) =
-  "Sort '" ++ getSortName sortName ++ "' is defined multiple times"
+  "Sort '" ++ toSortName sortName ++ "' is defined multiple times"
 formatModelError (NoNestingAt sortName) =
-  "Nested terms are not allowed in sort '" ++ getSortName sortName ++ "' - only atoms are permitted"
+  "Nested terms are not allowed in sort '" ++ toSortName sortName ++ "' - only atoms are permitted"
 formatModelError (NameNotDefined var) =
   "Name '" ++ var ++ "' is used but not defined"
 formatModelError (IncompatibleTypes expected actual) =
@@ -48,16 +49,16 @@ formatModelError (ArityMismatch functorName expected actual) =
 formatModelError HaskellExprTypeInferenceError =
   "Cannot infer type for Haskell expression - no type context available"
 
-formatTypeDifference :: [SortName] -> [SortName] -> String
+formatTypeDifference :: [Typ] -> [Typ] -> String
 formatTypeDifference expected actual
   | length expected /= length actual = 
       "arity mismatch: expected " ++ show (length expected) ++ " arguments but got " ++ show (length actual)
   | otherwise = 
       case differences of
            [] -> "all types match (this shouldn't happen)"
-           [(e, a)] -> "expected '" ++ getSortName e ++ "' but got '" ++ getSortName a ++ "'"
+           [(e, a)] -> "expected '" ++ toSortName e ++ "' but got '" ++ toSortName a ++ "'"
            diffs -> "differences at " ++ intercalate ", "
-                      (map (\(e, a) -> "'" ++ getSortName e ++ "' vs '" ++ getSortName a ++ "'") diffs)
+                      (map (\(e, a) -> "'" ++ toSortName e ++ "' vs '" ++ toSortName a ++ "'") diffs)
   where differences = filter (uncurry (/=)) (zip expected actual)
 
 -------------------------------------------------------------

@@ -31,11 +31,11 @@ import Data.Tuple
 -- Errors
 -----------------------------------------
 
-data ModelError = DuplicateVariable String SortName
-                | DuplicateSort SortName
-                | NoNestingAt SortName
+data ModelError = DuplicateVariable String Typ
+                | DuplicateSort Typ
+                | NoNestingAt Typ
                 | SortNotDefined String
-                | IncompatibleTypes [SortName] [SortName]
+                | IncompatibleTypes [Typ] [Typ]
                 | NameNotDefined String
                 | ArityMismatch String Int Int  -- ^ functor name, expected arity, actual arity
                 | HaskellExprTypeInferenceError  -- ^ HaskellExpr type inference failure
@@ -48,29 +48,25 @@ data Error = Error { err :: ModelError, raisedAt :: Maybe Range,  ctx :: Checkin
 -- Data types
 -----------------------------------------
 
--- | Names to refer to sorts
-newtype SortName = SortName { getSortName :: String } deriving (Ord, Eq, Show)
 
 -- | Variables
 type Var = String
 
 -- | A data constructor is either an atom or a tag paired with a list of sorts
-data DataCtor = DataAtom SortName | DataTagged String [SortName]
+data DataCtor = DataAtom Typ | DataTagged String [Typ]
               deriving (Ord, Eq, Show)
 
 -- | Typeclass for extracting sorts from data types
 class HasSorts s where
-  getSorts :: s -> [SortName]
+  getSorts :: s -> [Typ]
 
-instance HasSorts SortName where
+instance HasSorts Typ where
   getSorts s = [s]
 
 instance HasSorts DataCtor where
   getSorts (DataAtom s) = [s]
   getSorts (DataTagged _ ss) = ss
 
-mkSort :: SortName -> Typ
-mkSort = Sort . getSortName
 
 -----------------------------------------
 -- Environment
@@ -97,15 +93,15 @@ emptyEnvironment = Environment Map.empty
 -----------------------------------------
 
 -- | A typing context maps atoms and functors to their sorts
-newtype Gamma = Gamma { getGamma :: Map String SortName }
+newtype Gamma = Gamma { getGamma :: Map String Typ }
               deriving (Ord, Eq, Show)
 
 -- | Lookup the type of the given functor or variable in the typing contex
-lookupGamma :: String -> Gamma -> Maybe SortName
+lookupGamma :: String -> Gamma -> Maybe Typ
 lookupGamma k = Map.lookup k . getGamma
 
 -- | Associate the given type with the given variable or atom
-typesAs :: String -> SortName -> Gamma -> Gamma
+typesAs :: String -> Typ -> Gamma -> Gamma
 typesAs k s =
   Gamma . Map.insert k s . getGamma
 
@@ -118,15 +114,15 @@ emptyTypingContext = Gamma Map.empty
 -----------------------------------------
 
 -- | Keeps track of subtyping information
-newtype Subtyping = Subtyping { subtypingSupertypes :: UnlabeledGraph SortName }
+newtype Subtyping = Subtyping { subtypingSupertypes :: UnlabeledGraph Typ }
                   deriving (Ord, Eq, Show)
 
 -- | Registers the first argument as a subtype of the second
-makeSubtypeOf :: SortName -> SortName -> Subtyping -> Subtyping
+makeSubtypeOf :: Typ -> Typ -> Subtyping -> Subtyping
 makeSubtypeOf from to = Subtyping . Graph.addEdge () from to . subtypingSupertypes
 
 -- | Checks whether the first argument is a subtype of the second
-isSubtypeOf :: SortName -> SortName -> Subtyping -> Bool
+isSubtypeOf :: Typ -> Typ -> Subtyping -> Bool
 isSubtypeOf from to = Graph.isReachable from to . subtypingSupertypes
 
 -- | Create an empty subtyping graph
@@ -141,8 +137,9 @@ data CheckingContext = CheckingContext {
                         _environment :: Environment
                       , _typingContext :: Gamma
                       , _subtypingContext :: Subtyping
-                      , _definedSorts :: Set SortName
+                      , _definedSorts :: Set Typ
                       , _sortToDefSite :: Map String Range
+                      , _typeNameMapping :: Map String Typ  -- ^ maps type names to their Typ representation
                       , _typeCheckingErrors :: [Error]
                      } deriving (Ord, Eq, Show)
 
@@ -150,7 +147,9 @@ data CheckingContext = CheckingContext {
 $(makeLenses ''CheckingContext)
 
 emptyCheckingContext :: CheckingContext
-emptyCheckingContext = CheckingContext emptyEnvironment emptyTypingContext emptySubtyping Set.empty Map.empty []
+emptyCheckingContext = CheckingContext emptyEnvironment emptyTypingContext emptySubtyping Set.empty Map.empty builtinTypeMapping []
+  where
+    builtinTypeMapping = Map.fromList [("Int", IntType), ("String", StrType), ("Any", AnyType)]
 
 -----------------------------------------
 -- Monadic context
@@ -193,34 +192,51 @@ lookupCtor maybeRange nam =
   gets (lookupEnvironment nam . _environment) >>= maybeOrError maybeRange (NameNotDefined nam)
 
 -- | Looks up the sort associated with the variable and raises an error if the sort does not exist
-lookupSort :: MonadCheck m => Maybe Range -> String -> m SortName
+lookupSort :: MonadCheck m => Maybe Range -> String -> m Typ
 lookupSort maybeRange nam =
   gets (lookupGamma nam . _typingContext) >>= maybeOrError maybeRange (SortNotDefined nam)
 
 -- | Check if a sort is defined
-isSortDefined :: MonadCheck m => SortName -> m Bool
+isSortDefined :: MonadCheck m => Typ -> m Bool
 isSortDefined sortName = gets (Set.member sortName . _definedSorts)
 
 -- | Add a sort to the set of defined sorts
-defineSort :: MonadCheck m => SortName -> m ()
+defineSort :: MonadCheck m => Typ -> m ()
 defineSort sortName = do
   modify (over definedSorts (Set.insert sortName))
   -- all sorts is a subtype of 'Any'
-  subtyped sortName (SortName "Any")
+  subtyped sortName AnyType
+
+-- | Define a sort by name, registering both the type mapping and adding it to defined sorts
+defineSortByName :: MonadCheck m => String -> m ()
+defineSortByName typeName = do
+  typ <- resolveTypeName typeName
+  registerTypeName typeName typ
+  defineSort typ
 
 -- | Record the definition site of a sort
 recordSortDefSite :: MonadCheck m => String -> Range -> m ()
 recordSortDefSite sortName range = modify (over sortToDefSite (Map.insert sortName range))
 
+-- | Register a type name with its corresponding Typ
+registerTypeName :: MonadCheck m => String -> Typ -> m ()
+registerTypeName typeName typ = modify (over typeNameMapping (Map.insert typeName typ))
+
+-- | Resolve a type name to its Typ representation
+resolveTypeName :: MonadCheck m => String -> m Typ
+resolveTypeName typeName = do
+  mapping <- gets _typeNameMapping
+  maybe (throwError $ NameNotDefined typeName) return (Map.lookup typeName mapping)
+
 -- | Associate the given type with the given variable or atom in the typing context
 -- and add the sort to the set of defined sorts
-typedAs :: MonadCheck m => String -> SortName -> m ()
+typedAs :: MonadCheck m => String -> Typ -> m ()
 typedAs var sortName = do
   modify (over typingContext (typesAs var sortName))
   defineSort sortName
 
 -- | Registers the first argument as a subtype of the second
-subtyped :: MonadCheck m => SortName -> SortName -> m ()
+subtyped :: MonadCheck m => Typ -> Typ -> m ()
 subtyped subtype parenttype =
   modify (over subtypingContext (makeSubtypeOf subtype parenttype))
 
@@ -242,13 +258,13 @@ instance SubtypeOf s => SubtypeOf [s] where
     | length l1 /= length l2 = return False
     | otherwise = and <$> zipWithM subtypeOf l1 l2
 
-instance SubtypeOf SortName where
+instance SubtypeOf Typ where
   subtypeOf s1 s2 = do
     subCtx <- gets _subtypingContext
     return $ isSubtypeOf s1 s2 subCtx
 
 -- | Return a list of sorts associated with the functor
-sortsInFunctor :: MonadCheck m => String -> m [SortName]
+sortsInFunctor :: MonadCheck m => String -> m [Typ]
 sortsInFunctor functorName = do
   env <- gets _environment
   case lookupEnvironment functorName env of
@@ -263,7 +279,7 @@ sortsInFunctor functorName = do
 -- | Associate a single variable to the given type or return
 -- an error if there is already a type associated with the given variable.
 -- Also associates the atom with the specified constructor in the environment.
-typeAsUnique :: MonadCheck m => DataCtor -> SortName -> Var -> m ()
+typeAsUnique :: MonadCheck m => DataCtor -> Typ -> Var -> m ()
 typeAsUnique ctor sortName var = do
   env <- gets _environment
   case lookupEnvironment var env of
@@ -275,13 +291,18 @@ typeAsUnique ctor sortName var = do
 pass0VisitDecl :: MonadCheck m => Decl -> m ()
 pass0VisitDecl (Syntax decls _) = mapM_ pass0VisitSyntaxDecl decls
   where
-    pass0VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) =
-      ifM (isSortDefined (SortName tpy))
-          (throwError (DuplicateSort (SortName tpy)))
+    pass0VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) = do
+      let sortTyp = fromSortName tpy
+      ifM (isSortDefined sortTyp)
+          (throwError (DuplicateSort sortTyp))
           (do recordSortDefSite tpy range
-              mapM_ (typeAsUnique (DataAtom (SortName tpy)) (SortName tpy)) vars)
+              registerTypeName tpy sortTyp
+              mapM_ (typeAsUnique (DataAtom sortTyp) sortTyp) vars)
 pass0VisitDecl (TransitionDecl nam from to range) = do
   recordSortDefSite nam range
+  -- Register the transition name as its own type
+  let transitionTyp = Sort nam
+  registerTypeName nam transitionTyp
 pass0VisitDecl _ = return ()
 
 pass0 :: MonadCheck m => Program -> m ()
@@ -292,7 +313,7 @@ pass0 (Program decls _) = mapM_ pass0VisitDecl decls
 -----------------------------------------
 
 -- | Process and associate the data constructors in the given sort
-pass1VisitCtor :: MonadCheck m => SortName -> PureTerm -> m ()
+pass1VisitCtor :: MonadCheck m => Typ -> PureTerm -> m ()
 pass1VisitCtor sortName = \case
   (Atom nam _ range) -> do
     sort <- lookupSort (Just range) (runIdentity nam)
@@ -308,13 +329,17 @@ pass1VisitCtor sortName = \case
 pass1VisitDecl :: MonadCheck m => Decl -> m ()
 pass1VisitDecl (Syntax decls _) = mapM_ pass1VisitSyntaxDecl decls
   where
-    pass1VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) =
-      mapM_ (pass1VisitCtor (SortName tpy)) ctors
+    pass1VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) = do
+      sortTyp <- resolveTypeName tpy
+      mapM_ (pass1VisitCtor sortTyp) ctors
 pass1VisitDecl (TransitionDecl nam (Sort from, _) (Sort to, _) range) = do
   -- transition State ~> State is equivalent to the syntax rule:
   -- ~> ::= ~>(state, state) from a typing perspective
-  let ctor = DataTagged nam [SortName from, SortName to]
-  typeAsUnique ctor (SortName nam) nam
+  fromTyp <- resolveTypeName from
+  toTyp <- resolveTypeName to
+  transitionTyp <- resolveTypeName nam
+  let ctor = DataTagged nam [fromTyp, toTyp]
+  typeAsUnique ctor transitionTyp nam
 pass1VisitDecl _ = return ()
 
 pass1 :: MonadCheck m => Program -> m ()
@@ -330,28 +355,28 @@ pass1 (Program decls _) = mapM_ pass1VisitDecl decls
 -- | Helper function for bidirectional type checking of binary equality terms
 checkBinaryEqualityTerm :: MonadCheck m =>
   (TypedTerm -> TypedTerm -> Typ -> Range -> TypedTerm) ->
-  PureTerm -> PureTerm -> Range -> m (TypedTerm, SortName)
+  PureTerm -> PureTerm -> Range -> m (TypedTerm, Typ)
 checkBinaryEqualityTerm constructor term1 term2 range = do
   -- Try bidirectional type checking: try term1 first, if it succeeds use its type for term2
   result1 <- tryCheckTerm term1
   case result1 of
     Right (term1', t1') -> do
-      (term2', t2') <- local (const (Just (mkSort t1'))) (checkTerm term2)
+      (term2', t2') <- local (const (Just t1')) (checkTerm term2)
       if t1' /= t2'
         then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
-        else return (constructor term1' term2' (mkSort t1') range, t1')
+        else return (constructor term1' term2' t1' range, t1')
     Left _ -> do
       -- If term1 fails, try term2 first and use its type for term1
       (term2', t2') <- checkTerm term2
-      (term1', t1') <- local (const (Just (mkSort t2'))) (checkTerm term1)
+      (term1', t1') <- local (const (Just t2')) (checkTerm term1)
       if t1' /= t2'
         then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
-        else return (constructor term1' term2' (mkSort t1') range, t1')
+        else return (constructor term1' term2' t1' range, t1')
   where
     tryCheckTerm term = catchError (Right <$> checkTerm term) (return . Left)
 
 -- | Check an individual term and returns its sort
-checkTerm :: MonadCheck m => PureTerm -> m (TypedTerm, SortName)
+checkTerm :: MonadCheck m => PureTerm -> m (TypedTerm, Typ)
 checkTerm (Atom nam _ range) = do
   let varName = variableName (runIdentity nam)
   -- Check that the atom is not associated with a functor (DataTagged constructor)
@@ -360,7 +385,7 @@ checkTerm (Atom nam _ range) = do
     DataTagged _ _ -> throwErrorAt range (NameNotDefined varName) -- Should be used as functor, not atom
     DataAtom _ -> do
       sort <- lookupSort (Just range) varName
-      return (Atom nam (mkSort sort) range, sort)
+      return (Atom nam sort range, sort)
 checkTerm (Functor tpy terms _ range) = do
   -- Check if functor is defined and get its arity from the constructor
   ctor <- lookupCtor (Just range) tpy
@@ -371,12 +396,12 @@ checkTerm (Functor tpy terms _ range) = do
     then throwErrorAt range $ ArityMismatch tpy (length expected) (length terms)
     else do
       -- Type check each argument with its expected type in the reader context
-      let expectedTypes = map (Just . mkSort) expected
+      let expectedTypes = map Just expected
       (terms', ts') <- mapAndUnzipM (\(term, expectedType) ->
         local (const expectedType) (checkTerm term)) (zip terms expectedTypes)
       ok <- and <$> zipWithM subtypeOf ts' expected
       if ok
-        then return (Functor tpy terms' (mkSort functorSort) range, functorSort)
+        then return (Functor tpy terms' functorSort range, functorSort)
         else throwErrorAt range $ IncompatibleTypes expected ts'
 checkTerm (Eqq term1 term2 _ range) =
   checkBinaryEqualityTerm Eqq term1 term2 range
@@ -390,11 +415,11 @@ checkTerm (Transition transitionName t1 t2 tpy range) = do
   return (Transition nam term1' term2' t range, sortname)
 checkTerm (HaskellExpr expr _ range) =
   maybe (throwErrorAt range HaskellExprTypeInferenceError)
-        (\typ -> return (HaskellExpr expr typ range, SortName (toSortName typ))) =<< ask
+        (\typ -> return (HaskellExpr expr typ range, typ)) =<< ask
 checkTerm (TermValue val _ range) =
-  return (TermValue val (typeOf val) range, SortName $ toSortName (typeOf  val))
+  return (TermValue val (typeOf val) range, typeOf val)
 
-checkTerm_ :: MonadCheck m => PureTerm -> m SortName
+checkTerm_ :: MonadCheck m => PureTerm -> m Typ
 checkTerm_ = fmap snd . checkTerm
 
 -- | Generic widening function that works with any type that has SubtypeOf and HasSorts instances
@@ -418,7 +443,7 @@ updateOrWidenCtor nam newCtor range = do
       modify (over environment (extendEnvironment nam widenedCtor))
 
 -- | Update or widen the sort name for a rewrite rule
-updateOrWidenSort :: MonadCheck m => String -> SortName -> Range -> m ()
+updateOrWidenSort :: MonadCheck m => String -> Typ -> Range -> m ()
 updateOrWidenSort nam newSort range = do
   gamma <- gets _typingContext
   case lookupGamma nam gamma of
@@ -447,8 +472,9 @@ pass2 (Program decls _) = mapM_ pass2VisitDecl decls
 
 -- | Check that the given sort exists at a specific location
 assertSortDefinedAt :: MonadCheck m => Range -> String -> m ()
-assertSortDefinedAt range sortName =
-  ifM (isSortDefined (SortName sortName))
+assertSortDefinedAt range sortName = do
+  sortTyp <- resolveTypeName sortName
+  ifM (isSortDefined sortTyp)
       (return ())
       (throwErrorAt range (SortNotDefined sortName))
 

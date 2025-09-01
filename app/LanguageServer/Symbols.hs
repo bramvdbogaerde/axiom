@@ -5,7 +5,8 @@ module LanguageServer.Symbols
   , findDefinition
   ) where
 
-import Language.TypeCheck (CheckingContext(..), SortName(..), getGamma)
+import Language.TypeCheck (CheckingContext(..), getGamma)
+import Language.Types (Typ(..), toSortName)
 import qualified Language.AST as AST
 import Language.LSP.Protocol.Types
   ( DocumentSymbol(..)
@@ -36,10 +37,10 @@ extractDocumentSymbols ctx =
 extractSortSymbols :: CheckingContext -> [DocumentSymbol]
 extractSortSymbols ctx = mapMaybe sortToSymbol (Set.toList (_definedSorts ctx))
   where
-    sortToSymbol :: SortName -> Maybe DocumentSymbol
+    sortToSymbol :: Typ -> Maybe DocumentSymbol
     sortToSymbol sortName = do
       -- Get the definition range from sortToDefSite
-      let sortNameStr = getSortName sortName
+      let sortNameStr = toSortName sortName
       range <- Map.lookup sortNameStr (_sortToDefSite ctx)
       return DocumentSymbol
         { _name = T.pack sortNameStr
@@ -57,10 +58,10 @@ extractVariableSymbols :: CheckingContext -> [DocumentSymbol]
 extractVariableSymbols ctx =
   map variableToSymbol (Map.toList (getGamma (_typingContext ctx)))
   where
-    variableToSymbol :: (String, SortName) -> DocumentSymbol
+    variableToSymbol :: (String, Typ) -> DocumentSymbol
     variableToSymbol (varName, sortName) = DocumentSymbol
       { _name = T.pack varName
-      , _detail = Just $ "Variable of sort " <> T.pack (getSortName sortName)
+      , _detail = Just $ "Variable of sort " <> T.pack (toSortName sortName)
       , _kind = SymbolKind_Variable
       , _deprecated = Nothing
       , _tags = Nothing
@@ -98,4 +99,4 @@ findSortDefinition ctx sortName = do
 findVariableDefinition :: CheckingContext -> String -> Maybe Location
 findVariableDefinition ctx varName = do
   sortName <- Map.lookup varName (getGamma (_typingContext ctx))
-  findSortDefinition ctx (getSortName sortName)
+  findSortDefinition ctx (toSortName sortName)

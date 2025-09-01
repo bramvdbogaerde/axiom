@@ -112,7 +112,6 @@ fromRules = foldr visit emptyEngineCtx
     visit rule@(RuleDecl _ precedent consequent _) =
       flip (foldr (`addConclusionFunctor` rule)) (foldMap functorName consequent)
 
-
 ------------------------------------------------------------
 -- Monad context
 ------------------------------------------------------------

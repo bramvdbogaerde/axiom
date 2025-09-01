@@ -58,7 +58,7 @@ data Typ = Sort String -- ^ a user-defined (or system) sort
 -- | LEGACY (TODO): converts a user-defined type to primitive type
 primTyp :: Typ -> Typ
 primTyp (Sort str) = fromSortName str
-primType t = t
+primTyp t = t
 
 -- | Association of type tags to their Haskell types
 data TypHask (k :: Typ)  where

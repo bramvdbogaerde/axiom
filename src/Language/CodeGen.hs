@@ -172,8 +172,7 @@ generateExtraction typingCtx mappingName varName = do
   runMaybeT $ do
       baseVarName <- MaybeT $ return $ safeVariableName varName
       sortName <- MaybeT $ return $ lookupGamma baseVarName typingCtx
-      let typeName = getSortName sortName
-      let typ  = fromSortName typeName
+      let typ = sortName
 
       Trans.lift [|
            maybe (Left $ UserError $ "Variable " ++ $(lift varName) ++ " not found")
