@@ -154,6 +154,10 @@ identWithRange = do
 haskellExpr :: Parser String
 haskellExpr = matchToken (\case Token.HaskellExpr s -> Just s; _ -> Nothing)
 
+-- | Matches a Haskell block
+haskBlock :: Parser String
+haskBlock = matchToken (\case Token.Hask s -> Just s ; _ -> Nothing)
+
 -- | Matches an integer literal token
 intLit :: Parser Int
 intLit = matchToken (\case Token.IntLit i -> Just i; _ -> Nothing)
@@ -269,6 +273,10 @@ rule = ruleToken >> withRange (RuleDecl <$> (str <?> "rule name") <*> (brackets 
 rules :: Parser Decl
 rules = rulesToken >> withRange ((RulesDecl <$> between (lcba >> skipComments) rcba (sepEndBy rule (sem >> skipComments) <?> "rule declarations")) <?> "rules block")
 
+-- | Parse a Haskell block
+haskellBlock :: Parser Decl
+haskellBlock = withRange (HaskellDecl <$> haskBlock)
+
 -- | Parses a declarartion for a transition
 transition :: Parser Decl
 transition = transitionToken >> withRange (flip TransitionDecl <$> fmap (first Sort) identWithRange <*> (leadsto >> return "~>") <*> fmap (first Sort) identWithRange)
@@ -277,7 +285,7 @@ parser :: Parser Program
 parser = do
   uncurry Program . partitionEithers <$> many programElement <?> "program elements"
    where
-    programElement = (Left <$> ((syntax <|> rules <|> transition <|> rewriteRule) <* sem) <?> "declaration")
+    programElement = (Left <$> (((syntax <|> rules <|> transition <|> rewriteRule) <* sem) <|> haskellBlock) <?> "declaration")
                  <|> (Right <$> comment <?> "comment")
 
 

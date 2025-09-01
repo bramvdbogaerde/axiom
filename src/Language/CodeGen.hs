@@ -38,8 +38,8 @@ import Control.Monad.Except (liftEither)
 -- Prelude & module creation
 ------------------------------------------------------------
 
-makeModule :: String -> String -> String
-makeModule ast testQueries = T.unpack
+makeModule :: String -> String -> String -> String
+makeModule prelude ast testQueries = T.unpack
   [text|
   {-# LANGUAGE ScopedTypeVariables #-}
   {-# LANGUAGE TypeApplications #-}
@@ -66,6 +66,10 @@ makeModule ast testQueries = T.unpack
 
   
   import GHC.Maybe
+
+  $prelude'
+
+
   ast :: CodeGenProgram
   ast = $ast'
 
@@ -114,6 +118,7 @@ makeModule ast testQueries = T.unpack
   where
     ast' = T.pack ast
     testQueries' = T.pack testQueries
+    prelude' = T.pack prelude
 
 
 ------------------------------------------------------------
@@ -227,6 +232,9 @@ declToExp ctx = \case
   TransitionDecl name (tpy1, range1) (tpy2, range2) range ->
     [| TransitionDecl $(lift name) ($(lift tpy1), $(rangeToExp range1)) ($(lift tpy2), $(rangeToExp range2)) $(rangeToExp range) |]
 
+  HaskellDecl s range ->
+    [| HaskellDecl $(lift s) $(rangeToExp range) |]
+
 syntaxDeclToExp :: CheckingContext -> TypedSyntaxDecl -> Q Exp
 syntaxDeclToExp ctx (SyntaxDecl vars tpy prods range) =
   [| SyntaxDecl $(lift vars) $(lift tpy) $(listE (map (pureTermToExp ctx) prods)) $(rangeToExp range) |]
@@ -298,6 +306,6 @@ processTestQueries ctx = mapM (fmap (either error id) . runExceptT . processQuer
 codegen :: CheckingContext -> TypedProgram -> IO String
 codegen context prog@(Program _ comments) = runQ $ do
   let testQueryStrings = extractTestQueries comments
-  (makeModule . pprint <$> astToCode context prog)
+  (makeModule (concat (haskellBlocks prog)) . pprint <$> astToCode context prog)
     <*> (pprint <$> (processTestQueries context testQueryStrings >>= listE . map return))
 

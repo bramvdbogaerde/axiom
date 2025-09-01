@@ -2,7 +2,8 @@ module Language.Lexer.Token where
 
 import Language.Range
 
-data Token = IsDefinedAs -- ^ '::='
+data Token = EOF
+           |  IsDefinedAs -- ^ '::='
            | LeadsTo     -- ^ '~>'
            | Implies     -- ^ '=>'
            | Equal       -- ^ '='
@@ -22,7 +23,8 @@ data Token = IsDefinedAs -- ^ '::='
            | Bar         -- ^ '|'
            | Ident String
            | Quo String
-           | IntLit Int  -- ^ integer literal
+           | IntLit Int         -- ^ integer literal
+           | Hask String -- ^ multiple lines of Haskell declarations
            | HaskellExpr String -- ^ '{ HASKELL_EXP }'
            deriving (Ord, Eq, Show)
 

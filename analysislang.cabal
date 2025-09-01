@@ -17,7 +17,9 @@ library
                  text,
                  neat-interpolation,
                  singletons,
-                 haskell-src-meta
+                 haskell-src-meta,
+                 bytestring,
+                 utf8-string
   build-tools: alex, happy
   exposed-modules:  Language.AST
                   , Language.CodeGen

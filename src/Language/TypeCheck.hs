@@ -508,6 +508,8 @@ pass3VisitDecl (Rewrite rewrite range) =
   Rewrite <$> typeRewrite rewrite <*> pure range
 pass3VisitDecl (Syntax syntax range) =
   Syntax <$> mapM typeSyntax syntax <*> pure range
+pass3VisitDecl (HaskellDecl s range) =
+  return $ HaskellDecl s range
 
 pass3 :: MonadCheck m => Program -> m TypedProgram
 pass3 (Program decls comments) = Program <$> mapM pass3VisitDecl decls <*> pure (map typeComment comments)

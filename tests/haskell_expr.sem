@@ -1,5 +1,9 @@
 %% This file tests HaskellExpr parsing and execution functionality
 
+{{{
+import Data.Maybe
+}}}
+
 syntax {
     a, result, sum, product in Int;
     test in Rules ::= t(result);

@@ -47,6 +47,8 @@ module Language.AST(
     ParsePhase,
     TypingPhase,
 
+    haskellBlocks,
+
     typeComment,
     variableName,
     safeVariableName,
@@ -67,7 +69,7 @@ module Language.AST(
 import Data.Set
 import qualified Data.Set as Set
 import Text.Regex (mkRegex, matchRegex)
-import Data.Maybe (fromJust, fromMaybe)
+import Data.Maybe (fromJust, fromMaybe, mapMaybe)
 import Language.Range
 import Data.Kind
 import Data.Functor.Identity
@@ -110,12 +112,18 @@ type ForAllPhases c p = (c (XHaskellExpr p), c (XTypeAnnot p))
 -------------------------------------------------------------
 
 -- | A program is a sequence of declarations with optional top-level comments
-data Program' p  = Program [Decl' p] [Comment' p]
+data Program' p  = Program { getDecls :: [Decl' p], getComments ::  [Comment' p] }
 deriving instance (ForAllPhases Ord p) => Ord (Program' p)
 deriving instance (ForAllPhases Eq p) => Eq (Program' p)
 deriving instance (ForAllPhases Show p) => Show (Program' p)
 type Program = Program' ParsePhase
 type TypedProgram = Program' TypingPhase
+
+-- | Extract the Haskell blocks from the program
+haskellBlocks :: Program' p -> [String]
+haskellBlocks = mapMaybe extract . getDecls
+  where extract (HaskellDecl s _) = Just s
+        extract _ = Nothing
 
 -- | A comment with its position
 data Comment' p = Comment String Range deriving (Ord, Eq, Show)
@@ -134,6 +142,7 @@ data Decl' p = Syntax [SyntaxDecl' p] Range
              | Rewrite (RewriteDecl' p) Range
              | RulesDecl [RuleDecl' p] Range
              | TransitionDecl String (Typ, Range) (Typ, Range) Range
+             | HaskellDecl String Range
 deriving instance (ForAllPhases Ord p) => Ord (Decl' p)
 deriving instance (ForAllPhases Eq p) => Eq (Decl' p)
 deriving instance (ForAllPhases Show p) => Show (Decl' p)
@@ -337,7 +346,7 @@ instance HaskellExprExecutor TypingPhase where
 -- | Type class for associating a type with a term in a phase-independent manner 
 class AnnotateType p where
   typeAnnot :: Proxy p -> Typ -> XTypeAnnot p
-  
+
 instance AnnotateType ParsePhase where
   typeAnnot _ = const ()
 instance AnnotateType TypingPhase where
