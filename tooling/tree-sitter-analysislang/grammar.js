@@ -18,6 +18,7 @@ module.exports = grammar({
   rules: {
     source_file: $ => repeat(choice(
       seq($.declaration, ';'),
+      $.haskell_block,
       $.test_comment
     )),
 
@@ -103,7 +104,9 @@ module.exports = grammar({
 
     primary_term: $ => choice(
       $.atom,
-      $.functor
+      $.functor,
+      $.haskell_expression,
+      $.integer_literal
     ),
 
     atom: $ => $.identifier,
@@ -141,6 +144,27 @@ module.exports = grammar({
 
     // Regular comments start with % and continue to end of line
     regular_comment: $ => token(prec(-1, seq('%', /.*/))),
+
+    // Haskell expressions: ${...}
+    haskell_expression: $ => token(seq(
+      '${',
+      repeat(/[^}]/),
+      '}'
+    )),
+
+    // Haskell blocks: {{{ ... }}}
+    haskell_block: $ => token(seq(
+      '{{{',
+      repeat(choice(
+        /[^}]/,
+        seq('}', /[^}]/),
+        seq('}', '}', /[^}]/)
+      )),
+      '}}}'
+    )),
+
+    // Integer literals
+    integer_literal: $ => /[0-9]+/,
 
     // Identifiers
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,

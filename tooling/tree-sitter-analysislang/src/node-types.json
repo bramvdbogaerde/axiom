@@ -113,6 +113,14 @@
         {
           "type": "functor",
           "named": true
+        },
+        {
+          "type": "haskell_expression",
+          "named": true
+        },
+        {
+          "type": "integer_literal",
+          "named": true
         }
       ]
     }
@@ -196,6 +204,10 @@
       "types": [
         {
           "type": "declaration",
+          "named": true
+        },
+        {
+          "type": "haskell_block",
           "named": true
         },
         {
@@ -394,12 +406,24 @@
     "named": false
   },
   {
+    "type": "haskell_block",
+    "named": true
+  },
+  {
+    "type": "haskell_expression",
+    "named": true
+  },
+  {
     "type": "identifier",
     "named": true
   },
   {
     "type": "in",
     "named": false
+  },
+  {
+    "type": "integer_literal",
+    "named": true
   },
   {
     "type": "regular_comment",

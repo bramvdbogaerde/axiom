@@ -31,7 +31,11 @@
 
 ; Test comments - highlight the prefix and terms separately
 (test_comment 
-  "%test:" @comment.special) 
+  "%test:" @comment.special)
+
+; Haskell expressions and blocks
+(haskell_expression) @string.special.haskell
+(haskell_block) @string.special.haskell 
 
 ; Terms in test comments should be highlighted normally
 (test_comment (term) @none)
