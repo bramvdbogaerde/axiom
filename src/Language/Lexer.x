@@ -9,7 +9,6 @@ module Language.Lexer (
 
 import Prelude hiding (lex)
 import Language.Lexer.Token
-import qualified Debug.Trace as Debug
 import Language.Range
 import Data.Either
 import qualified Debug.Trace as Debug
@@ -97,7 +96,7 @@ lex :: String -> [TokenWithRange]
 lex = either (error . ("lexical error" ++)  . show) id . flip runAlex go
   where go = do
           tok <- alexMonadScan
-          case (Debug.traceShowId tok) of
+          case tok of
             TokenWithRange EOF _ -> return []
             _ ->  (tok:) <$> go
 }
