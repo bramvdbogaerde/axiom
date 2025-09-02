@@ -49,11 +49,11 @@ spec = do
           length decls `shouldBe` 2
           length comments `shouldBe` 3
 
-    it "allows comments within syntax blocks but only captures top-level comments" $ do
+    it "allows comments within syntax blocks and captures all comments" $ do
       let inputWithInnerComments = unlines [
             "% Top level comment",
             "syntax {",
-            "  % Comment inside syntax block (should be allowed but not captured)",
+            "  % Comment inside syntax block (should be allowed and captured)",
             "  x in Expr ::= atom | func(x);",
             "  % Another comment in syntax",
             "};",
@@ -69,13 +69,17 @@ spec = do
         Right (Program decls comments) -> do
           -- Should parse successfully with correct number of declarations
           length decls `shouldBe` 2
-          -- Should only capture top-level comments (not those inside blocks)
-          length comments `shouldBe` 2
+          -- Should capture all comments including those inside blocks
+          length comments `shouldBe` 6
           let commentTexts = map (\(Comment content _) -> content) comments
           commentTexts `shouldContain` [" Top level comment"]
           commentTexts `shouldContain` [" Comment between sections"]
+          commentTexts `shouldContain` [" Comment inside syntax block (should be allowed and captured)"]
+          commentTexts `shouldContain` [" Another comment in syntax"]
+          commentTexts `shouldContain` [" Comment inside rules block"]
+          commentTexts `shouldContain` [" Final comment in rules"]
 
-    it "allows comments within rule precedents and consequents" $ do
+    it "allows comments within rule precedents and consequents and captures them" $ do
       let ruleWithComments = unlines [
             "rules {",
             "  rule \"test1\" [",
@@ -95,9 +99,14 @@ spec = do
         Left err -> expectationFailure $ "Parse error: " ++ show err
         Right (Program decls comments) -> do
           length decls `shouldBe` 1
-          length comments `shouldBe` 0  -- No top-level comments
+          length comments `shouldBe` 4  -- Captures all comments within the rule
+          let commentTexts = map (\(Comment content _) -> content) comments
+          commentTexts `shouldContain` [" Comment in precedent"]
+          commentTexts `shouldContain` [" Another precedent comment"]
+          commentTexts `shouldContain` [" Comment in consequent"]
+          commentTexts `shouldContain` [" Final consequent comment"]
 
-    it "allows comments within syntax element definitions" $ do
+    it "allows comments within syntax element definitions and captures them" $ do
       let syntaxWithComments = unlines [
             "syntax {",
             "  x in Expr ::= ",
@@ -118,7 +127,13 @@ spec = do
         Left err -> expectationFailure $ "Parse error: " ++ show err
         Right (Program decls comments) -> do
           length decls `shouldBe` 1
-          length comments `shouldBe` 0  -- No top-level comments
+          length comments `shouldBe` 5  -- Captures all comments within syntax definitions
+          let commentTexts = map (\(Comment content _) -> content) comments
+          commentTexts `shouldContain` [" Comment before first production"]
+          commentTexts `shouldContain` [" Comment between productions"]
+          commentTexts `shouldContain` [" Comment within function parameters"]
+          commentTexts `shouldContain` [" Another parameter comment"]
+          commentTexts `shouldContain` [" Comment before last production"]
 
     it "handles files with trailing comments at end of file" $ do
       let trailingCommentsInput = unlines [

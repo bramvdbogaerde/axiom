@@ -25,7 +25,6 @@ library
                   , Language.CodeGen
                   , Language.Types
                   , Language.Parser
-                  , Language.ParserNext
                   , Language.TypeCheck
                   , Language.Solver
                   , Language.Solver.Unification
