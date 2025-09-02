@@ -52,6 +52,7 @@ type family Find (k :: [Type]) (t :: k1) :: Type where
 data Typ = Sort String -- ^ a user-defined (or system) sort
          | IntType     -- ^ values are strings 
          | StrType     -- ^ values are integers
+         | SetOf Typ   -- ^ a set of values from the given type
          | AnyType
         deriving (Ord, Eq, Show)        
 

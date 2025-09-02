@@ -98,8 +98,43 @@ The rule depicted above, references the logical variable "a" in its embedded Has
 	in TermValue $ (IntLit $ a0 + 1) (Just IntType) dummyRange
 ```
 
+## Type Declarations
+
+Since Haskell expressions can return arbitrary values that are not supported in term language as literals, the user can define their own types in syntax declarations blocks that are translated into a `Dynamic`-like datatype when code generation is applied.
+
+
+For instance, to define an "environment" that consists of mappings from variables to addresses, one could write:
+
+```analysislang
+env in ${Map String Adr}
+```
+
+The types mentioned in the embedded Haskell type could refer both to built-in or imported types or to types defined in syntax rules. In case of the latter, each type should be prefixed by a `#'. For insance to refer to term type `Adr`, one should instead write:
+
+```
+env in ${Map String #Adr}
+```
+
+## Embedding arbitrary Haskell code as a prelude
+
+The langauge supports embedding arbitrary Haskell code into the generated program as a prelude by uisng the "{{{ ... }}}" syntax on the top-level of the program.
+
+For instance, the program generated could be instructed to include an import declaration for `Data.Maybe` by including the following declaration in the AnalysisLang file.
+
+```analysislang
+{{{
+import Data.Maybe
+}}}
+```
+
+These declarations can occur at any location in the program, but are always added to the beginning of the generated program in the order in which they occur in the AnalysisProgram.
+
 ## Future Extensions
 
 Side-effects are often obtained through monads in Haskell. It would be interesting to embed these side-effects into the solver monad so that the user can write rules that perform these side-effects, for instance for rule profiling through a state monad.
 
 Configuring which monad should be used can be accomplished in a similar way as Happy or Alex (i.e., by specifying the type of the monad alongside with a `run` function)
+
+# Supports for Sets and Lattices
+
+AnalysisLang supports a set of primitives for working with sets and lattices. Most of this support is accomplished through embedded Haskell expressions which can refer to 
