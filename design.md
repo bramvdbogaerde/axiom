@@ -137,4 +137,4 @@ Configuring which monad should be used can be accomplished in a similar way as H
 
 # Supports for Sets and Lattices
 
-AnalysisLang supports a set of primitives for working with sets and lattices. Most of this support is accomplished through embedded Haskell expressions which can refer to 
+AnalysisLang supports a set of primitives for working with sets and lattices. Most of this support is accomplished through embedded Haskell expressions which can refer to arbitrary types (cf. above).
