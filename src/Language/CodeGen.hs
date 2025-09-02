@@ -276,6 +276,9 @@ pureTermToExp ctx = \case
   TermValue value tpy range ->
     [| TermValue $(lift value) $(lift tpy) $(rangeToExp range) |]
 
+  IncludedIn var term range ->
+    [| IncludedIn $(lift var) $(pureTermToExp ctx term) $(rangeToExp range) |]
+
 rangeToExp :: Range -> Q Exp
 rangeToExp (Range (Position line1 col1 fname1) (Position line2 col2 fname2)) =
   [| Range (Position $(lift line1) $(lift col1) $(lift fname1)) (Position $(lift line2) $(lift col2) $(lift fname2)) |]

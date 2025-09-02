@@ -1,0 +1,8 @@
+syntax {
+  x in Int;
+  mySet in Set(Int);
+};
+
+rules {
+  rule "test-inclusion" [x in mySet] => [x = 42];
+};

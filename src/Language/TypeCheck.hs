@@ -259,6 +259,8 @@ instance SubtypeOf s => SubtypeOf [s] where
     | otherwise = and <$> zipWithM subtypeOf l1 l2
 
 instance SubtypeOf Typ where
+  subtypeOf VoidType _ = return False  -- VoidType is never a subtype of anything
+  subtypeOf _ VoidType = return False  -- Nothing is ever a subtype of VoidType
   subtypeOf s1 s2 = do
     subCtx <- gets _subtypingContext
     return $ isSubtypeOf s1 s2 subCtx
@@ -440,6 +442,22 @@ checkTerm (HaskellExpr expr _ range) =
         (\typ -> return (HaskellExpr expr typ range, typ)) =<< ask
 checkTerm (TermValue val _ range) =
   return (TermValue val (typeOf val) range, typeOf val)
+checkTerm (IncludedIn var term range) = do
+  -- Check the term on the right side
+  (checkedTerm, termType) <- checkTerm term
+  -- Ensure the term is a set type
+  case termType of
+    SetOf elementType -> do
+      -- Ensure the variable is defined and has the right type
+      varSort <- lookupSort (Just range) var
+      -- Check if the variable type is compatible with the set element type
+      ifM (subtypeOf varSort elementType)
+          (return (IncludedIn var checkedTerm range, VoidType)) -- Set inclusion has VoidType
+          (throwErrorAt range (IncompatibleTypes [varSort] [elementType]))
+    _ -> do
+      -- Get the variable type to show what kind of set was expected
+      varSort <- lookupSort (Just range) var
+      throwErrorAt range (IncompatibleTypes [SetOf varSort] [termType]) -- Expected a set of the variable's type
 
 checkTerm_ :: MonadCheck m => PureTerm -> m Typ
 checkTerm_ = fmap snd . checkTerm

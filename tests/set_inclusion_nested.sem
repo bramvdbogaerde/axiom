@@ -1,0 +1,8 @@
+syntax {
+  innerSet in Set(Int);
+  outerSet in Set(Set(Int));
+};
+
+rules {
+  rule "test-nested-inclusion" [innerSet in outerSet] => [];
+};

@@ -1,0 +1,8 @@
+syntax {
+  x in String;
+  mySet in Set(Int);
+};
+
+rules {
+  rule "test-type-error" [x in mySet] => [];
+};

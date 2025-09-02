@@ -118,7 +118,12 @@ Rules : {- empty -}                          { [] }
       | Rule ';' Rules                       { $1 : $3 }
 
 Rule :: { RuleDecl }
-Rule : 'rule' STRING '[' TermList ']' '=>' '[' TermList ']' { RuleDecl (getString $2) $4 $8 (mkRange $1 $9) }
+Rule : 'rule' STRING '[' Goals ']' '=>' '[' TermList ']' { RuleDecl (getString $2) $4 $8 (mkRange $1 $9) }
+
+Goals :: { [PureTerm] }
+Goals : {- empty -} { [] }
+      | Goal { [$1] }
+      | Goal ';' Goals { $1 : $3 }
 
 TermList :: { [PureTerm] }
 TermList : {- empty -}                       { [] }
@@ -161,6 +166,10 @@ BasicTerm : IDENT                            { Atom (Identity (getIdent $1)) () 
           | HASKEXPR                         { AST.HaskellExpr (getHaskellExpr $1) () (rangeOf $1) }
           | INTLIT                           { TermValue (IntValue (getIntLit $1)) () (rangeOf $1) }
           | '(' Term ')'                     { $2 }
+
+Goal :: { PureTerm }
+Goal : Term { $1 }
+     | IDENT 'in' Term { IncludedIn (getIdent $1) $3 (mkRange $1 $3) }
 
 {
 

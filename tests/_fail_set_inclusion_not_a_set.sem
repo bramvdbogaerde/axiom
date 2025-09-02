@@ -1,0 +1,8 @@
+syntax {
+  x in Int;
+  notASet in String;
+};
+
+rules {
+  rule "test-not-a-set" [x in notASet] => [];
+};

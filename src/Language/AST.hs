@@ -226,6 +226,7 @@ data Term' p f  = Atom (f String) (XTypeAnnot p)  Range
                 | Transition String (Term' p f) (Term' p f) (XTypeAnnot p)  Range
                 | HaskellExpr (XHaskellExpr p) (XTypeAnnot p) Range
                 | TermValue Value (XTypeAnnot p) Range
+                | IncludedIn String (Term' p f) Range
 type Term = Term' ParsePhase
 
 -- | Change the type of the given term to the given type
@@ -238,6 +239,7 @@ annotateTerm typ = \case
   Transition tname left right _ range -> Transition tname left right (typeAnnot (Proxy @p) typ) range
   HaskellExpr expr _ range -> HaskellExpr expr (typeAnnot (Proxy @p) typ) range
   TermValue value _ range -> TermValue value (typeAnnot (Proxy @p) typ) range
+  IncludedIn var term range -> IncludedIn var term range
 
 deriving instance (Ord (f String), ForAllPhases Ord p) => Ord (Term' p f)
 deriving instance (Eq (f String), ForAllPhases  Eq p) => Eq (Term' p f)
@@ -252,6 +254,7 @@ instance (Show (f String), ForAllPhases Show p) => Show (Term' p f) where
   show (Transition tname left right _ _) = show left ++ " " ++ tname ++ " " ++ show right
   show (HaskellExpr expr _ _) = "${" ++ show expr ++ "}"
   show (TermValue value _ _) = show value
+  show (IncludedIn var term _) = var ++ " in " ++ show term
 
 -- | Specialized Show instance for PureTerm that doesn't show Identity wrapper
 instance {-# OVERLAPPING #-} Show PureTerm where
@@ -263,6 +266,7 @@ instance {-# OVERLAPPING #-} Show PureTerm where
   show (Transition tname left right _ _) = show left ++ " " ++ tname ++ " " ++ show right
   show (HaskellExpr expr _ _) = "${" ++ expr ++ "}"
   show (TermValue value _ _) = show value
+  show (IncludedIn var term _) = var ++ " in " ++ show term
 
 type PureTerm = PureTerm' ParsePhase
 type PureTerm' p = Term' p Identity
@@ -277,6 +281,7 @@ atomNames = \case Atom a _ _ -> Set.singleton $ runIdentity a
                   Transition _ t1 t2 _ _ -> atomNames t1 `Set.union` atomNames t2
                   HaskellExpr {} -> Set.empty
                   TermValue {} -> Set.empty
+                  IncludedIn var term _ -> Set.singleton var `Set.union` atomNames term
 
 
 -- | Returns the name of the functor embedded in the term (if any),
@@ -298,6 +303,7 @@ instance RangeOf (Term' p f) where
                   Transition _ _ _ _  r -> r
                   HaskellExpr _ _ r -> r
                   TermValue _ _ r -> r
+                  IncludedIn _ _ r -> r
 
 -- | Extract the name of the variable from variables suffixed with numbers
 variableName :: String -> String
@@ -329,6 +335,7 @@ termEqIgnoreRange (Transition n1 l1 r1 _ _) (Transition n2 l2 r2 _ _) =
   n1 == n2 && termEqIgnoreRange l1 l2 && termEqIgnoreRange r1 r2
 termEqIgnoreRange (HaskellExpr expr1 _ _) (HaskellExpr expr2 _ _) = expr1 == expr2
 termEqIgnoreRange (TermValue value1 _ _) (TermValue value2 _ _) = value1 == value2
+termEqIgnoreRange (IncludedIn v1 t1 _) (IncludedIn v2 t2 _) = v1 == v2 && termEqIgnoreRange t1 t2
 termEqIgnoreRange _ _ = False
 
 -- | Check whether the term is fully ground (i.e., does not contain any atoms)
@@ -341,6 +348,7 @@ isTermGround = \case
   Transition _ left right _ _ -> isTermGround left && isTermGround right
   HaskellExpr {} -> True
   TermValue {} -> True
+  IncludedIn _ term _ -> isTermGround term
 
 
 -------------------------------------------------------------

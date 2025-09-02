@@ -54,6 +54,7 @@ data Typ = Sort String -- ^ a user-defined (or system) sort
          | StrType     -- ^ values are integers
          | SetOf Typ   -- ^ a set of values from the given type
          | AnyType
+         | VoidType    -- ^ type for expressions that don't have a meaningful type (incompatible with all others)
         deriving (Ord, Eq, Show)        
 
 -- | LEGACY (TODO): converts a user-defined type to primitive type
@@ -142,5 +143,7 @@ toSortName (Sort str) = str
 toSortName IntType = "Int"
 toSortName StrType = "String"
 toSortName AnyType = "Any"
+toSortName (SetOf typ) = "Set(" ++ toSortName typ ++ ")"
+toSortName VoidType = "Void"
 
 
