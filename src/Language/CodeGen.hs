@@ -235,9 +235,14 @@ declToExp ctx = \case
   HaskellDecl s range ->
     [| HaskellDecl $(lift s) $(rangeToExp range) |]
 
+-- | Convert TypeCtor to Template Haskell expression
+typeCtorToExp :: TypeCtor -> Q Exp
+typeCtorToExp (TypeCtor name args range) =
+  [| TypeCtor $(lift name) $(listE (map typeCtorToExp args)) $(rangeToExp range) |]
+
 syntaxDeclToExp :: CheckingContext -> TypedSyntaxDecl -> Q Exp
 syntaxDeclToExp ctx (SyntaxDecl vars tpy prods range) =
-  [| SyntaxDecl $(lift vars) $(lift tpy) $(listE (map (pureTermToExp ctx) prods)) $(rangeToExp range) |]
+  [| SyntaxDecl $(lift vars) $(typeCtorToExp tpy) $(listE (map (pureTermToExp ctx) prods)) $(rangeToExp range) |]
 
 rewriteDeclToExp :: CheckingContext -> TypedRewriteDecl -> Q Exp
 rewriteDeclToExp ctx (RewriteDecl name args body range) =

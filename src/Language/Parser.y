@@ -85,7 +85,17 @@ SyntaxDecls : {- empty -}                    { [] }
             | SyntaxDecl ';' SyntaxDecls     { $1 : $3 }
 
 SyntaxDecl :: { SyntaxDecl }
-SyntaxDecl : IdentList 'in' IDENT MaybeProductions { SyntaxDecl $1 (getIdent $3) (fromMaybe [] $4) (rangeOf $3) }
+SyntaxDecl : IdentList 'in' TypeRef MaybeProductions { SyntaxDecl $1 $3 (fromMaybe [] $4) (rangeOf $3) }
+
+TypeRef :: { TypeCtor }
+TypeRef : IDENT { TypeCtor (getIdent $1) [] (rangeOf $1) }
+        | IDENT '(' TypeRefs ')' { TypeCtor (getIdent $1) $3 (rangeOf $1) }
+      
+TypeRefs :: { [TypeCtor] }
+TypeRefs : {- empty -} { [] }
+         | TypeRef { [$1] }
+         | TypeRef ',' TypeRefs { $1 : $3 }
+
 
 IdentList :: { [String] }
 IdentList : IDENT                            { [getIdent $1] }

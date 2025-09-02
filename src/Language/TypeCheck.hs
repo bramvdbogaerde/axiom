@@ -291,13 +291,34 @@ typeAsUnique ctor sortName var = do
 pass0VisitDecl :: MonadCheck m => Decl -> m ()
 pass0VisitDecl (Syntax decls _) = mapM_ pass0VisitSyntaxDecl decls
   where
+    -- no productions denotes a reference to an existing type, this means that:
+    -- * variables are associated with types
+    -- * more relaxed set of types allowed (i.e., type constructors of arity 0)
+    -- * checks whether type is actually valid
+    pass0VisitSyntaxDecl (SyntaxDecl vars tpy [] range) = do
+      case fromTypeCtor tpy of
+        Left err -> throwErrorAt range (SortNotDefined err)
+        Right sortTyp -> do
+          -- Add the type to the environment if not already defined
+          ifM (isSortDefined sortTyp)
+              (return ())
+              (defineSort sortTyp)
+          -- Type all variables as unique with this type
+          mapM_ (typeAsUnique (DataAtom sortTyp) sortTyp) vars
+    -- one or more productions denotes a declaration of a type, the checker will:
+    -- * associate the variables with types
+    -- * declare the type
+    -- * ensure the type is not duplicate
+    -- * more strict type constructors (only arity 0) 
     pass0VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) = do
-      let sortTyp = fromSortName tpy
-      ifM (isSortDefined sortTyp)
-          (throwError (DuplicateSort sortTyp))
-          (do recordSortDefSite tpy range
-              registerTypeName tpy sortTyp
-              mapM_ (typeAsUnique (DataAtom sortTyp) sortTyp) vars)
+      case fromTypeCtor tpy of
+        Left err -> throwErrorAt range (SortNotDefined err)
+        Right sortTyp -> do
+          ifM (isSortDefined sortTyp)
+              (throwError (DuplicateSort sortTyp))
+              (do recordSortDefSite (ctorName tpy) range
+                  registerTypeName (ctorName tpy) sortTyp
+                  mapM_ (typeAsUnique (DataAtom sortTyp) sortTyp) vars)
 pass0VisitDecl (TransitionDecl nam from to range) = do
   recordSortDefSite nam range
   -- Register the transition name as its own type
@@ -330,8 +351,9 @@ pass1VisitDecl :: MonadCheck m => Decl -> m ()
 pass1VisitDecl (Syntax decls _) = mapM_ pass1VisitSyntaxDecl decls
   where
     pass1VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) = do
-      sortTyp <- resolveTypeName tpy
-      mapM_ (pass1VisitCtor sortTyp) ctors
+      case fromTypeCtor tpy of
+        Left err -> throwErrorAt range (SortNotDefined err)
+        Right sortTyp -> mapM_ (pass1VisitCtor sortTyp) ctors
 pass1VisitDecl (TransitionDecl nam (Sort from, _) (Sort to, _) range) = do
   -- transition State ~> State is equivalent to the syntax rule:
   -- ~> ::= ~>(state, state) from a typing perspective

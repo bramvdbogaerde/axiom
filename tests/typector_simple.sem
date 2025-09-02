@@ -1,0 +1,5 @@
+syntax {
+  x, y in Set(Int);
+  data in Set(String);
+  elem in String;
+};

@@ -30,6 +30,8 @@ module Language.AST(
     RewriteDecl'(..),
     RuleDecl'(..),
     Term'(..),
+    TypeCtor(..),
+    fromTypeCtor,
 
     XHaskellExpr,
     XTypeAnnot,
@@ -79,6 +81,8 @@ import qualified Data.Map as Map
 
 import Language.Types
 import Data.Data
+import Control.Monad.Error.Class
+import Language.Haskell.TH.Syntax (Lift)
 
 -------------------------------------------------------------
 -- Phase seperation
@@ -130,11 +134,24 @@ data Comment' p = Comment String Range deriving (Ord, Eq, Show)
 type Comment = Comment' ParsePhase
 
 typeComment :: Comment' p -> Comment' q
--- NOTE: id does not work since "id :: a -> a"
+-- NOTE: id does not work since "id :: a -> a", and p /= q forall p, q.
 typeComment (Comment nam ran) = Comment nam ran
 
 -- | Names of types
 type Tpy = String
+
+-- | A  type constructor is a name of a type applied to zero or more type arguments
+data TypeCtor = TypeCtor { ctorName :: String, ctorAgs :: [TypeCtor], ctorRange :: Range }
+              deriving (Ord, Eq, Show)
+
+instance RangeOf TypeCtor where
+  rangeOf = ctorRange
+
+  -- | Convert a type constructor to a type
+fromTypeCtor :: TypeCtor -> Either String Typ
+fromTypeCtor (TypeCtor nam [] _) = return $ fromSortName nam
+fromTypeCtor (TypeCtor "Set" [a] _) = SetOf <$> fromTypeCtor a
+fromTypeCtor ctor = throwError $ "Invalid type constructor used " ++ show ctor
 
 -- | A declaration is either a syntax section, rules section, transition
 -- declaration or or a rewrite rule.
@@ -152,7 +169,7 @@ type TypedDecl = Decl' TypingPhase
 -- | var in Tpy ::= term0 | term1 | ...
 data SyntaxDecl' p = SyntaxDecl {
     syntaxVars :: [String],
-    syntaxType :: String,
+    syntaxType :: TypeCtor,
     syntaxProductions :: [PureTerm' p],
     syntaxRange :: Range
   }

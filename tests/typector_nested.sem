@@ -1,0 +1,6 @@
+syntax {
+  x, y in Set(Int);
+  data in Set(String);
+  elem in String;
+  nested in Set(Set(Int));
+};

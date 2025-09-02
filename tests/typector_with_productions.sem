@@ -1,0 +1,4 @@
+syntax {
+  x, y in Set(Int);
+  elem in MyType ::= atom(x) | func(y);
+};
