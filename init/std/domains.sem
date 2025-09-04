@@ -1,0 +1,22 @@
+%% This module provides utilities for reasoning with abstract domains from Monarch.
+
+
+%module {
+%	% The type of abstract values
+%	type V having BoolDomain;
+%}
+
+
+{{{
+import Domain.Core.BoolDomain
+}}}
+
+syntax {
+	v in V;
+	boleanTruth in Truth ::= isTrue(v) | isFalse(v);
+};
+
+rules {
+	rule "IsTrue" [ true = ${isTrue v} ] => [ isTrue(v) ];
+	rule "IsFalse" [ true = ${isFalse v} ] => [ isFalse(v) ];
+};
