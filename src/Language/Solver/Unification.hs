@@ -125,8 +125,8 @@ refTerm term = runStateT (transformTerm term)
     transformTerm (SetOfTerms ts annot r) =
       SetOfTerms <$> fmap Set.fromList (mapM transformTerm (Set.toList ts)) <*> pure annot <*> pure r
 
-    transformTerm (IncludedIn {}) =
-      error "IncludedIn terms cannot be unified directly - should be handled in solver"
+    transformTerm (IncludedIn vrr set range) =
+      IncludedIn vrr <$> transformTerm set <*> pure range
 
 -- | Visited list abstraction for cycle detection
 type VisitedList p s = [BST.STRef s (CellValue p s String)]
@@ -175,8 +175,8 @@ pureTerm' term _mapping = do
     convertTerm (HaskellExpr expr tpy range) =
       return $ HaskellExpr expr tpy range
 
-    convertTerm (IncludedIn {}) =
-      lift $ throwError "IncludedIn terms cannot be unified directly - should be handled in solver"
+    convertTerm (IncludedIn vrr set range) =
+      IncludedIn vrr <$> convertTerm set <*> pure range
 
     convertTerm (SetOfTerms ts tpy r)  =
       SetOfTerms <$> fmap Set.fromList (mapM convertTerm (Set.toList ts)) <*> pure tpy <*> pure r
@@ -244,17 +244,14 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
     unifyTermsImpl (TermValue v1 _ _) (TermValue v2 _ _) =
       if v1 == v2 then return ()
       else throwError $ "Values don't match: " ++ show v1 ++ " vs " ++ show v2
+    unifyTermsImpl (SetOfTerms {}) (SetOfTerms {}) =  error "set unification not yet supported"
     --
     -- Unification with atoms
     -- 
-    unifyTermsImpl (Atom cell _ _) functor@(Functor {}) =
-      unifyAtomWithTerm cell functor
-    unifyTermsImpl (Atom cell _ _) termValue@(TermValue {}) =
-      unifyAtomWithTerm cell termValue
-    unifyTermsImpl termValue@(TermValue {}) (Atom cell _ _) =
-      unifyAtomWithTerm cell termValue
-    unifyTermsImpl functor@(Functor {}) (Atom cell _  _) = unifyAtomWithTerm cell functor
-    --
+    unifyTermsImpl (Atom cell _ _) t =
+      unifyAtomWithTerm cell t
+    unifyTermsImpl t (Atom cell _ _) =
+      unifyAtomWithTerm cell t
     -- Haskell expressions
     -- 
     unifyTermsImpl otherTerm (HaskellExpr hatch _ _) = do

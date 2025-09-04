@@ -6,32 +6,33 @@ syntax {
   numSet in Set(Number);
   letterSet in Set(Letter);
   emptySet in Set(Any);
+  result in Result ::= numbersok() | lettersok() | emptysetsok() | inferrednumbersok() | inferredlettersok();
 };
 
 rules {
   rule "homogeneous-number-set"
-  [ ] =>
-  [ numSet = {zero(), one(), two()} ];
+  [ numSet = {zero(), one(), two()} ] =>
+  [ numbersok() ];
   
   rule "homogeneous-letter-set"
-  [ ] =>
-  [ letterSet = {a(), b(), c()} ];
+  [ letterSet = {a(), b(), c()} ] =>
+  [ lettersok() ];
   
   rule "empty-set-rule"
-  [ ] =>
-  [ emptySet = {} ];
+  [ emptySet = {} ] =>
+  [ emptysetsok() ];
   
   rule "inferred-numbers"
-  [ x in {zero(), one()} ] =>
-  [ numSet = {x} ];
+  [ x in {zero(), one()}; x = zero() ] =>
+  [ inferrednumbersok() ];
   
   rule "inferred-letters"
-  [ y in {a(), b()} ] =>
-  [ letterSet = {y} ];
+  [ y in {a(), b()}; y = a() ] =>
+  [ inferredlettersok() ];
 };
 
-%test: numSet = {zero(), one(), two()}
-%test: letterSet = {a(), b(), c()}
-%test: emptySet = {}
-%test: numSet = {zero()}
-%test: letterSet = {a()}
+%test: numbersok()
+%test: lettersok()
+%test: emptysetsok()
+%test: inferrednumbersok()
+%test: inferredlettersok()

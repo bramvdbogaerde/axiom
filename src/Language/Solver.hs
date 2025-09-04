@@ -379,7 +379,6 @@ expandGoal (SearchGoal _ruleName goal) remainingGoals whenSucceeds = do
 
       IncludedIn vrr set _ -> do
         expandSet vrr set remainingGoals whenSucceeds
-        undefined
       _ -> return () -- Variables and other terms can't be expanded
 
 -- | Expand the elements of a set into a variable by generating subgoals for

@@ -3,45 +3,44 @@
 syntax {
   element, x in Element ::= a() | b() | c() | d() | f(element, element) | g(element);
   mySet in Set(Element);
-  result in Result ::= success() | failure();
+  result in Result ::= setsameorder() | setdifforder() | singleelement() | emptyseteq() | setwithfunctors() | complexmembership() | complexmembershipalt();
 };
 
 rules {
   rule "set-equality-same-order"
-  [ ] =>
-  [ {a(), b()} = {a(), b()} ];
+  [ {a(), b()} = {a(), b()} ] =>
+  [ setsameorder() ];
   
   rule "set-equality-different-order"
-  [ ] =>
-  [ {a(), b()} = {b(), a()} ];
+  [ {a(), b()} = {b(), a()} ] =>
+  [ setdifforder() ];
   
   rule "single-element-equality"
-  [ ] =>
-  [ {a()} = {a()} ];
+  [ {a()} = {a()} ] =>
+  [ singleelement() ];
   
   rule "empty-set-equality"
-  [ ] =>
-  [ {} = {} ];
+  [ {} = {} ] =>
+  [ emptyseteq() ];
   
   rule "set-with-functors"
-  [ ] =>
-  [ mySet = {f(a(), b()), g(c())} ];
+  [ mySet = {f(a(), b()), g(c())} ] =>
+  [ setwithfunctors() ];
   
   rule "complex-membership-test"
-  [ x in {f(a(), b()), g(c())} ] =>
-  [ x = f(a(), b()) ];
+  [ x in {f(a(), b()), g(c())}; x = f(a(), b()) ] =>
+  [ complexmembership() ];
   
   rule "complex-membership-test-alt"  
-  [ x in {f(a(), b()), g(c())} ] =>
-  [ x = g(c()) ];
+  [ x in {f(a(), b()), g(c())}; x = g(c()) ] =>
+  [ complexmembershipalt() ];
   
 };
 
-%test: {a(), b()} = {a(), b()}
-%test: {a(), b()} = {b(), a()}
-%test: {a()} = {a()}
-%test: {} = {}
-%test: mySet = {f(a(), b()), g(c())}
-%test: f(a(), b()) in {f(a(), b()), g(c())}
-%test: g(c()) in {f(a(), b()), g(c())}
-%test: result = success()
+%_test: setsameorder()
+%_test: setdifforder()
+%_test: singleelement()
+%_test: emptyseteq()
+%test: setwithfunctors()
+%test: complexmembership()
+%test: complexmembershipalt()

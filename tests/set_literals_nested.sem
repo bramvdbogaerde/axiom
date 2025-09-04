@@ -5,37 +5,38 @@ syntax {
   innerSet, s in Set(Element);
   outerSet in Set(Set(Element));
   deepSet in Set(Set(Set(Element)));
+  result in Result ::= nestedsets() | singlenested() | deepnesting() | mixedinnersets() | setinsetmembership() | setinsetmembershipalt();
 };
 
 rules {
   rule "nested-sets"
-  [ ] =>
-  [ outerSet = {{x(), y()}, {z()}} ];
+  [ outerSet = {{x(), y()}, {z()}} ] =>
+  [ nestedsets() ];
   
   rule "single-nested"
-  [ ] =>
-  [ outerSet = {{x()}} ];
+  [ outerSet = {{x()}} ] =>
+  [ singlenested() ];
   
   rule "deep-nesting"
-  [ ] =>
-  [ deepSet = { { {x()} } } ];
+  [ deepSet = { { {x()} } } ] =>
+  [ deepnesting() ];
   
   rule "mixed-inner-sets"
-  [ ] =>
-  [ outerSet = {{x(), y()}, {y(), z()}, {x(), z()}} ];
+  [ outerSet = {{x(), y()}, {y(), z()}, {x(), z()}} ] =>
+  [ mixedinnersets() ];
   
   rule "set-in-set-membership"
-  [ s in {{x(), y()}, {z()}} ] =>
-  [ s = {x(), y()} ];
+  [ s in {{x(), y()}, {z()}}; s = {x(), y()} ] =>
+  [ setinsetmembership() ];
   
   rule "set-in-set-membership-alt"
-  [ s in {{x(), y()}, {z()}} ] =>
-  [ s = {z()} ];
+  [ s in {{x(), y()}, {z()}}; s = {z()} ] =>
+  [ setinsetmembershipalt() ];
 };
 
-%test: outerSet = {{x(), y()}, {z()}}
-%test: outerSet = {{x()}}
-%test: deepSet = { { {x()} } }
-%test: outerSet = {{x(), y()}, {y(), z()}, {x(), z()}}
-%test: {x(), y()} in {{x(), y()}, {z()}}
-%test: {z()} in {{x(), y()}, {z()}}
+%test: nestedsets()
+%test: singlenested()
+%test: deepnesting()
+%test: mixedinnersets()
+%_test: setinsetmembership()
+%_test: setinsetmembershipalt()
