@@ -1,0 +1,41 @@
+%% Test nested set literals
+
+syntax {
+  element in Element ::= x() | y() | z();
+  innerSet, s in Set(Element);
+  outerSet in Set(Set(Element));
+  deepSet in Set(Set(Set(Element)));
+};
+
+rules {
+  rule "nested-sets"
+  [ ] =>
+  [ outerSet = {{x(), y()}, {z()}} ];
+  
+  rule "single-nested"
+  [ ] =>
+  [ outerSet = {{x()}} ];
+  
+  rule "deep-nesting"
+  [ ] =>
+  [ deepSet = { { {x()} } } ];
+  
+  rule "mixed-inner-sets"
+  [ ] =>
+  [ outerSet = {{x(), y()}, {y(), z()}, {x(), z()}} ];
+  
+  rule "set-in-set-membership"
+  [ s in {{x(), y()}, {z()}} ] =>
+  [ s = {x(), y()} ];
+  
+  rule "set-in-set-membership-alt"
+  [ s in {{x(), y()}, {z()}} ] =>
+  [ s = {z()} ];
+};
+
+%test: outerSet = {{x(), y()}, {z()}}
+%test: outerSet = {{x()}}
+%test: deepSet = { { {x()} } }
+%test: outerSet = {{x(), y()}, {y(), z()}, {x(), z()}}
+%test: {x(), y()} in {{x(), y()}, {z()}}
+%test: {z()} in {{x(), y()}, {z()}}

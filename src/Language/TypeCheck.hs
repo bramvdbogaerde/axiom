@@ -257,8 +257,9 @@ instance SubtypeOf s => SubtypeOf [s] where
     | otherwise = and <$> zipWithM subtypeOf l1 l2
 
 instance SubtypeOf Typ where
-  subtypeOf VoidType _ = return False  -- VoidType is never a subtype of anything
+  subtypeOf VoidType _ = return True -- VoidType is a subtype of everything
   subtypeOf _ VoidType = return False  -- Nothing is ever a subtype of VoidType
+  subtypeOf (SetOf a) (SetOf b) = subtypeOf a b -- Sets are covariant in their type parameter
   subtypeOf s1 s2 = do
     subCtx <- gets _subtypingContext
     return $ isSubtypeOf s1 s2 subCtx
@@ -391,16 +392,14 @@ checkBinaryEqualityTerm constructor term1 term2 range = do
   case result1 of
     Right (term1', t1') -> do
       (term2', t2') <- local (const (Just t1')) (checkTerm term2)
-      if t1' /= t2'
-        then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
-        else return (constructor term1' term2' t1' range, t1')
+      generalType <- widenType range t1' t2'
+      return (constructor term1' term2' generalType range, generalType)
     Left _ -> do
       -- If term1 fails, try term2 first and use its type for term1
       (term2', t2') <- checkTerm term2
       (term1', t1') <- local (const (Just t2')) (checkTerm term1)
-      if t1' /= t2'
-        then throwErrorAt range (IncompatibleTypes [t1'] [t2'])
-        else return (constructor term1' term2' t1' range, t1')
+      generalType <- widenType range t1' t2'
+      return (constructor term1' term2' generalType range, generalType)
   where
     tryCheckTerm term = catchError (Right <$> checkTerm term) (return . Left)
 

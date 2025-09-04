@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module ParseTestsSpec where
 
 import Test.Hspec
@@ -113,3 +114,68 @@ spec = do
       it "atomNames excludes integer literals" $ do
         term <- parseTermHelper "f(42, x)"
         atomNames term `shouldBe` Set.singleton "x"
+    
+    describe "SetOfTerms parsing" $ do
+      it "parses empty sets" $ do
+        term <- parseTermHelper "{}"
+        case term of
+          SetOfTerms terms _ _ -> Set.size terms `shouldBe` 0
+          _ -> expectationFailure $ "Expected SetOfTerms, got: " ++ show term
+      
+      it "parses single element sets" $ do
+        term <- parseTermHelper "{a()}"
+        case term of
+          SetOfTerms terms _ _ -> do
+            Set.size terms `shouldBe` 1
+            case Set.toList terms of
+              [elem] -> case elem of
+                Functor "a" [] _ _ -> return ()
+                _ -> expectationFailure $ "Expected atom 'a', got: " ++ show elem
+              other -> expectationFailure $ "Expected single element, got: " ++ show other
+          _ -> expectationFailure $ "Expected SetOfTerms, got: " ++ show term
+      
+      it "parses multiple element sets" $ do
+        term <- parseTermHelper "{a(), b(), c()}"
+        case term of
+          SetOfTerms terms _ _ -> do
+            Set.size terms `shouldBe` 3
+            let atomNames = Set.fromList [name | Functor name [] _ _ <- Set.toList terms]
+            atomNames `shouldBe` Set.fromList ["a", "b", "c"]
+          _ -> expectationFailure $ "Expected SetOfTerms, got: " ++ show term
+      
+      it "parses sets with complex terms" $ do
+        term <- parseTermHelper "{f(x, y), g(z)}"
+        case term of
+          SetOfTerms terms _ _ -> do
+            Set.size terms `shouldBe` 2
+            let hasFunctor name = any (\case Functor n _ _ _ -> n == name; _ -> False) (Set.toList terms)
+            hasFunctor "f" `shouldBe` True
+            hasFunctor "g" `shouldBe` True
+          _ -> expectationFailure $ "Expected SetOfTerms, got: " ++ show term
+      
+      it "parses nested sets" $ do
+        term <- parseTermHelper "{{a()}, {b()}}"
+        case term of
+          SetOfTerms outerTerms _ _ -> do
+            Set.size outerTerms `shouldBe` 2
+            let innerSets = [terms | SetOfTerms terms _ _ <- Set.toList outerTerms]
+            length innerSets `shouldBe` 2
+          _ -> expectationFailure $ "Expected SetOfTerms, got: " ++ show term
+      
+      it "works in equality expressions" $ do
+        term <- parseTermHelper "x = {a(), b()}"
+        case term of
+          Eqq (Atom (Identity "x") _ _) (SetOfTerms terms _ _) _ _ -> 
+            Set.size terms `shouldBe` 2
+          _ -> expectationFailure $ "Expected 'x = {a(), b()}', got: " ++ show term
+      
+      it "works in functor arguments" $ do
+        term <- parseTermHelper "f({a()}, x)"
+        case term of
+          Functor "f" [SetOfTerms terms _ _, Atom (Identity "x") _ _] _ _ -> 
+            Set.size terms `shouldBe` 1
+          _ -> expectationFailure $ "Expected 'f({a()}, x)', got: " ++ show term
+      
+      it "atomNames extracts from set elements" $ do
+        term <- parseTermHelper "{x, f(y, z)}"
+        atomNames term `shouldBe` Set.fromList ["x", "y", "z"]

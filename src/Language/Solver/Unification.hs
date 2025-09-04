@@ -111,11 +111,11 @@ refTerm term = runStateT (transformTerm term)
 
     transformTerm (HaskellExpr expr tpy range) =
       return $ HaskellExpr expr tpy range
-    
-    transformTerm (IncludedIn _ _ _) =
+
+    transformTerm (IncludedIn {}) =
       error "IncludedIn terms cannot be unified directly - should be handled in solver"
-    
-    transformTerm (SetOfTerms _ _ _) =
+
+    transformTerm (SetOfTerms {}) =
       error "SetOfTerms cannot be unified directly - should be handled in solver"
 
 -- | Visited list abstraction for cycle detection
@@ -145,7 +145,7 @@ pureTerm' term _mapping = do
                     (lift $ throwError "Cycle detected during term conversion")
                     (modify (addVisited cellRef) >> convertTerm term)
               Uninitialized varName -> return $ Atom (Identity varName) tpy range
-              Ptr cell -> lift (lift $ parentValue cell) >>= convertCell 
+              Ptr cell -> lift (lift $ parentValue cell) >>= convertCell
 
     convertTerm (Functor name subterms tpy range) =
       Functor name <$> mapM convertTerm subterms <*> pure tpy <*> pure range
@@ -164,11 +164,11 @@ pureTerm' term _mapping = do
 
     convertTerm (HaskellExpr expr tpy range) =
       return $ HaskellExpr expr tpy range
-    
-    convertTerm (IncludedIn _ _ _) =
+
+    convertTerm (IncludedIn {}) =
       lift $ throwError "IncludedIn terms cannot be unified directly - should be handled in solver"
-    
-    convertTerm (SetOfTerms _ _ _) =
+
+    convertTerm (SetOfTerms {}) =
       lift $ throwError "SetOfTerms cannot be unified directly - should be handled in solver"
 
 -- | Same as pureTerm' but raises an error if the term could not be converted
@@ -293,7 +293,7 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
 
     unifyAtomWithTerm :: Cell p s String -> RefTerm p s -> UnificationM p s ()
     unifyAtomWithTerm cell term = do
-      ref <- lift $ lift $ setOf cell 
+      ref <- lift $ lift $ setOf cell
       lift (lift $ readCellRef ref) >>= \case
         Uninitialized _ -> lift $ lift $ writeCellRef ref (Value term)
         Value existingTerm -> unifyTermsImpl existingTerm term

@@ -1,0 +1,47 @@
+%% Test set operations with literals
+
+syntax {
+  element, x in Element ::= a() | b() | c() | d() | f(element, element) | g(element);
+  mySet in Set(Element);
+  result in Result ::= success() | failure();
+};
+
+rules {
+  rule "set-equality-same-order"
+  [ ] =>
+  [ {a(), b()} = {a(), b()} ];
+  
+  rule "set-equality-different-order"
+  [ ] =>
+  [ {a(), b()} = {b(), a()} ];
+  
+  rule "single-element-equality"
+  [ ] =>
+  [ {a()} = {a()} ];
+  
+  rule "empty-set-equality"
+  [ ] =>
+  [ {} = {} ];
+  
+  rule "set-with-functors"
+  [ ] =>
+  [ mySet = {f(a(), b()), g(c())} ];
+  
+  rule "complex-membership-test"
+  [ x in {f(a(), b()), g(c())} ] =>
+  [ x = f(a(), b()) ];
+  
+  rule "complex-membership-test-alt"  
+  [ x in {f(a(), b()), g(c())} ] =>
+  [ x = g(c()) ];
+  
+};
+
+%test: {a(), b()} = {a(), b()}
+%test: {a(), b()} = {b(), a()}
+%test: {a()} = {a()}
+%test: {} = {}
+%test: mySet = {f(a(), b()), g(c())}
+%test: f(a(), b()) in {f(a(), b()), g(c())}
+%test: g(c()) in {f(a(), b()), g(c())}
+%test: result = success()

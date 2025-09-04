@@ -42,10 +42,10 @@ readFileSafe path = do
 extractTestQueries :: [Comment] -> [(String, Bool)]  -- (query, shouldPass)
 extractTestQueries comments = catMaybes $ map extractQuery comments
   where
-    extractQuery (Comment content _) = 
-      let prefixes = [(" test: ", True), ("test: ", True), 
+    extractQuery (Comment content _) =
+      let prefixes = [(" test: ", True), ("test: ", True),
                       (" test_fail: ", False), ("test_fail: ", False)]
-          tryPrefix (prefix, shouldPass) = fmap (,shouldPass) $ stripPrefix prefix content
+          tryPrefix (prefix, shouldPass) = ((,shouldPass) <$> stripPrefix prefix content)
       in foldr (<|>) Nothing $ map tryPrefix prefixes
 
 -- | Parse and run a single test query against a program with timeout protection
@@ -57,7 +57,7 @@ runTestQuery (Program decls _) queryStr = do
       let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
       let engineCtx = fromRules rules :: EngineCtx ParsePhase [] s
       let solverComputation = ST.runST $ runSolver engineCtx (solve @ParsePhase query)
-      
+
       -- Run with 5 second timeout to catch non-termination
       timeoutResult <- timeout 5000000 (return $! solverComputation) -- 5 seconds in microseconds
       case timeoutResult of
@@ -78,7 +78,7 @@ createSolverTest filePath =
   describe ("Testing " ++ takeFileName filePath) $ do
     result <- runIO $ runExceptT $ loadTestFile filePath
     case result of
-      Left err -> 
+      Left err ->
         it "should load and parse successfully" $
           expectationFailure err
       Right (program, queries) -> do
@@ -88,15 +88,15 @@ createSolverTest filePath =
 
 -- | Create a test for a single query
 createQueryTest :: Program -> (String, Bool) -> Spec
-createQueryTest program (queryStr, shouldPass) = 
+createQueryTest program (queryStr, shouldPass) =
   it (testDescription ++ queryStr) $ do
     result <- runTestQuery program queryStr
     case result of
-      Left err | "Solver timeout:" `isPrefixOf` err -> 
+      Left err | "Solver timeout:" `isPrefixOf` err ->
         expectationFailure $ "SOLVER NON-TERMINATION DETECTED: " ++ err
-      Left err -> 
+      Left err ->
         expectationFailure $ "Error testing query: " ++ err
-      Right hasSolution -> 
+      Right hasSolution ->
         if shouldPass
           then hasSolution `shouldBe` True
           else hasSolution `shouldBe` False
@@ -107,7 +107,7 @@ spec :: Spec
 spec = describe "Solver tests" $ do
   semFiles <- runIO findSemFiles
   let validFiles = filter (not . shouldSkipFile) semFiles
-  
+
   if null validFiles
     then it "should find .sem files in tests directory" $ do
       expectationFailure "No valid .sem files found in tests directory"

@@ -17,6 +17,7 @@ import Data.Functor.Identity
 import Data.Maybe
 import Data.Bifunctor
 import Data.Either (partitionEithers)
+import qualified Data.Set as Set
 
 }
 
@@ -159,6 +160,13 @@ Term : BasicTerm                             { $1 }
      | Term '=' Term                         { Eqq $1 $3 () (mkRange $1 $3) }
      | Term '/=' Term                        { Neq $1 $3 () (mkRange $1 $3) }
      | Term '~>' Term                        { Transition "~>" $1 $3 () (mkRange $1 $3) }
+     | '{' Elements '}'                      { SetOfTerms (Set.fromList $2) () (mkRange $1 $3) }
+
+-- Sequence of terms seperated by a ","
+Elements :: { [PureTerm] }
+Elements : {- empty -} { [] }
+         | Term { [$1] }
+         | Term ',' Elements { $1 : $3 }
 
 BasicTerm :: { PureTerm }
 BasicTerm : IDENT                            { Atom (Identity (getIdent $1)) () (rangeOf $1) }

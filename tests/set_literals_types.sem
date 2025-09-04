@@ -1,0 +1,37 @@
+%% Test type checking for set literals
+
+syntax {
+  number, x in Number ::= zero() | one() | two();
+  letter, y in Letter ::= a() | b() | c();
+  numSet in Set(Number);
+  letterSet in Set(Letter);
+  emptySet in Set(Any);
+};
+
+rules {
+  rule "homogeneous-number-set"
+  [ ] =>
+  [ numSet = {zero(), one(), two()} ];
+  
+  rule "homogeneous-letter-set"
+  [ ] =>
+  [ letterSet = {a(), b(), c()} ];
+  
+  rule "empty-set-rule"
+  [ ] =>
+  [ emptySet = {} ];
+  
+  rule "inferred-numbers"
+  [ x in {zero(), one()} ] =>
+  [ numSet = {x} ];
+  
+  rule "inferred-letters"
+  [ y in {a(), b()} ] =>
+  [ letterSet = {y} ];
+};
+
+%test: numSet = {zero(), one(), two()}
+%test: letterSet = {a(), b(), c()}
+%test: emptySet = {}
+%test: numSet = {zero()}
+%test: letterSet = {a()}

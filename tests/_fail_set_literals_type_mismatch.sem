@@ -1,0 +1,20 @@
+%% This file should fail type checking due to type mismatches in set literals
+
+syntax {
+  number in Number ::= one() | two();
+  letter in Letter ::= a() | b();
+  numSet in Set(Number);
+  letterSet in Set(Letter);
+};
+
+rules {
+  %% This should fail - mixing numbers and letters in a set
+  rule "mixed-types-in-set"
+  [ ] =>
+  [ numSet = {one(), a()} ];  %% Type error: mixing Number and Letter
+  
+  %% This should also fail - assigning letter set to number set variable
+  rule "wrong-set-assignment"
+  [ ] =>
+  [ numSet = {a(), b()} ];  %% Type error: Set(Letter) assigned to Set(Number)
+};

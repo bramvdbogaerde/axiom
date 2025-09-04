@@ -158,6 +158,7 @@ runTestQuery (Program decls _) queryStr = do
 -- | Execute the type checking command
 runCheckCommand :: InputOptions -> IO ()
 runCheckCommand (InputOptions filename) = do
+  putStrLn $ "Checking " ++ filename
   (contents, ast) <- loadAndParseFile filename
   either (printError contents) (const printSuccess) $ runChecker ast
 
