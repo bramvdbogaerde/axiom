@@ -19,6 +19,7 @@ import Control.Monad.Reader
 import Control.Monad.Extra (ifM)
 import Control.Monad ((>=>), zipWithM_)
 import GHC.Exts (sortWith)
+import qualified Data.Set as Set
 
 -------------------------------------------------------------
 -- Core data types
@@ -41,7 +42,7 @@ data CellValue p s a = Value (RefTerm p s)
 deriving instance (ForAllPhases Eq p) => Eq (CellValue p s a)
 
 newtype Cell p s a = Ref (BST.STRef s (CellValue p s a))
-                 deriving (Eq)
+                 deriving (Eq, Ord)
 
 type RefTerm p s = Term' p (Cell p s)
 
@@ -64,6 +65,7 @@ setOf cell = readCellRef cell >>= \case
     return finalPtr
   _ -> return cell
 
+-- | Read the value of the parent
 parentValue :: Cell p s String -> BST.ST s (CellValue p s String)
 parentValue = setOf >=> readCellRef
 
@@ -74,6 +76,14 @@ flattenMapping = mapM_ flattenCell
     flattenCell :: Cell p s String -> BST.ST s ()
     flattenCell cell = parentValue cell >>= writeCellRef cell
 
+-- | Returns the unified value of the term if the term is an atom
+-- otherwise returns the term value itself.
+termValue :: RefTerm p s -> BST.ST s (Maybe (RefTerm p s))
+termValue (Atom cell _ _) = parentValue cell <&> ensureInitialized
+  where ensureInitialized (Value t) = Just t
+        ensureInitialized _ = Nothing
+termValue t = return $ Just t
+
 -------------------------------------------------------------
 -- Conversions between reference cells
 -------------------------------------------------------------
@@ -81,10 +91,10 @@ flattenMapping = mapM_ flattenCell
 -- | Transform a term to use IORefs instead of variables, returns
 -- the transformed term, together with a mapping from variable names
 -- to their references.
-refTerm ::  PureTerm' p -> VariableMapping p s -> BST.ST s (RefTerm p s, VariableMapping p s)
+refTerm ::  ForAllPhases Ord p => PureTerm' p -> VariableMapping p s -> BST.ST s (RefTerm p s, VariableMapping p s)
 refTerm term = runStateT (transformTerm term)
   where
-    transformTerm :: PureTerm' p -> StateT (VariableMapping p s) (BST.ST s) (RefTerm p s)
+    transformTerm :: ForAllPhases Ord p => PureTerm' p -> StateT (VariableMapping p s) (BST.ST s) (RefTerm p s)
     transformTerm (Atom (Identity varName) tpy range) =
       maybe createNewCell (return . (\c -> Atom c tpy range)) =<< gets (Map.lookup varName)
       where
@@ -112,11 +122,11 @@ refTerm term = runStateT (transformTerm term)
     transformTerm (HaskellExpr expr tpy range) =
       return $ HaskellExpr expr tpy range
 
+    transformTerm (SetOfTerms ts annot r) =
+      SetOfTerms <$> fmap Set.fromList (mapM transformTerm (Set.toList ts)) <*> pure annot <*> pure r
+
     transformTerm (IncludedIn {}) =
       error "IncludedIn terms cannot be unified directly - should be handled in solver"
-
-    transformTerm (SetOfTerms {}) =
-      error "SetOfTerms cannot be unified directly - should be handled in solver"
 
 -- | Visited list abstraction for cycle detection
 type VisitedList p s = [BST.STRef s (CellValue p s String)]
@@ -130,13 +140,13 @@ addVisited :: BST.STRef s (CellValue p s String) -> VisitedList p s -> VisitedLi
 addVisited ref visited = ref : visited
 
 -- | Convert a pointer-based term back to a pure term with cycle detection
-pureTerm' :: RefTerm p s -> VariableMapping p s -> BST.ST s (Either String (PureTerm' p))
+pureTerm' :: (ForAllPhases Ord p) => RefTerm p s -> VariableMapping p s -> BST.ST s (Either String (PureTerm' p))
 pureTerm' term _mapping = do
   -- TODO: should we still flatten the mapping or not?
   -- flattenMapping mapping
   runExceptT $ evalStateT (convertTerm term) []
   where
-    convertTerm :: RefTerm p s -> StateT (VisitedList p s) (ExceptT String (BST.ST s)) (PureTerm' p)
+    convertTerm :: ForAllPhases Ord p => RefTerm p s -> StateT (VisitedList p s) (ExceptT String (BST.ST s)) (PureTerm' p)
     convertTerm (Atom (Ref cellRef) tpy range) =
         lift (lift $ BST.readSTRef cellRef) >>= convertCell
       where convertCell = \case
@@ -168,16 +178,16 @@ pureTerm' term _mapping = do
     convertTerm (IncludedIn {}) =
       lift $ throwError "IncludedIn terms cannot be unified directly - should be handled in solver"
 
-    convertTerm (SetOfTerms {}) =
-      lift $ throwError "SetOfTerms cannot be unified directly - should be handled in solver"
+    convertTerm (SetOfTerms ts tpy r)  =
+      SetOfTerms <$> fmap Set.fromList (mapM convertTerm (Set.toList ts)) <*> pure tpy <*> pure r
 
 -- | Same as pureTerm' but raises an error if the term could not be converted
-pureTerm :: RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
+pureTerm :: (ForAllPhases Ord p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
 pureTerm term = pureTerm' term >=> either error return
 
 
 -- | Same as pureTerm but ensures that all elements of the term are ground
-pureTermGround :: Show (PureTerm' p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
+pureTermGround :: (ForAllPhases Ord p, Show (PureTerm' p)) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
 pureTermGround term mapping = do
   term' <- pureTerm term mapping
   if isTermGround term'
@@ -214,7 +224,7 @@ termOrder a b = case sortWith (fromEnum . termTypeOf) [a, b] of
   _ -> error "termOrder: impossible case - sortWith should always return exactly 2 elements"
 
 -- | Unify two reference-based terms
-unifyTerms :: forall p s . (AnnotateType p, HaskellExprExecutor p) => RefTerm p s -> RefTerm p s -> UnificationM p s ()
+unifyTerms :: forall p s . (ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p) => RefTerm p s -> RefTerm p s -> UnificationM p s ()
 unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
   where
     unifyTermsImpl :: (AnnotateType p, HaskellExprExecutor p) => RefTerm p s  -> RefTerm p s -> UnificationM p s ()
@@ -300,7 +310,7 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
         _ -> throwError "Unexpected cell value in atom-term unification"
 
 -- | Convert variable mapping to pure term mapping for Haskell expression execution
-buildPureMapping :: forall p s . AnnotateType p => VariableMapping p s -> BST.ST s (Map String (PureTerm' p))
+buildPureMapping :: forall p s . (ForAllPhases Ord p) => AnnotateType p => VariableMapping p s -> BST.ST s (Map String (PureTerm' p))
 buildPureMapping varMapping = do
   results <- mapM (\cell -> pureTerm' (Atom cell (typeAnnot (Proxy @p) AnyType) dummyRange) varMapping) varMapping
   case sequenceA results of
@@ -309,7 +319,7 @@ buildPureMapping varMapping = do
 
 -- | Unify two pure terms and return a substitution mapping
 unify :: forall p s .
-         (AnnotateType p, HaskellExprExecutor p)
+         (ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p)
       => PureTerm' p
       -> PureTerm' p
       -> UnificationM p s (Map String (PureTerm' p))
@@ -325,12 +335,12 @@ unify term1 term2 = do
   either throwError return $ sequenceA results
 
 -- | Construct the mapping resulting from the unification process
-buildMapping :: forall p s . (AnnotateType p) => VariableMapping p s -> BST.ST s (Map String (PureTerm' p))
+buildMapping :: forall p s . (AnnotateType p, ForAllPhases Ord p) => VariableMapping p s -> BST.ST s (Map String (PureTerm' p))
 buildMapping mapping = mapM (\cell -> pureTerm (Atom cell (typeAnnot (Proxy @p) AnyType) dummyRange) mapping) mapping
 
 -- | Run unification in the ST monad and return the result
 runUnification :: forall p .
-                  (HaskellExprExecutor p, AnnotateType p)
+                  (ForAllPhases Ord p, HaskellExprExecutor p, AnnotateType p)
                => PureTerm' p
                -> PureTerm' p
                -> Either String (Map String (PureTerm' p))

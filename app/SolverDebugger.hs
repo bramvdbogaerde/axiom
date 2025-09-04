@@ -9,7 +9,7 @@ module SolverDebugger where
 
 import Language.Solver
 import Language.AST
-import Language.Parser (parseProgram, parseTerm)
+import Language.Parser (parseProgram, parseGoal)
 import qualified Language.Solver.BacktrackingST as ST
 import qualified Language.Solver.Unification as Unification
 import Language.Solver.Worklist (Queue, dequeue)
@@ -326,7 +326,7 @@ debugSession semFile = do
           debugLoop newConfig rules
 
     handleQuery input config rules = do
-      case parseTerm input of
+      case parseGoal input of
         Left err -> putStrLn $ "Parse error: " ++ show err
         Right term -> do
           (solutions, trace) <- debugSolve config rules term

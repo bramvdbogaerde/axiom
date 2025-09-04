@@ -28,7 +28,7 @@ import qualified Debug.Trace as Debug
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.Extra (ifM, when, unless)
 import Data.Either
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromMaybe)
 import Control.Monad ((>=>))
 
 ------------------------------------------------------------
@@ -131,7 +131,7 @@ restoreSnapshot :: ST.Snapshot s -> Solver p q s ()
 restoreSnapshot = liftST . ST.restore
 
 -- | Convert a PureTerm to RefTerm and update the solver's current mapping
-refTerm :: PureTerm' p -> Solver p q s (RefTerm p s)
+refTerm :: (ForAllPhases Ord p) => PureTerm' p -> Solver p q s (RefTerm p s)
 refTerm term = do
   mapping <- gets (^. searchCtx . currentMapping)
   (refTerm, newMapping) <- liftST $ Unification.refTerm term mapping
@@ -246,7 +246,7 @@ inCache t inCache _mapping = or <$> mapM (uniqueTerm >=> refTerm >=> doesUnify t
 
 -- | Unifies two terms together or returns Left if the terms
 -- cannot be unified.
-unify :: (AnnotateType p, HaskellExprExecutor p)
+unify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p)
       => RefTerm p s
       -> RefTerm p s
       -> Solver p q s (Either String ())
@@ -255,7 +255,7 @@ unify left right  = do
   liftST $ runExceptT $ flip runReaderT mapping $ Unification.unifyTerms left right
 
 -- | Returns "True" if the given terms can/are unified
-doesUnify :: (AnnotateType p, HaskellExprExecutor p)
+doesUnify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p)
           => RefTerm p s
           -> RefTerm p s
           -> Solver p q s Bool
@@ -268,7 +268,7 @@ doesUnify t1 t2 = do
 ------------------------------------------------------------
 
 -- | Initialize the queue with the query
-initialWL :: Queue q => PureTerm' p -> Solver p q s ()
+initialWL :: (ForAllPhases Ord p, Queue q) => PureTerm' p -> Solver p q s ()
 initialWL query = do
   refQuery <- refTerm query
   mapping <- gets (^. searchCtx . currentMapping)
@@ -376,7 +376,28 @@ expandGoal (SearchGoal _ruleName goal) remainingGoals whenSucceeds = do
       Neq left right _ _ -> do
         -- Inequality: fail if unifies, otherwise succeed
         either (const $ continue remainingGoals whenSucceeds) (const $ return ()) =<< unify left right
+
+      IncludedIn vrr set _ -> do
+        expandSet vrr set remainingGoals whenSucceeds
+        undefined
       _ -> return () -- Variables and other terms can't be expanded
+
+-- | Expand the elements of a set into a variable by generating subgoals for
+-- each element of the set, requires that the term referring to the set is
+-- already unified with a "SetOfTerms" term.
+expandSet :: forall p q s . (AnnotateType p, HaskellExprRename p, HaskellExprExecutor p, Queue q, ForAllPhases Ord p)
+          => String        -- X in y
+          -> RefTerm p s   -- x in Y
+          -> [SearchGoal p s] -- remaining goals
+          -> [InOut p s]      -- in-cache
+          -> Solver p q s ()
+expandSet nam set remainingGoals whenSucceeds = do
+  vrrTerm  <- refTerm (Atom (Identity nam) (typeAnnot (Proxy @p) AnyType) dummyRange)
+  setTerm  <- fromMaybe (error "non-ground sets are not supported")  <$> liftST (Unification.termValue set)
+  case setTerm of
+    SetOfTerms ts _ _ -> mapM_ (\t -> continue (SearchGoal "SetIn" (Eqq vrrTerm t (typeAnnot (Proxy @p) AnyType) dummyRange) : remainingGoals) whenSucceeds) ts
+
+    _ -> error "unreachable branch found, set terms should only resolve to sets, otherwise type check is unsound"
 
 ------------------------------------------------------------
 -- Rule processing functions

@@ -2,7 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Language.Parser(parseProgram, parseTerm, parseRule, Error(..)) where
+module Language.Parser(parseProgram, parseTerm, parseRule, parseGoal, Error(..)) where
 
 import Prelude hiding (lex)
 
@@ -24,6 +24,7 @@ import qualified Data.Set as Set
 %name parseProgramTokens Program
 %name parseTermTokens Term  
 %name parseRuleTokens Rule
+%name parseGoalTokens Goal
 %tokentype { TokenWithRange }
 %error { parseError }
 %monad { Either Error } { >>= } { return }
@@ -244,6 +245,15 @@ parseTerm input =
     tokens -> 
       let (_, otherTokens) = partitionTokens tokens
       in parseTermTokens otherTokens
+
+-- | Parse a single goal from string  
+parseGoal :: String -> Either Error PureTerm
+parseGoal input = 
+  case lex input of
+    tokens -> 
+      let (_, otherTokens) = partitionTokens tokens
+      in parseGoalTokens otherTokens
+
 
 -- | Parse a single rule from string
 parseRule :: String -> Either Error RuleDecl

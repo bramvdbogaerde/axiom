@@ -167,6 +167,9 @@ data STRef s a
       !(STRef.STRef s (STState s))
   deriving (Eq)
 
+instance Ord (STRef s a) where
+  compare (STRef a _) (STRef b _) = compare a b
+
 -- | Create a new reference
 newSTRef :: a -> ST s (STRef s a)
 newSTRef value = ST $
