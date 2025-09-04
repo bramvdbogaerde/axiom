@@ -1,11 +1,10 @@
 module CheckSmokeTestSpec where
 
 import Test.Hspec
-import Language.Parser
 import Language.TypeCheck
+import Language.ImportResolver
 import System.Directory
 import System.FilePath
-import Control.Exception (catch, IOException)
 import Data.List (isPrefixOf)
 import Control.Monad (unless)
 
@@ -24,35 +23,23 @@ findSemFiles = do
 shouldFailTypeCheck :: FilePath -> Bool
 shouldFailTypeCheck path = "_fail_" `isPrefixOf` takeBaseName path
 
--- | Read file content safely
-readFileSafe :: FilePath -> IO (Either String String)
-readFileSafe path = do
-  catch (Right <$> readFile path) handler
-  where
-    handler :: IOException -> IO (Either String String)
-    handler e = return $ Left $ "Could not read file " ++ path ++ ": " ++ show e
 
 -- | Test type checking a single file
 testTypeCheckFile :: FilePath -> IO (FilePath, Bool, Bool)
 testTypeCheckFile filePath = do
-  contentResult <- readFileSafe filePath
-  case contentResult of
-    Left err -> do
-      putStrLn $ "Error reading " ++ filePath ++ ": " ++ err
+  importResult <- resolveImportsFromFile filePath
+  case importResult of
+    Left importErr -> do
+      putStrLn $ "Import error in " ++ filePath ++ ": " ++ show importErr
       return (filePath, False, False) -- (file, parseSuccess, typeCheckSuccess)
-    Right content -> do
-      case parseProgram content of
-        Left parseErr -> do
-          putStrLn $ "Parse error in " ++ filePath ++ ": " ++ show parseErr
-          return (filePath, False, False)
-        Right program -> do
-          case runChecker program of
-            Left typeErr -> do
-              putStrLn $ "Type check error in " ++ filePath ++ ": " ++ show typeErr
-              return (filePath, True, False)
-            Right _ -> do
-              putStrLn $ "Successfully type checked " ++ filePath
-              return (filePath, True, True)
+    Right program -> do
+      case runChecker program of
+        Left typeErr -> do
+          putStrLn $ "Type check error in " ++ filePath ++ ": " ++ show typeErr
+          return (filePath, True, False)
+        Right _ -> do
+          putStrLn $ "Successfully type checked " ++ filePath
+          return (filePath, True, True)
 
 spec :: Spec
 spec = describe "Type checking smoke tests" $ do
@@ -77,27 +64,21 @@ spec = describe "Type checking smoke tests" $ do
 createTypeCheckTest :: FilePath -> Spec
 createTypeCheckTest filePath =
   it ("should type check " ++ takeFileName filePath) $ do
-    contentResult <- readFileSafe filePath
-    case contentResult of
-      Left err -> expectationFailure $ "Could not read file: " ++ err
-      Right content -> do
-        case parseProgram content of
-          Left parseErr -> expectationFailure $ "Parse error: " ++ show parseErr
-          Right program -> do
-            case runChecker program of
-              Left typeErr -> expectationFailure $ "Type check error: " ++ show typeErr
-              Right _ -> return () -- Success
+    importResult <- resolveImportsFromFile filePath
+    case importResult of
+      Left importErr -> expectationFailure $ "Import error: " ++ show importErr
+      Right program -> do
+        case runChecker program of
+          Left typeErr -> expectationFailure $ "Type check error: " ++ show typeErr ++ " for " ++ show program
+          Right _ -> return () -- Success
 
 createFailingTypeCheckTest :: FilePath -> Spec
 createFailingTypeCheckTest filePath =
   it ("should fail to type check " ++ takeFileName filePath) $ do
-    contentResult <- readFileSafe filePath
-    case contentResult of
-      Left err -> expectationFailure $ "Could not read file: " ++ err
-      Right content -> do
-        case parseProgram content of
-          Left parseErr -> expectationFailure $ "Parse error (failing test files should parse): " ++ show parseErr
-          Right program -> do
-            case runChecker program of
-              Left _ -> return () -- Expected failure - success!
-              Right _ -> expectationFailure "Expected type checking to fail, but it succeeded"
+    importResult <- resolveImportsFromFile filePath
+    case importResult of
+      Left importErr -> expectationFailure $ "Import error (failing test files should import): " ++ show importErr
+      Right program -> do
+        case runChecker program of
+          Left _ -> return () -- Expected failure - success!
+          Right _ -> expectationFailure "Expected type checking to fail, but it succeeded"

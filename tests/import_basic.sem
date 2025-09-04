@@ -1,0 +1,10 @@
+import "simple.sem";
+
+syntax {
+    y in Term;
+};
+
+rules {
+    rule "use_imported_x" [] => [ x ];
+    rule "combine_with_imported" [ x ] => [ y ];
+};

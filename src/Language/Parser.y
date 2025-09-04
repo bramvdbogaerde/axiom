@@ -40,6 +40,7 @@ import qualified Data.Set as Set
   'syntax'    { TokenWithRange (Ident "syntax") _ }
   'in'        { TokenWithRange (Ident "in") _ }
   'transition' { TokenWithRange (Ident "transition") _ }
+  'import'    { TokenWithRange (Ident "import") _ }
   '('         { TokenWithRange Lpar _ }
   ')'         { TokenWithRange Rpar _ }
   '{'         { TokenWithRange LCBa _ }
@@ -77,6 +78,7 @@ Declaration : SyntaxBlock                    { $1 }
             | RulesBlock                     { $1 }
             | TransitionDecl                 { $1 }
             | RewriteRule                    { $1 }
+            | ImportDecl                     { $1 }
 
 -- Syntax block: syntax { ... }
 SyntaxBlock :: { Decl }
@@ -143,6 +145,10 @@ TransitionDecl : 'transition' IDENT '~>' IDENT { TransitionDecl "~>" (Sort (getI
 RewriteRule :: { Decl }
 RewriteRule : IDENT '(' TermArgs ')' '=' Term { Rewrite (RewriteDecl (getIdent $1) $3 $6 (mkRange $1 $6)) (mkRange $1 $6) }
 
+-- Import declaration: import "filename"
+ImportDecl :: { Decl }
+ImportDecl : 'import' STRING                 { Import (getQuo $2) (mkRange $1 $2) }
+
 TermArgs :: { [PureTerm] }
 TermArgs : {- empty -}                       { [] }
          | TermArgList                       { $1 }
@@ -204,6 +210,9 @@ getHaskellBlock (TokenWithRange tok _) = tokVal tok
 
 getComment :: TokenWithRange -> String
 getComment (TokenWithRange tok _) = tokVal tok
+
+getQuo :: TokenWithRange -> String
+getQuo (TokenWithRange tok _) = tokVal tok
 
 -------------------------------------------------------------
 -- Error handling

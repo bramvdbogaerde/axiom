@@ -6,6 +6,7 @@ import Language.AST
 import Language.Parser
 import Language.TypeCheck
 import Language.CodeGen
+import Language.ImportResolver
 import Control.Monad
 import Data.Maybe (catMaybes)
 import Data.List (stripPrefix)
@@ -107,8 +108,10 @@ opts = info (globalOptions <**> helper)
 -- | Load a file and parse it into an AST, returning both the source and parsed program
 loadAndParseFile :: String -> IO (String, Program)
 loadAndParseFile filename = do
+  -- TODO: the imports should also be considered, thus we should return a Map, mapping filenames to their programs, this is already constructed in the ImportResolver but never exposed.
   contents <- readFile filename
-  let ast = either (error . ("could not parse program" ++) . show) id $ parseProgram contents
+  program <- resolveImportsFromFile filename
+  let ast = either (error . ("could not parse program" ++) . show) id program
   return (contents, ast)
 
 -- | Print text in green color for success messages

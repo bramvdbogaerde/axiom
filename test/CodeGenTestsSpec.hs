@@ -4,7 +4,7 @@ module CodeGenTestsSpec (spec) where
 
 import Test.Hspec
 import Language.AST
-import Language.Parser (parseProgram)
+import Language.ImportResolver
 import Language.TypeCheck (runChecker')
 import Language.CodeGen (codegen)
 import System.Directory
@@ -15,7 +15,6 @@ import System.Process
 import System.Exit
 import Data.List (isPrefixOf, stripPrefix)
 import Data.Maybe (catMaybes, listToMaybe)
-import Control.Exception (catch, IOException)
 import Control.Monad.Extra (ifM)
 import Control.Monad (filterM)
 import Control.Applicative ((<|>))
@@ -41,13 +40,6 @@ findSemFiles = do
 shouldSkipFile :: FilePath -> Bool
 shouldSkipFile path = "_fail_" `isPrefixOf` takeBaseName path
 
--- | Read file content safely
-readFileSafe :: FilePath -> IO (Either String String)
-readFileSafe path = do
-  catch (Right <$> readFile path) handler
-  where
-    handler :: IOException -> IO (Either String String)
-    handler e = return $ Left $ "Could not read file " ++ path ++ ": " ++ show e
 
 -- | Extract codegen test queries from comments that start with "codegen_test:" or "codegen_fail_test:"
 extractCodegenTestQueries :: [Comment] -> [(String, Bool)]  -- (query, shouldPass)
@@ -110,8 +102,8 @@ executeGeneratedCode generatedCode = do
 -- | Load and parse a test file, returning either an error or (program, queries)
 loadCodegenTestFile :: FilePath -> ExceptT String IO (Program, [(String, Bool)])
 loadCodegenTestFile filePath = do
-  content <- ExceptT $ readFileSafe filePath
-  program@(Program _ comments) <- ExceptT $ return $ first show $ parseProgram content
+  importResult <- ExceptT $ first show <$> resolveImportsFromFile filePath
+  let program@(Program _ comments) = importResult
   let queries = extractCodegenTestQueries comments
   return (program, queries)
 

@@ -159,6 +159,7 @@ data Decl' p = Syntax [SyntaxDecl' p] Range
              | RulesDecl [RuleDecl' p] Range
              | TransitionDecl String (Typ, Range) (Typ, Range) Range
              | HaskellDecl String Range
+             | Import String Range  -- ^ Import declaration with filename
 deriving instance (ForAllPhases Ord p) => Ord (Decl' p)
 deriving instance (ForAllPhases Eq p) => Eq (Decl' p)
 deriving instance (ForAllPhases Show p) => Show (Decl' p)

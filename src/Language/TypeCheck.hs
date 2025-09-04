@@ -566,6 +566,8 @@ pass3VisitDecl (Syntax syntax range) =
   Syntax <$> mapM typeSyntax syntax <*> pure range
 pass3VisitDecl (HaskellDecl s range) =
   return $ HaskellDecl s range
+pass3VisitDecl (Import filename range) =
+  return $ Import filename range
 
 pass3 :: MonadCheck m => Program -> m TypedProgram
 pass3 (Program decls comments) = Program <$> mapM pass3VisitDecl decls <*> pure (map typeComment comments)

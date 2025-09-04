@@ -19,7 +19,9 @@ library
                  singletons,
                  haskell-src-meta,
                  bytestring,
-                 utf8-string
+                 utf8-string,
+                 filepath,
+                 directory
   build-tools: alex, happy
   exposed-modules:  Language.AST
                   , Language.CodeGen
@@ -27,6 +29,7 @@ library
                   , Language.Parser
                   , Language.TypeCheck
                   , Language.Solver
+                  , Language.ImportResolver
                   , Language.Solver.Unification
                   , Language.Solver.Renamer
                   , Language.Solver.BacktrackingST

@@ -12,6 +12,8 @@ module Data.Graph
   , neighbours
     -- * Graph algorithms
   , isReachable
+  , topSort
+  , hasCycle
   ) where
 
 import Control.Monad.State.Class
@@ -23,7 +25,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Maybe
+import Data.Maybe (fromMaybe, isNothing)
 
 ------------------------------------------------------------
 -- Graph data type
@@ -34,7 +36,7 @@ newtype Graph k e = Graph { getAdjList :: Map k (Set (k, e)) }
                   deriving (Ord, Eq, Show)
 
 -- | A graph without labels on its edges
-type UnlabeledGraph k = Graph k ()                  
+type UnlabeledGraph k = Graph k ()
 
 -- | Create an empty graph
 empty :: Graph k e
@@ -78,6 +80,46 @@ isReachable' from to g = go from
 
 -- | Check if the second argument is reachable from the first argument
 isReachable :: (Ord k, Ord e) => k -> k -> Graph k e -> Bool
-isReachable from to g = 
+isReachable from to g =
   either getResult (const False) $
     evalState (runExceptT (isReachable' from to g)) Set.empty
+
+-- | Topological sort using Kahn's algorithm 
+-- Returns Nothing if the graph has cycles, otherwise returns topologically sorted nodes
+topSort :: (Ord k, Ord e) => Graph k e -> Maybe [k]
+topSort g =
+  let allNodes = Map.keys (getAdjList g)
+      inDegree = computeInDegrees g allNodes
+      zeroInDegree = filter (\n -> Map.findWithDefault 0 n inDegree == 0) allNodes
+  in kahnSort g inDegree zeroInDegree []
+
+-- | Compute in-degrees for all nodes
+computeInDegrees :: (Ord k, Ord e) => Graph k e -> [k] -> Map k Int
+computeInDegrees g nodes =
+  let initialDegrees = Map.fromList [(n, 0) | n <- nodes]
+  in foldl addIncomingEdges initialDegrees nodes
+  where
+    addIncomingEdges degrees node =
+      let outgoing = Set.map fst $ neighbours node g
+      in Set.foldl (\acc target -> Map.insertWith (+) target 1 acc) degrees outgoing
+
+-- | Kahn's algorithm implementation
+kahnSort :: (Ord k, Ord e) => Graph k e -> Map k Int -> [k] -> [k] -> Maybe [k]
+kahnSort g inDegrees queue result
+  | null queue =
+      if length result == Map.size (getAdjList g)
+      then Just (reverse result)
+      else Nothing  -- Cycle detected, since not all nodes had in-degree zero
+  | otherwise =
+      case queue of
+        [] -> error "impossible case - queue is not null but pattern match failed"
+        (node:restQueue) ->
+          let outgoing = Set.map fst $ neighbours node g
+              newInDegrees = Set.foldl (flip (Map.adjust (\x -> x - 1))) inDegrees outgoing
+              newZeroNodes = Set.filter (\n -> Map.findWithDefault 0 n newInDegrees == 0) outgoing
+              newQueue = restQueue ++ Set.toList newZeroNodes
+          in kahnSort g newInDegrees newQueue (node : result)
+
+-- | Check if the graph has cycles
+hasCycle :: (Ord k, Ord e) => Graph k e -> Bool
+hasCycle g = isNothing (topSort g)

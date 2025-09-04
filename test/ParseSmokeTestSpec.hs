@@ -1,7 +1,7 @@
 module ParseSmokeTestSpec where
 
 import Test.Hspec
-import Language.Parser
+import Language.ImportResolver
 import System.Directory
 import System.FilePath
 import Control.Exception (catch, IOException)
@@ -36,27 +36,19 @@ spec = describe "Parse smoke tests" $ do
 createParseTest :: FilePath -> Spec
 createParseTest filePath = 
   it ("should parse " ++ takeFileName filePath) $ do
-    contentResult <- readFileSafe filePath
-    case contentResult of
-      Left err -> expectationFailure $ "Could not read file: " ++ err
-      Right content -> do
-        case parseProgram content of
-          Left parseErr -> expectationFailure $ "Parse error: " ++ show parseErr
-          Right _ -> return () -- Success
+    importResult <- resolveImportsFromFile filePath
+    case importResult of
+      Left importErr -> expectationFailure $ "Parse error: " ++ show importErr
+      Right _ -> return () -- Success
 
 -- | Test parsing a single file
 testParseFile :: FilePath -> IO (FilePath, Bool)
 testParseFile filePath = do
-  contentResult <- readFileSafe filePath
-  case contentResult of
-    Left err -> do
-      putStrLn $ "Error reading " ++ filePath ++ ": " ++ err
+  importResult <- resolveImportsFromFile filePath
+  case importResult of
+    Left importErr -> do
+      putStrLn $ "Parse error in " ++ filePath ++ ": " ++ show importErr
       return (filePath, False)
-    Right content -> do
-      case parseProgram content of
-        Left parseErr -> do
-          putStrLn $ "Parse error in " ++ filePath ++ ": " ++ show parseErr
-          return (filePath, False)
-        Right _ -> do
-          putStrLn $ "Successfully parsed " ++ filePath
-          return (filePath, True)
+    Right _ -> do
+      putStrLn $ "Successfully parsed " ++ filePath
+      return (filePath, True)

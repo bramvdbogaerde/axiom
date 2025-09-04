@@ -233,6 +233,8 @@ declToExp ctx = \case
 
   HaskellDecl s range ->
     [| HaskellDecl $(lift s) $(rangeToExp range) |]
+  Import filename range ->
+    [| Import $(lift filename) $(rangeToExp range) |]
 
 -- | Convert TypeCtor to Template Haskell expression
 typeCtorToExp :: TypeCtor -> Q Exp
