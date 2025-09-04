@@ -14,15 +14,12 @@ import Data.Set (Set)
 import Control.Monad.State
 import Control.Lens hiding (Context)
 import Language.AST
-import Data.Functor.Identity
 import qualified Data.Graph as Graph
-import Data.Graph (Graph, UnlabeledGraph)
+import Data.Graph (UnlabeledGraph)
 import Control.Monad.Except hiding (throwError)
 import qualified Control.Monad.Except as Except
 import Control.Monad.Reader
 import Control.Monad
-import Data.Kind
-import Data.Maybe (fromMaybe)
 import Control.Monad.Extra
 import Language.Types
 import Data.Tuple
@@ -39,6 +36,7 @@ data ModelError = DuplicateVariable String Typ
                 | NameNotDefined String
                 | ArityMismatch String Int Int  -- ^ functor name, expected arity, actual arity
                 | HaskellExprTypeInferenceError  -- ^ HaskellExpr type inference failure
+                | InvalidConstructor String  -- ^ term type cannot be used as constructor in syntax declaration
                 deriving (Ord, Eq, Show)
 
 data Error = Error { err :: ModelError, raisedAt :: Maybe Range,  ctx :: CheckingContext }
@@ -312,7 +310,7 @@ pass0VisitDecl (Syntax decls _) = mapM_ pass0VisitSyntaxDecl decls
     -- * declare the type
     -- * ensure the type is not duplicate
     -- * more strict type constructors (only arity 0) 
-    pass0VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) = do
+    pass0VisitSyntaxDecl (SyntaxDecl vars tpy _ctors range) = do
       case fromTypeCtor tpy of
         Left err -> throwErrorAt range (SortNotDefined err)
         Right sortTyp -> do
@@ -321,7 +319,7 @@ pass0VisitDecl (Syntax decls _) = mapM_ pass0VisitSyntaxDecl decls
               (do recordSortDefSite (ctorName tpy) range
                   registerTypeName (ctorName tpy) sortTyp
                   mapM_ (typeAsUnique (DataAtom sortTyp) sortTyp) vars)
-pass0VisitDecl (TransitionDecl nam from to range) = do
+pass0VisitDecl (TransitionDecl nam _from _to range) = do
   recordSortDefSite nam range
   -- Register the transition name as its own type
   let transitionTyp = Sort nam
@@ -341,10 +339,17 @@ pass1VisitCtor sortName = \case
   (Atom nam _ range) -> do
     sort <- lookupSort (Just range) (runIdentity nam)
     subtyped sort sortName
-  (Functor nam ts _ range) -> do
+  (Functor nam ts _ _range) -> do
     sorts <- mapM (\t -> collectAtoms t >>= lookupSort (Just (rangeOf t))) ts
     let ctor = DataTagged nam sorts
     typeAsUnique ctor sortName nam
+  (Eqq _ _ _ range) -> throwErrorAt range $ InvalidConstructor "Equality terms cannot be used as constructors in syntax declarations"
+  (Neq _ _ _ range) -> throwErrorAt range $ InvalidConstructor "Inequality terms cannot be used as constructors in syntax declarations"
+  (Transition _ _ _ _ range) -> throwErrorAt range $ InvalidConstructor "Transition terms cannot be used as constructors in syntax declarations"
+  (HaskellExpr _ _ range) -> throwErrorAt range $ InvalidConstructor "Haskell expressions cannot be used as constructors in syntax declarations"
+  (TermValue _ _ range) -> throwErrorAt range $ InvalidConstructor "Values cannot be used as constructors in syntax declarations"
+  (IncludedIn _ _ range) -> throwErrorAt range $ InvalidConstructor "Inclusion terms cannot be used as constructors in syntax declarations"
+  (SetOfTerms _ _ range) -> throwErrorAt range $ InvalidConstructor "Set literals cannot be used as constructors in syntax declarations"
   where
     collectAtoms (Atom nam _ _) = return (runIdentity nam)
     collectAtoms t = throwErrorAt (rangeOf t) $ NoNestingAt sortName
@@ -352,11 +357,11 @@ pass1VisitCtor sortName = \case
 pass1VisitDecl :: MonadCheck m => Decl -> m ()
 pass1VisitDecl (Syntax decls _) = mapM_ pass1VisitSyntaxDecl decls
   where
-    pass1VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) = do
+    pass1VisitSyntaxDecl (SyntaxDecl _vars tpy ctors range) = do
       case fromTypeCtor tpy of
         Left err -> throwErrorAt range (SortNotDefined err)
         Right sortTyp -> mapM_ (pass1VisitCtor sortTyp) ctors
-pass1VisitDecl (TransitionDecl nam (Sort from, _) (Sort to, _) range) = do
+pass1VisitDecl (TransitionDecl nam (Sort from, _) (Sort to, _) _range) = do
   -- transition State ~> State is equivalent to the syntax rule:
   -- ~> ::= ~>(state, state) from a typing perspective
   fromTyp <- resolveTypeName from
@@ -435,8 +440,10 @@ checkTerm (Transition transitionName t1 t2 tpy range) = do
   -- transitions are registered in the typing context as sorts with a single data constructor
   -- NOTE: the assumption is that checkTerm always returns a functor of the same shape, hence the pattern match on the lines below never fails.
   term <- checkTerm (Functor transitionName [t1, t2] tpy range)
-  let (Functor nam [term1', term2'] t range, sortname) = term
-  return (Transition nam term1' term2' t range, sortname)
+  case term of
+    (Functor nam [term1', term2'] t range, sortname) -> 
+      return (Transition nam term1' term2' t range, sortname)
+    _ -> error "checkTerm: transition should always return a functor with 2 arguments"
 checkTerm (HaskellExpr expr _ range) =
   maybe (throwErrorAt range HaskellExprTypeInferenceError)
         (\typ -> return (HaskellExpr expr typ range, typ)) =<< ask
@@ -458,6 +465,14 @@ checkTerm (IncludedIn var term range) = do
       -- Get the variable type to show what kind of set was expected
       varSort <- lookupSort (Just range) var
       throwErrorAt range (IncompatibleTypes [SetOf varSort] [termType]) -- Expected a set of the variable's type
+checkTerm (SetOfTerms terms _ range) = do
+  -- Check all terms in the set and ensure they have compatible types
+  checkedTerms <- mapM checkTerm (Set.toList terms)
+  let (typedTerms, types) = unzip checkedTerms
+  -- Find the most general type that encompasses all element types, VoidType for empty sets
+  generalType <- foldM (widenType range) VoidType types
+  let resultSet = Set.fromList typedTerms
+  return (SetOfTerms resultSet (SetOf generalType) range, SetOf generalType)
 
 checkTerm_ :: MonadCheck m => PureTerm -> m Typ
 checkTerm_ = fmap snd . checkTerm
@@ -540,10 +555,12 @@ typeSyntax (SyntaxDecl vars tpy prods range) = do
 pass3VisitDecl :: MonadCheck m => Decl -> m TypedDecl
 pass3VisitDecl (RulesDecl rules range) =
   RulesDecl <$> mapM checkRule rules <*> pure range
-pass3VisitDecl t@(TransitionDecl nam s1@(Sort fromSort, r1) s2@(Sort toSort, r2) range) = do
+pass3VisitDecl (TransitionDecl nam s1@(Sort fromSort, r1) s2@(Sort toSort, r2) range) = do
   assertSortDefinedAt r1 fromSort
   assertSortDefinedAt r2 toSort
   return (TransitionDecl nam s1 s2 range)
+pass3VisitDecl (TransitionDecl _ (_, r1) _ _) = 
+  throwErrorAt r1 $ NameNotDefined "Only Sort types are supported in transition declarations"
 pass3VisitDecl (Rewrite rewrite range) =
   Rewrite <$> typeRewrite rewrite <*> pure range
 pass3VisitDecl (Syntax syntax range) =

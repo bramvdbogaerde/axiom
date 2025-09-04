@@ -1,19 +1,17 @@
 module Reporting where
 
-import Language.TypeCheck (ModelError(..), Error(..), CheckingContext(..))
+import Language.TypeCheck (ModelError(..), Error(..))
 import Language.Types (Typ(..), toSortName)
 import Language.AST (Range(..), Position(..))
 import System.Console.ANSI
-import qualified Data.Map as Map
 import Data.List (intercalate)
-import Control.Monad (when)
 
 -------------------------------------------------------------
 -- Auxiliary functions
 -------------------------------------------------------------
 
 printError :: String -> Error -> IO ()
-printError sourceCode (Error modelErr maybeRange ctx) = do
+printError sourceCode (Error modelErr maybeRange _ctx) = do
   printColoredLn [SetColor Foreground Vivid Red, SetConsoleIntensity BoldIntensity] "Error:"
   putStrLn $ "  " ++ formatModelError modelErr
   maybe (return ()) ((putStrLn "" >>) . printLocationInfo sourceCode) maybeRange
@@ -48,6 +46,8 @@ formatModelError (ArityMismatch functorName expected actual) =
   "Arity mismatch for '" ++ functorName ++ "': expected " ++ show expected ++ " arguments but got " ++ show actual
 formatModelError HaskellExprTypeInferenceError =
   "Cannot infer type for Haskell expression - no type context available"
+formatModelError (InvalidConstructor msg) =
+  "Invalid constructor: " ++ msg
 
 formatTypeDifference :: [Typ] -> [Typ] -> String
 formatTypeDifference expected actual

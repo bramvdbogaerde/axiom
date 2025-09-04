@@ -6,10 +6,8 @@ module Language.CodeGen.HaskellHatch(
   ) where
 
 import Language.AST
-import Language.Range  
 import Language.Types
 import Data.Map (Map)
-import qualified Data.Map as Map
 import Data.Data
 
 -- | Errors that can be produced by embedded Haskell expressions

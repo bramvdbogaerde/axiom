@@ -9,18 +9,12 @@
 
 module Language.Solver where
 
-import Control.Applicative
 import Control.Lens
 import Control.Monad.Except
-import Control.Monad.ST
 import Control.Monad.State
-import Data.Functor.Identity
-import Control.Monad.Trans
 import Data.Map (Map)
 import Data.Proxy
 import qualified Data.Map as Map
-import Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Language.AST
@@ -29,7 +23,6 @@ import qualified Language.Solver.BacktrackingST as ST
 import qualified Language.Solver.Renamer as Renamer
 import qualified Language.Solver.Unification as Unification
 import Language.Solver.Worklist
-import qualified Data.List as List
 import Language.Solver.Unification (RefTerm)
 import qualified Debug.Trace as Debug
 import Control.Monad.Reader (ReaderT(..))
@@ -109,7 +102,7 @@ addConclusionFunctor nam decl =
 fromRules :: (Queue q, ForAllPhases Ord p) => [RuleDecl' p] -> EngineCtx p q s
 fromRules = foldr visit emptyEngineCtx
   where
-    visit rule@(RuleDecl _ precedent consequent _) =
+    visit rule@(RuleDecl _ _precedent consequent _) =
       flip (foldr (`addConclusionFunctor` rule)) (foldMap functorName consequent)
 
 ------------------------------------------------------------
@@ -146,7 +139,7 @@ refTerm term = do
   return refTerm
 
 -- | Generate unique variables in a given pure term
-uniqueTerm :: HaskellExprRename p => PureTerm' p -> Solver p q s (PureTerm' p)
+uniqueTerm :: (HaskellExprRename p, ForAllPhases Ord p) => PureTerm' p -> Solver p q s (PureTerm' p)
 uniqueTerm term = do
   i <- gets (^. numUniqueVariables)
   let (term', i') = Renamer.runRenamer i (Renamer.renameTerm term)
@@ -240,12 +233,12 @@ cachedSolutions query = do
           return Nothing
 
 -- | Checks whether the given term unifies with a term in the in-cache
-inCache :: (HaskellExprRename p, AnnotateType p, HaskellExprExecutor p)
+inCache :: (HaskellExprRename p, AnnotateType p, HaskellExprExecutor p, ForAllPhases Ord p)
         => RefTerm p s
         -> [InOut p s]
         -> Unification.VariableMapping p s
         -> Solver p q s Bool
-inCache t inCache mapping = or <$> mapM (uniqueTerm >=> refTerm >=> doesUnify t) inCache
+inCache t inCache _mapping = or <$> mapM (uniqueTerm >=> refTerm >=> doesUnify t) inCache
 
 ------------------------------------------------------------
 -- Auxiliary functions
@@ -322,7 +315,7 @@ solveUntilStable :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExpr
 solveUntilStable query = do
   initialCache <- gets (^. outCache)
   initialWL query
-  solutions <- solveAll
+  _solutions <- solveAll
   finalCache <- gets (^. outCache)
 
   -- If cache changed, restart from the original query
@@ -358,7 +351,7 @@ expandGoal :: (AnnotateType p, HaskellExprRename p, HaskellExprExecutor p, Queue
            -> [SearchGoal p s]
            -> [InOut p s]
            -> Solver p q s ()
-expandGoal (SearchGoal ruleName goal) remainingGoals whenSucceeds = do
+expandGoal (SearchGoal _ruleName goal) remainingGoals whenSucceeds = do
   mapping <- gets (^. searchCtx . currentMapping)
   goal' <- liftST $ Unification.pureTerm goal mapping
   case goal of
@@ -370,7 +363,7 @@ expandGoal (SearchGoal ruleName goal) remainingGoals whenSucceeds = do
         whenSucceeds' <- addToInCache goal' mapping whenSucceeds
         mapM_ (processRule goal remainingGoals whenSucceeds' isInCache) rules
 
-      Transition nam from to _ s -> do
+      Transition nam _from _to _ _s -> do
         -- Transitions: look for rules with the transition name in the conclusion
         rules <- findMatchingRules nam
         isInCache <- inCache goal whenSucceeds mapping

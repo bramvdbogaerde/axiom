@@ -50,7 +50,7 @@ extractTestQueries comments = catMaybes $ map extractQuery comments
 
 -- | Parse and run a single test query against a program with timeout protection
 runTestQuery :: Program -> String -> IO (Either String Bool)
-runTestQuery program@(Program decls _) queryStr = do
+runTestQuery (Program decls _) queryStr = do
   case parseTerm queryStr of
     Left parseError -> return $ Left $ "Parse error: " ++ show parseError
     Right query -> do

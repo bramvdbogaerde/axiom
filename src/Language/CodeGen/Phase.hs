@@ -9,8 +9,7 @@ import Language.Types (Typ)
 import Data.Data
 import qualified Data.Set as Set
 import qualified Data.Map as Map
-import Data.Maybe (fromJust, fromMaybe)
-import qualified Debug.Trace as Debug
+import Data.Maybe (fromMaybe)
 
 -- | Phase after code generation. Haskell expressions are turned in pure functions
 -- that have unified terms are their argument. The solver makes sure that all terms

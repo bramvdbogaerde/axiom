@@ -8,7 +8,6 @@ import Language.AST
 import Language.Solver.Unification hiding (runUnification)
 import qualified Language.Solver.Unification as Unification
 import Language.Solver.BacktrackingST
-import Language.Parser
 import qualified Data.Map as Map
 import Control.Monad
 import Control.Monad.Except

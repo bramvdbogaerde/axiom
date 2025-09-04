@@ -4,7 +4,6 @@ import Test.Hspec
 import Language.TemplateHaskell.SyntaxExtra
 import Language.Haskell.TH.Syntax
 import qualified Data.Set as Set
-import Data.Set (Set)
 import qualified Data.List.NonEmpty as NE
 
 -- Helper function to create simple names

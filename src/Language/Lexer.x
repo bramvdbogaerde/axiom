@@ -66,9 +66,9 @@ save (_, _, _, str) len = (++ take len str) <$> alexGetUserState >>= alexSetUser
 collectInto :: (String -> Range -> a) -> AlexInput -> Int -> Alex a
 collectInto f (pos, _, _, str) len = do
   s <- alexGetUserState
-  let token = f s (alexPosToRange pos (take len str))
+  let tok = f s (alexPosToRange pos (take len str))
   alexSetUserState ""
-  return token
+  return tok
 
 -- | Designates a special token for the end of the input
 alexEOF :: Alex TokenWithRange

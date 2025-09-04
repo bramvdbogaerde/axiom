@@ -13,15 +13,12 @@ import LanguageServer.Diagnostics (errorToDiagnostic, rangeToDiagnosticRange)
 import LanguageServer.Symbols (extractDocumentSymbols, findDefinition)
 
 import Language.LSP.Protocol.Message hiding (ResponseError(..), TResponseError(..))
-import qualified Language.LSP.Protocol.Message as Messag
-import Language.LSP.Protocol.Types (Position(..), Location, Uri(..), DocumentSymbol, Diagnostic (..), Range(..), DiagnosticSeverity (DiagnosticSeverity_Error), toNormalizedUri, fromNormalizedUri, type (|?) (InL), TextDocumentSyncOptions (..), TextDocumentSyncKind (TextDocumentSyncKind_Full))
+import Language.LSP.Protocol.Types (Position(..), Location, Uri(..), DocumentSymbol, Diagnostic (..), DiagnosticSeverity (DiagnosticSeverity_Error), toNormalizedUri, TextDocumentSyncOptions (..), TextDocumentSyncKind (TextDocumentSyncKind_Full))
 import Language.LSP.Server
 import Control.Monad.Trans.Maybe
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import qualified Data.Text as T
-import Data.Either (either)
 import Data.Maybe
-import Control.Monad.Trans.Class
 import Language.LSP.VFS (virtualFileText)
 import Language.LSP.Protocol.Lens hiding (publishDiagnostics, options)
 import Language.LSP.Diagnostics (partitionBySource)
@@ -57,7 +54,7 @@ runLanguageServer = runServer $ ServerDefinition
 -- | LSP message handlers
 handlers :: Handlers (LspM ())
 handlers = mconcat
-  [ notificationHandler SMethod_Initialized $ \msg -> return (),
+  [ notificationHandler SMethod_Initialized $ \_msg -> return (),
 
     -- Handle document open/change events for diagnostics
     notificationHandler SMethod_TextDocumentDidOpen $ \msg -> do
@@ -128,8 +125,8 @@ parseErrorToDiagnostic parseError = Diagnostic
 -------------------------------------------------------------
 
 -- | Handle document symbol requests
-handleDocumentSymbols :: (MonadIO m, MonadLsp () m) => Uri -> m [DocumentSymbol]
-handleDocumentSymbols uri = do
+_handleDocumentSymbols :: (MonadIO m, MonadLsp () m) => Uri -> m [DocumentSymbol]
+_handleDocumentSymbols uri = do
   result <- runMaybeT $ do
     vf <- MaybeT $ getVirtualFile (toNormalizedUri uri)
     let content = virtualFileText vf
@@ -143,24 +140,24 @@ handleDocumentSymbols uri = do
 -------------------------------------------------------------
 
 -- | Handle go-to-definition requests
-handleGotoDefinition :: (MonadIO m, MonadLsp () m) => Uri -> Position -> m (Maybe Location)
-handleGotoDefinition uri pos = runMaybeT $ do
+_handleGotoDefinition :: (MonadIO m, MonadLsp () m) => Uri -> Position -> m (Maybe Location)
+_handleGotoDefinition uri pos = runMaybeT $ do
   vf <- MaybeT $ getVirtualFile (toNormalizedUri uri)
   let content = virtualFileText vf
   program <- MaybeT $ return $ either (const Nothing) Just $ parseProgram (T.unpack content)
   context <- MaybeT $ return $ either (const Nothing) Just $ runChecker program
-  let symbolName = extractSymbolAtPosition content pos
-  MaybeT $ return $ findDefinition context (lspPositionToASTPosition pos) symbolName
+  let symbolName = _extractSymbolAtPosition content pos
+  MaybeT $ return $ findDefinition context (_lspPositionToASTPosition pos) symbolName
 
 -------------------------------------------------------------
 -- Utility Functions
 -------------------------------------------------------------
 
 -- | Extract symbol name at given position (simplified implementation)
-extractSymbolAtPosition :: T.Text -> Position -> String
-extractSymbolAtPosition _content _pos = "placeholder" -- TODO: Implement proper symbol extraction
+_extractSymbolAtPosition :: T.Text -> Position -> String
+_extractSymbolAtPosition _content _pos = "placeholder" -- TODO: Implement proper symbol extraction
 
 -- | Convert LSP Position to AST Position
-lspPositionToASTPosition :: Position -> Language.AST.Position
-lspPositionToASTPosition (Position line char) =
+_lspPositionToASTPosition :: Position -> Language.AST.Position
+_lspPositionToASTPosition (Position line char) =
   Language.AST.Position (fromIntegral line + 1) (fromIntegral char + 1) Nothing

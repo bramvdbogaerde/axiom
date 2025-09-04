@@ -2,9 +2,7 @@ module ParseTestsSpec where
 
 import Test.Hspec
 import Language.AST
-import Language.Range
 import Language.Types (Value(..))
-import Control.Applicative (liftA2)
 import Data.Functor.Identity
 import qualified Data.Set as Set
 import TestInfrastructure

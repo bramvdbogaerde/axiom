@@ -18,9 +18,6 @@ import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.Extra (ifM)
 import Control.Monad ((>=>), zipWithM_)
-import Data.Functor.Identity
-import qualified Data.Set as Set
-import qualified Data.List as List
 import GHC.Exts (sortWith)
 
 -------------------------------------------------------------
@@ -114,6 +111,12 @@ refTerm term = runStateT (transformTerm term)
 
     transformTerm (HaskellExpr expr tpy range) =
       return $ HaskellExpr expr tpy range
+    
+    transformTerm (IncludedIn _ _ _) =
+      error "IncludedIn terms cannot be unified directly - should be handled in solver"
+    
+    transformTerm (SetOfTerms _ _ _) =
+      error "SetOfTerms cannot be unified directly - should be handled in solver"
 
 -- | Visited list abstraction for cycle detection
 type VisitedList p s = [BST.STRef s (CellValue p s String)]
@@ -128,7 +131,8 @@ addVisited ref visited = ref : visited
 
 -- | Convert a pointer-based term back to a pure term with cycle detection
 pureTerm' :: RefTerm p s -> VariableMapping p s -> BST.ST s (Either String (PureTerm' p))
-pureTerm' term mapping = do
+pureTerm' term _mapping = do
+  -- TODO: should we still flatten the mapping or not?
   -- flattenMapping mapping
   runExceptT $ evalStateT (convertTerm term) []
   where
@@ -160,6 +164,12 @@ pureTerm' term mapping = do
 
     convertTerm (HaskellExpr expr tpy range) =
       return $ HaskellExpr expr tpy range
+    
+    convertTerm (IncludedIn _ _ _) =
+      lift $ throwError "IncludedIn terms cannot be unified directly - should be handled in solver"
+    
+    convertTerm (SetOfTerms _ _ _) =
+      lift $ throwError "SetOfTerms cannot be unified directly - should be handled in solver"
 
 -- | Same as pureTerm' but raises an error if the term could not be converted
 pureTerm :: RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
@@ -184,7 +194,7 @@ pureTermGround term mapping = do
 -- engine. The order is as follows:
 --
 -- Atom < Eqq < Neq < Transition < HaskellExpr < Value
-data TermType = AtomTp | EqqTp | NeqTp | TransitionTp | ValueTp | FunctorTp | HaskellExprTp
+data TermType = AtomTp | EqqTp | NeqTp | TransitionTp | ValueTp | FunctorTp | HaskellExprTp | IncludedInTp | SetOfTermsTp
               deriving (Ord, Eq, Enum)
 termTypeOf ::Term' p x -> TermType
 termTypeOf Atom{} = AtomTp
@@ -194,10 +204,14 @@ termTypeOf Transition{} = TransitionTp
 termTypeOf HaskellExpr{} = HaskellExprTp
 termTypeOf TermValue{} = ValueTp
 termTypeOf Functor{} = FunctorTp
+termTypeOf IncludedIn{} = IncludedInTp
+termTypeOf SetOfTerms{} = SetOfTermsTp
 
 -- | Puts two terms into a predictable order, therefore elliminating some symmetric cases in the unification algorithm.
 termOrder :: Term' p x -> Term' p x -> (Term' p x, Term' p x)
-termOrder a b = let [a', b'] = sortWith (fromEnum . termTypeOf) [a, b] in (a', b')
+termOrder a b = case sortWith (fromEnum . termTypeOf) [a, b] of
+  [a', b'] -> (a', b')
+  _ -> error "termOrder: impossible case - sortWith should always return exactly 2 elements"
 
 -- | Unify two reference-based terms
 unifyTerms :: forall p s . (AnnotateType p, HaskellExprExecutor p) => RefTerm p s -> RefTerm p s -> UnificationM p s ()
@@ -233,7 +247,7 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
     --
     -- Haskell expressions
     -- 
-    unifyTermsImpl otherTerm haskellExpr@(HaskellExpr hatch _ _) = do
+    unifyTermsImpl otherTerm (HaskellExpr hatch _ _) = do
       -- Try to execute the Haskell expression and unify with the result
       varMapping <- ask
       pureMapping <- lift $ lift $ buildPureMapping varMapping
@@ -244,7 +258,7 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
           -- TODO: The resultRef should not contain any variables and this should be enforced somehow in the future
           unifyTermsImpl otherTerm resultRef
 
-    unifyTermsImpl t1 t2 = throwError "Cannot unify different term structures"
+    unifyTermsImpl _t1 _t2 = throwError "Cannot unify different term structures"
 
     unifyAtoms :: Cell p s String -> Cell p s String -> UnificationM p s ()
     unifyAtoms cell1@(Ref ref1) cell2@(Ref ref2) = do

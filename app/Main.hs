@@ -6,9 +6,6 @@ import Language.AST
 import Language.Parser
 import Language.TypeCheck
 import Language.CodeGen
-import Text.Pretty.Simple hiding (Vivid, Green)
-import Data.Either
-import Data.Bifunctor
 import Control.Monad
 import Data.Maybe (catMaybes)
 import Data.List (stripPrefix)
@@ -132,7 +129,7 @@ extractTestQueries comments = catMaybes $ map extractQuery comments
 
 -- | Parse and run a single test query against a program with timeout protection
 runTestQuery :: Program -> String -> IO Bool
-runTestQuery program@(Program decls _) queryStr = do
+runTestQuery (Program decls _) queryStr = do
   putStr $ "Testing query: " ++ queryStr ++ " ... "
   case parseTerm queryStr of
     Left parseError -> do
@@ -191,7 +188,7 @@ runRuncodegenCommand (InputOptions filename) = do
 -- | Execute the solver test command
 runRunsolverCommand :: InputOptions -> IO ()
 runRunsolverCommand (InputOptions filename) = do
-  (contents, ast@(Program _ comments)) <- loadAndParseFile filename
+  (_contents, ast@(Program _ comments)) <- loadAndParseFile filename
   let queries = extractTestQueries comments
   if null queries
     then putStrLn "No test queries found in file (looking for %test: comments)"

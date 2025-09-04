@@ -26,7 +26,7 @@ module Language.Types(
   ) where
 
 import Language.Haskell.TH.Syntax hiding (Type)
-import Data.Dynamic hiding (Type)
+import Data.Dynamic
 import Data.Kind
 import Data.Singletons
 import GHC.TypeError
@@ -35,7 +35,7 @@ import GHC.TypeError
 -- Utilities
 ------------------------------------------------------------
 
-type Assoc :: forall k1 k2 . k1 -> k2 -> * 
+type Assoc :: forall k1 k2 . k1 -> k2 -> Type 
 data Assoc (a :: k1) (b :: k2)
 
 type family Find (k :: [Type]) (t :: k1) :: Type where
@@ -67,6 +67,11 @@ data TypHask (k :: Typ)  where
   SIntType  :: TypHask IntType
   SStrType  :: TypHask StrType 
   SAnyType  :: TypHask AnyType
+
+instance Show (TypHask k) where
+  show SIntType = "IntType"
+  show SStrType = "StrType"
+  show SAnyType = "AnyType"
 
 type instance Sing = TypHask
 
@@ -100,6 +105,7 @@ asType _ _ = Nothing
 toValue :: Find TypHaskAssoc k -> TypHask k -> Value
 toValue v SIntType = IntValue v
 toValue v SStrType = StrValue v
+toValue _ s = error $ "could not convert value of type " ++ show s
 
 -- | Get the type of a Value
 typeOf :: Value -> Typ
@@ -113,8 +119,11 @@ typeOf (StrValue _) = StrType
 -- | Template haskell integration
 instance Lift Typ where 
   liftTyped (Sort str) = [|| Sort $$(liftTyped str) ||]
-  liftTyped IntType = [|| IntType ||]
-  liftTyped StrType = [|| StrType ||]
+  liftTyped IntType   = [|| IntType ||]
+  liftTyped StrType   = [|| StrType ||]
+  liftTyped AnyType   = [|| AnyType ||]
+  liftTyped VoidType  = [|| VoidType ||]
+  liftTyped (SetOf t) = [|| SetOf $$(liftTyped t) ||] 
 
 instance Lift Value where
   liftTyped (IntValue i) = [|| IntValue $$(liftTyped i) ||]
@@ -125,6 +134,8 @@ instance Lift Value where
 typHaskEx :: Typ -> Q Exp
 typHaskEx IntType = [| SIntType |]
 typHaskEx StrType = [| SStrType |]
+typHaskEx AnyType = [| SAnyType |]
+typHaskEx t = error $ "could not convert " ++ show t
 
 ------------------------------------------------------------
 -- String <-> Type

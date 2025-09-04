@@ -1,7 +1,6 @@
 module RenamerTestsSpec where
 
 import Test.Hspec
-import Test.HUnit (assertFailure)
 import Language.AST
 import Language.Solver.Renamer
 import Data.Functor.Identity

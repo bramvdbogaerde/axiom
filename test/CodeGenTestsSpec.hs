@@ -15,7 +15,7 @@ import System.Process
 import System.Exit
 import Data.List (isPrefixOf, stripPrefix)
 import Data.Maybe (catMaybes, listToMaybe)
-import Control.Exception (catch, IOException, finally)
+import Control.Exception (catch, IOException)
 import Control.Monad.Extra (ifM)
 import Control.Monad (filterM)
 import Control.Applicative ((<|>))

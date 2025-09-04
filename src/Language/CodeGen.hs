@@ -12,7 +12,6 @@ import Language.Haskell.TH hiding (Range)
 import Language.Haskell.TH.Syntax hiding (Range)
 import Language.Haskell.Meta.Parse (parseExp)
 import Language.AST
-import Language.Range
 import Language.TypeCheck
 import Language.Types
 import Language.Parser (parseTerm)
@@ -27,7 +26,7 @@ import qualified Control.Monad.Reader as Reader
 import qualified Data.Text as T
 import qualified Data.Set as Set
 import qualified Data.Map as Map
-import Data.Maybe (fromJust, catMaybes)
+import Data.Maybe (catMaybes)
 import Data.List (stripPrefix)
 import Data.Bifunctor (first)
 import NeatInterpolation
@@ -168,7 +167,7 @@ generateExecuteFunction haskellExp freeVarList typingCtx expectedType = do
     buildLet (varName, Just extractExpr) bodyExpr =
       let varNameE = mkName varName
       in [| $(return extractExpr) >>= \ $(varP varNameE) -> $(return bodyExpr) |]
-    buildLet (varName, Nothing) bodyExpr = [| $(return bodyExpr) |]
+    buildLet (_varName, Nothing) bodyExpr = [| $(return bodyExpr) |]
 
 
 -- | Generate extraction code for a single variable
@@ -278,6 +277,9 @@ pureTermToExp ctx = \case
 
   IncludedIn var term range ->
     [| IncludedIn $(lift var) $(pureTermToExp ctx term) $(rangeToExp range) |]
+
+  SetOfTerms terms tpy range ->
+    [| SetOfTerms (Set.fromList $(listE (map (pureTermToExp ctx) (Set.toList terms)))) $(lift tpy) $(rangeToExp range) |]
 
 rangeToExp :: Range -> Q Exp
 rangeToExp (Range (Position line1 col1 fname1) (Position line2 col2 fname2)) =

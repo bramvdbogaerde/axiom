@@ -17,7 +17,6 @@ import qualified Data.Map as Map
 import Data.Map ( Map, Map )
 import Control.Monad.Writer
 import Control.Monad.Reader
-import Control.Monad.IO.Class
 import Control.Monad.State (gets)
 import Control.Lens ((^.), (.~), (&), makeLenses)
 import Data.List (intercalate)
@@ -25,8 +24,6 @@ import GHC.IO.Handle
 import System.IO
 import qualified Data.List as List
 import qualified Text.Printf as Printf
-import Control.Monad
-import System.Timeout (timeout)
 import qualified Data.Set as Set
 import Data.Set (Set)
 import Text.Read (readMaybe)
@@ -249,7 +246,7 @@ tracedSolve query = do
   outCache <- getCurrentOutCache
   inCache <- getInCacheContents []
   trace $ TraceEntry 0 ("Starting to solve: " ++ show query) Nothing [] 0 Nothing partialMapping cacheSize outCache inCache
-  tracedSolveUntilStable query 1
+  _ <- tracedSolveUntilStable query 1
   liftSolver (cachedSolutions query)
   
 

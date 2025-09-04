@@ -19,7 +19,7 @@ import LanguageServer.Diagnostics (rangeToDiagnosticRange)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
-import Data.Maybe (mapMaybe, fromMaybe)
+import Data.Maybe (mapMaybe)
 import Control.Applicative
 
 -------------------------------------------------------------

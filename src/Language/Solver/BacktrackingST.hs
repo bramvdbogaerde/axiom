@@ -16,12 +16,8 @@ module Language.Solver.BacktrackingST
 import Control.Lens
 import Control.Monad.Reader
 import qualified Control.Monad.ST as ST
-import Control.Monad.State
-import Data.Array
 import Data.Array.ST
-import Data.Kind
 import qualified Data.STRef as STRef
-import Data.Void
 import Unsafe.Coerce
 
 -------------------------------------------------------------
