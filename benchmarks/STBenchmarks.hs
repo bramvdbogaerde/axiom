@@ -4,7 +4,6 @@ import Criterion.Main
 import qualified Language.Solver.BacktrackingST as BST
 import qualified Control.Monad.ST as ST
 import qualified Data.STRef as STRef
-import System.Random
 import Text.Printf
 
 -- | Sizes to benchmark
