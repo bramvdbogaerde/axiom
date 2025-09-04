@@ -36,6 +36,8 @@ tokens :-
   <0> "="                           { mkToken Equal }
   <0> "rules"                       { mkToken Rules }
   <0> "rule"                        { mkToken Rule }
+  <0> "true"                        { mkToken (Boo True)  }
+  <0> "false"                       { mkToken (Boo False) }
   <0> "("                           { mkToken Lpar }
   <0> ")"                           { mkToken Rpar }
   <0> "{{{"                         { begin h }

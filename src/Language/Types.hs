@@ -52,6 +52,7 @@ type family Find (k :: [Type]) (t :: k1) :: Type where
 data Typ = Sort String -- ^ a user-defined (or system) sort
          | IntType     -- ^ values are strings 
          | StrType     -- ^ values are integers
+         | BooType     -- ^ values are boolean
          | SetOf Typ   -- ^ a set of values from the given type
          | AnyType
          | VoidType    -- ^ type for expressions that don't have a meaningful type (incompatible with all others)
@@ -66,18 +67,22 @@ primTyp t = t
 data TypHask (k :: Typ)  where
   SIntType  :: TypHask IntType
   SStrType  :: TypHask StrType 
+  SBooType  :: TypHask BooType
   SAnyType  :: TypHask AnyType
+  
 
 instance Show (TypHask k) where
   show SIntType = "IntType"
   show SStrType = "StrType"
   show SAnyType = "AnyType"
+  show SBooType = "BooType"
 
 type instance Sing = TypHask
 
 type TypHaskAssoc = '[
     Assoc IntType Int,
     Assoc StrType String,
+    Assoc BooType Bool,
     Assoc AnyType Dynamic
   ]
 
@@ -89,6 +94,7 @@ type TypHaskAssoc = '[
 data Value where
   IntValue :: Int -> Value
   StrValue :: String -> Value
+  BooValue :: Bool -> Value
   deriving (Eq, Ord, Show)
 
 ------------------------------------------------------------
@@ -99,6 +105,7 @@ data Value where
 asType :: TypHask k -> Value -> Maybe (Find TypHaskAssoc k)
 asType SIntType (IntValue v) = Just v
 asType SStrType (StrValue v) = Just v
+asType SBooType (BooValue v) = Just v
 asType _ _ = Nothing
 
 -- | Convert Haskell types to Value
@@ -111,6 +118,7 @@ toValue _ s = error $ "could not convert value of type " ++ show s
 typeOf :: Value -> Typ
 typeOf (IntValue _) = IntType
 typeOf (StrValue _) = StrType
+typeOf (BooValue _) = BooType
 
 ------------------------------------------------------------
 -- Template Haskell
@@ -121,6 +129,7 @@ instance Lift Typ where
   liftTyped (Sort str) = [|| Sort $$(liftTyped str) ||]
   liftTyped IntType   = [|| IntType ||]
   liftTyped StrType   = [|| StrType ||]
+  liftTyped BooType   = [|| BooType ||]
   liftTyped AnyType   = [|| AnyType ||]
   liftTyped VoidType  = [|| VoidType ||]
   liftTyped (SetOf t) = [|| SetOf $$(liftTyped t) ||] 
@@ -128,6 +137,7 @@ instance Lift Typ where
 instance Lift Value where
   liftTyped (IntValue i) = [|| IntValue $$(liftTyped i) ||]
   liftTyped (StrValue s) = [|| StrValue $$(liftTyped s) ||]
+  liftTyped (BooValue b) = [|| BooValue $$(liftTyped b) ||]  
 
 
 -- | Convert a Typ to the corresponding TypHask instance
@@ -135,6 +145,7 @@ typHaskEx :: Typ -> Q Exp
 typHaskEx IntType = [| SIntType |]
 typHaskEx StrType = [| SStrType |]
 typHaskEx AnyType = [| SAnyType |]
+typHaskEx BooType = [| SBooType |]
 typHaskEx t = error $ "could not convert " ++ show t
 
 ------------------------------------------------------------
@@ -146,6 +157,7 @@ fromSortName :: String -> Typ
 fromSortName "Int" = IntType
 fromSortName "String" = StrType
 fromSortName "Any" = AnyType
+fromSortName "Bool" = BooType
 fromSortName str = Sort str
 
 -- | Convert a Typ to its corresponding sort name string (inverse of toSortName)
@@ -153,8 +165,10 @@ toSortName :: Typ -> String
 toSortName (Sort str) = str
 toSortName IntType = "Int"
 toSortName StrType = "String"
+toSortName BooType = "Bool"
 toSortName AnyType = "Any"
 toSortName (SetOf typ) = "Set(" ++ toSortName typ ++ ")"
 toSortName VoidType = "Void"
+
 
 

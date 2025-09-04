@@ -37,6 +37,7 @@ import qualified Data.Set as Set
   '/='        { TokenWithRange NotEqual _ }
   'rules'     { TokenWithRange Rules _ }
   'rule'      { TokenWithRange Rule _ }
+  BOOL        { TokenWithRange (Boo _) _ }
   'syntax'    { TokenWithRange (Ident "syntax") _ }
   'in'        { TokenWithRange (Ident "in") _ }
   'transition' { TokenWithRange (Ident "transition") _ }
@@ -180,6 +181,7 @@ BasicTerm : IDENT                            { Atom (Identity (getIdent $1)) () 
           | IDENT '(' TermArgs ')'           { Functor (getIdent $1) $3 () (mkRange $1 $4) }
           | HASKEXPR                         { AST.HaskellExpr (getHaskellExpr $1) () (rangeOf $1) }
           | INTLIT                           { TermValue (IntValue (getIntLit $1)) () (rangeOf $1) }
+          | BOOL                             { TermValue (BooValue (getBooLit $1))  () (rangeOf $1) }
           | '(' Term ')'                     { $2 }
 
 Goal :: { PureTerm }
@@ -201,6 +203,10 @@ getString (TokenWithRange tok _) = tokVal tok
 
 getIntLit :: TokenWithRange -> Int
 getIntLit (TokenWithRange tok _) = tokInt tok
+
+getBooLit :: TokenWithRange -> Bool
+getBooLit (TokenWithRange tok _) = tokBool tok
+
 
 getHaskellExpr :: TokenWithRange -> String
 getHaskellExpr (TokenWithRange tok _) = tokVal tok

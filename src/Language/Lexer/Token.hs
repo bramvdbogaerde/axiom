@@ -16,6 +16,7 @@ data Token = EOF
            | RCBa        -- ^ '}'
            | LBra        -- ^ '['
            | RBra        -- ^ ']'
+           | Boo { tokBool :: Bool }      -- ^ 'true' | 'false'
            | Comment { tokVal :: String } -- ^ '%' followed by comment text
            | Comma       -- ^ ',' 
            | Dot         -- ^ '.'
