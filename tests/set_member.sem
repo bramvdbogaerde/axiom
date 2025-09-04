@@ -1,0 +1,14 @@
+
+syntax {
+	elements in Set(Int);
+	x in Int;
+	conclusion in Conclusion ::= member(x);
+};
+
+rules {
+	rule "Member" [ elements0 = {1, 2, 3}; x in elements0  ] => [ member(x) ];
+};
+
+%test: member(1)
+%test: member(2)
+%test: member(3)

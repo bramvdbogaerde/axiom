@@ -183,6 +183,7 @@ runRuncodegenCommand (InputOptions filename) = do
       let outName = replaceExtension filename "out.hs"
       writeFile outName generatedCode
       putStrLn $ "Generated code written to: " ++ outName
+      -- TODO: ensure that this command can be executed without using cabal (dependending on the environment: prod/dev?).
       exitCode <- system $ "cabal exec -- runghc --ghc-arg=\"-package analysislang\" " ++ outName
       exitWith exitCode
 
