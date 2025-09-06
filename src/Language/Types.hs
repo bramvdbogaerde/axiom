@@ -169,6 +169,3 @@ toSortName BooType = "Bool"
 toSortName AnyType = "Any"
 toSortName (SetOf typ) = "Set(" ++ toSortName typ ++ ")"
 toSortName VoidType = "Void"
-
-
-
