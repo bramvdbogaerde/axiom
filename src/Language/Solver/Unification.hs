@@ -128,6 +128,9 @@ refTerm term = runStateT (transformTerm term)
     transformTerm (IncludedIn vrr set range) =
       IncludedIn vrr <$> transformTerm set <*> pure range
 
+    transformTerm (TermHask value tpy range) =
+      return $ TermHask value tpy range
+
 -- | Visited list abstraction for cycle detection
 type VisitedList p s = [BST.STRef s (CellValue p s String)]
 
@@ -181,6 +184,9 @@ pureTerm' term _mapping = do
     convertTerm (SetOfTerms ts tpy r)  =
       SetOfTerms <$> fmap Set.fromList (mapM convertTerm (Set.toList ts)) <*> pure tpy <*> pure r
 
+    convertTerm (TermHask value tpy range) =
+      return $ TermHask value tpy range
+
 -- | Same as pureTerm' but raises an error if the term could not be converted
 pureTerm :: (ForAllPhases Ord p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
 pureTerm term = pureTerm' term >=> either error return
@@ -204,7 +210,7 @@ pureTermGround term mapping = do
 -- engine. The order is as follows:
 --
 -- Atom < Eqq < Neq < Transition < HaskellExpr < Value
-data TermType = AtomTp | EqqTp | NeqTp | TransitionTp | ValueTp | FunctorTp | HaskellExprTp | IncludedInTp | SetOfTermsTp
+data TermType = AtomTp | EqqTp | NeqTp | TransitionTp | ValueTp | FunctorTp | HaskellExprTp | IncludedInTp | SetOfTermsTp | TermHaskTp
               deriving (Ord, Eq, Enum)
 termTypeOf ::Term' p x -> TermType
 termTypeOf Atom{} = AtomTp
@@ -216,6 +222,7 @@ termTypeOf TermValue{} = ValueTp
 termTypeOf Functor{} = FunctorTp
 termTypeOf IncludedIn{} = IncludedInTp
 termTypeOf SetOfTerms{} = SetOfTermsTp
+termTypeOf TermHask{} = TermHaskTp
 
 -- | Puts two terms into a predictable order, therefore elliminating some symmetric cases in the unification algorithm.
 termOrder :: Term' p x -> Term' p x -> (Term' p x, Term' p x)
@@ -245,15 +252,13 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
       if v1 == v2 then return ()
       else throwError $ "Values don't match: " ++ show v1 ++ " vs " ++ show v2
     unifyTermsImpl (SetOfTerms {}) (SetOfTerms {}) =  error "set unification not yet supported"
-    --
-    -- Unification with atoms
+    unifyTermsImpl (TermHask v1 _ _) (TermHask v2 _ _) =
+      if v1 == v2 then return ()
+      else throwError "Embedded Haskell values don't match"
     -- 
-    unifyTermsImpl (Atom cell _ _) t =
-      unifyAtomWithTerm cell t
-    unifyTermsImpl t (Atom cell _ _) =
-      unifyAtomWithTerm cell t
     -- Haskell expressions
     -- 
+    unifyTermsImpl hh@(HaskellExpr {}) otherTerm = unifyTermsImpl otherTerm hh
     unifyTermsImpl otherTerm (HaskellExpr hatch _ _) = do
       -- Try to execute the Haskell expression and unify with the result
       varMapping <- ask
@@ -264,6 +269,14 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
           (resultRef, _) <- lift $ lift $ refTerm result varMapping
           -- TODO: The resultRef should not contain any variables and this should be enforced somehow in the future
           unifyTermsImpl otherTerm resultRef
+
+    --
+    -- Unification with atoms
+    -- 
+    unifyTermsImpl (Atom cell _ _) t =
+      unifyAtomWithTerm cell t
+    unifyTermsImpl t (Atom cell _ _) =
+      unifyAtomWithTerm cell t
 
     unifyTermsImpl _t1 _t2 = throwError "Cannot unify different term structures"
 
@@ -304,7 +317,7 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
       lift (lift $ readCellRef ref) >>= \case
         Uninitialized _ -> lift $ lift $ writeCellRef ref (Value term)
         Value existingTerm -> unifyTermsImpl existingTerm term
-        _ -> throwError "Unexpected cell value in atom-term unification"
+        _ -> error "Unexpected cell value in atom-term unification"
 
 -- | Convert variable mapping to pure term mapping for Haskell expression execution
 buildPureMapping :: forall p s . (ForAllPhases Ord p) => AnnotateType p => VariableMapping p s -> BST.ST s (Map String (PureTerm' p))

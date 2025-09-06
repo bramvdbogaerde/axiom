@@ -16,7 +16,7 @@ import Data.Maybe (fromMaybe)
 -- are ground before passing them to the function and tries to unwrap the data
 -- into pure Haskell types wherever possible.
 data CodeGenPhase
-type instance XHaskellExpr CodeGenPhase  = HaskellHatch
+type instance XHaskellExpr CodeGenPhase  = HaskellHatch CodeGenPhase
 type instance XTypeAnnot CodeGenPhase  = Typ
 
 type CodeGenProgram = Program' CodeGenPhase

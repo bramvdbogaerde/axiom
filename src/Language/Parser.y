@@ -92,11 +92,12 @@ SyntaxDecls : {- empty -}                    { [] }
 SyntaxDecl :: { SyntaxDecl }
 SyntaxDecl : IdentList 'in' TypeRef MaybeProductions { SyntaxDecl $1 $3 (fromMaybe [] $4) (rangeOf $3) }
 
-TypeRef :: { TypeCtor }
-TypeRef : IDENT { TypeCtor (getIdent $1) [] (rangeOf $1) }
-        | IDENT '(' TypeRefs ')' { TypeCtor (getIdent $1) $3 (rangeOf $1) }
+TypeRef :: { TypeCon }
+TypeRef : IDENT { TypeApp (TypeTyp (getIdent $1) (rangeOf $1)) [] (rangeOf $1) }
+        | IDENT '(' TypeRefs ')' { TypeApp (TypeTyp (getIdent $1) (rangeOf $1)) $3 (rangeOf $1) }
+        | HASKEXPR { TypeHas (getHaskellExpr $1) (rangeOf $1) }
       
-TypeRefs :: { [TypeCtor] }
+TypeRefs :: { [TypeCon] }
 TypeRefs : {- empty -} { [] }
          | TypeRef { [$1] }
          | TypeRef ',' TypeRefs { $1 : $3 }

@@ -75,6 +75,7 @@ renameTerm (IncludedIn var term range) = IncludedIn <$> freshName var <*> rename
 renameTerm (SetOfTerms terms tpy range) = do
   renamedTermsList <- mapM renameTerm (Set.toList terms)
   return $ SetOfTerms (Set.fromList renamedTermsList) tpy range
+renameTerm (TermHask value tpy range) = pure $ TermHask value tpy range
 
 -- | Rename all variables in a list of terms
 renameTerms :: (HaskellExprRename p, ForAllPhases Ord p, MonadRename m) => [PureTerm' p] -> m [PureTerm' p]
@@ -117,6 +118,7 @@ unrenameTerm (HaskellExpr expr tpy range) = HaskellExpr expr tpy range
 unrenameTerm (TermValue value tpy range) = TermValue value tpy range
 unrenameTerm (IncludedIn var term range) = IncludedIn (baseName var) (unrenameTerm term) range
 unrenameTerm (SetOfTerms terms tpy range) = SetOfTerms (Set.fromList $ map unrenameTerm $ Set.toList terms) tpy range
+unrenameTerm (TermHask value tpy range) = TermHask value tpy range
 
 -- | Removes the part of the variable name that makes it unique
 baseName :: String -> String

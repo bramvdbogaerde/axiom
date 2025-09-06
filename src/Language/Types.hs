@@ -56,6 +56,7 @@ data Typ = Sort String -- ^ a user-defined (or system) sort
          | SetOf Typ   -- ^ a set of values from the given type
          | AnyType
          | VoidType    -- ^ type for expressions that don't have a meaningful type (incompatible with all others)
+         | HaskType String 
         deriving (Ord, Eq, Show)        
 
 -- | LEGACY (TODO): converts a user-defined type to primitive type
@@ -132,7 +133,8 @@ instance Lift Typ where
   liftTyped BooType   = [|| BooType ||]
   liftTyped AnyType   = [|| AnyType ||]
   liftTyped VoidType  = [|| VoidType ||]
-  liftTyped (SetOf t) = [|| SetOf $$(liftTyped t) ||] 
+  liftTyped (SetOf t) = [|| SetOf $$(liftTyped t) ||]
+  liftTyped (HaskType s) = [|| HaskType $$(liftTyped s) ||]
 
 instance Lift Value where
   liftTyped (IntValue i) = [|| IntValue $$(liftTyped i) ||]
@@ -160,7 +162,7 @@ fromSortName "Any" = AnyType
 fromSortName "Bool" = BooType
 fromSortName str = Sort str
 
--- | Convert a Typ to its corresponding sort name string (inverse of toSortName)
+-- | Convert a Typ to its corresponding sort name string (inverse of fromSortName)
 toSortName :: Typ -> String
 toSortName (Sort str) = str
 toSortName IntType = "Int"
@@ -169,6 +171,5 @@ toSortName BooType = "Bool"
 toSortName AnyType = "Any"
 toSortName (SetOf typ) = "Set(" ++ toSortName typ ++ ")"
 toSortName VoidType = "Void"
-
-
+toSortName (HaskType s) = "${" ++ s ++ "}"
 

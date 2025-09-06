@@ -9,7 +9,6 @@
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 module Language.AST(
     Tpy,
@@ -30,11 +29,14 @@ module Language.AST(
     RewriteDecl'(..),
     RuleDecl'(..),
     Term'(..),
-    TypeCtor(..),
-    fromTypeCtor,
+    
+    TypeCon(..),
+    fromTypeCon,
+    typeSubst,
 
     XHaskellExpr,
     XTypeAnnot,
+    XEmbeddedValue,
 
     PureTerm,
     PureTerm',
@@ -68,8 +70,8 @@ module Language.AST(
     module Language.Range
   ) where
 
-import Data.Set
-import qualified Data.Set as Set
+import Data.Set hiding (map)
+import qualified Data.Set as Set hiding (map)
 import Text.Regex (mkRegex, matchRegex)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Language.Range
@@ -78,6 +80,7 @@ import Data.Functor.Identity
 import Data.List (intercalate)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Void (Void, absurd)
 
 import Language.Types
 import Data.Data
@@ -90,6 +93,7 @@ import Control.Monad.Error.Class
 type XHaskellExpr :: Type -> Type
 type family XHaskellExpr p  -- ^ determines which type to use for haskell expression nodes in each phase
 type family XTypeAnnot p    -- ^ determines whether this phase adds type information to the AST element.
+type family XEmbeddedValue p -- ^ determines the type of embedded Haskell expression values in each phase
 
 -- | After parsing, the Haskell code is represented as a string since it still has to be compiled
 -- and turned into a Template Haskell expression, we do so after type checking and during code generation
@@ -100,14 +104,16 @@ type family XTypeAnnot p    -- ^ determines whether this phase adds type informa
 data ParsePhase
 type instance XHaskellExpr ParsePhase = String
 type instance XTypeAnnot ParsePhase = ()
+type instance XEmbeddedValue ParsePhase = Void -- cannot construct embedded values during parsing
 
 data TypingPhase
 type instance XHaskellExpr TypingPhase = String -- after typing the Haskell expression is still a string
 type instance XTypeAnnot TypingPhase = Typ
+type instance XEmbeddedValue TypingPhase = Void -- cannot construct embedded values during typing
 
 -- | For all phase add the specified constraint
 type ForAllPhases :: (Type -> Constraint) -> Type -> Constraint
-type ForAllPhases c p = (c (XHaskellExpr p), c (XTypeAnnot p))
+type ForAllPhases c p = (c (XHaskellExpr p), c (XTypeAnnot p), c (XEmbeddedValue p))
 
 
 -------------------------------------------------------------
@@ -139,18 +145,34 @@ typeComment (Comment nam ran) = Comment nam ran
 -- | Names of types
 type Tpy = String
 
--- | A  type constructor is a name of a type applied to zero or more type arguments
-data TypeCtor = TypeCtor { ctorName :: String, ctorAgs :: [TypeCtor], ctorRange :: Range }
+-- | A type constructor in the AST
+data TypeCon = TypeApp TypeCon [TypeCon] Range -- ^ T(T1, ..., TN)
+             | TypeTyp String Range            -- ^ T
+             | TypeVar String Range            -- ^ a
+             | TypeHas String Range            -- ${Map String V}
               deriving (Ord, Eq, Show)
 
-instance RangeOf TypeCtor where
-  rangeOf = ctorRange
+instance RangeOf TypeCon where
+  rangeOf = \case TypeApp _ _ r -> r
+                  TypeTyp _ r   -> r
+                  TypeVar _ r   -> r
+                  TypeHas _ r   -> r
 
   -- | Convert a type constructor to a type
-fromTypeCtor :: TypeCtor -> Either String Typ
-fromTypeCtor (TypeCtor nam [] _) = return $ fromSortName nam
-fromTypeCtor (TypeCtor "Set" [a] _) = SetOf <$> fromTypeCtor a
-fromTypeCtor ctor = throwError $ "Invalid type constructor used " ++ show ctor
+fromTypeCon :: TypeCon -> Either String Typ
+fromTypeCon = \case (TypeApp (TypeTyp "Set" _) [t] _) -> SetOf <$> fromTypeCon t
+                    (TypeHas h _)                  -> return $ HaskType h
+                    (TypeApp (TypeTyp nam _) [] _) -> return $ fromSortName nam
+                    ctor -> throwError $ "Invalid type constructor used " ++ show ctor
+
+-- | Substitute variables in a type with another type
+typeSubst :: String -> TypeCon -> TypeCon -> TypeCon
+typeSubst var typ =
+  \case TypeApp opt opr r -> TypeApp (typeSubst var typ opt)
+                                     (map (typeSubst var typ) opr) r
+        t@TypeTyp {} -> t
+        tv@(TypeVar var' _) -> if var == var' then typ else tv
+        th@TypeHas {} -> th
 
 -- | A declaration is either a syntax section, rules section, transition
 -- declaration or or a rewrite rule.
@@ -169,7 +191,7 @@ type TypedDecl = Decl' TypingPhase
 -- | var in Tpy ::= term0 | term1 | ...
 data SyntaxDecl' p = SyntaxDecl {
     syntaxVars :: [String],
-    syntaxType :: TypeCtor,
+    syntaxType :: TypeCon,
     syntaxProductions :: [PureTerm' p],
     syntaxRange :: Range
   }
@@ -228,6 +250,7 @@ data Term' p f  = Atom (f String) (XTypeAnnot p)  Range
                 | TermValue Value (XTypeAnnot p) Range
                 | IncludedIn String (Term' p f) Range
                 | SetOfTerms (Set (Term' p f)) (XTypeAnnot p) Range
+                | TermHask (XEmbeddedValue p) (XTypeAnnot p) Range
 type Term = Term' ParsePhase
 
 deriving instance (Ord (f String), ForAllPhases Ord p) => Ord (Term' p f)
@@ -241,10 +264,11 @@ instance (Show (f String), ForAllPhases Show p) => Show (Term' p f) where
   show (Eqq left right  _ _) = show left ++ " = " ++ show right
   show (Neq left right _ _) = show left ++ " /= " ++ show right
   show (Transition tname left right _ _) = show left ++ " " ++ tname ++ " " ++ show right
-  show (HaskellExpr expr _ _) = "${" ++ show expr ++ "}"
+  show (HaskellExpr expr t _) = "${" ++ show expr ++ "} :: " ++ show t
   show (TermValue value _ _) = show value
   show (IncludedIn var term _) = var ++ " in " ++ show term
   show (SetOfTerms terms _ _) = "{" ++ intercalate ", " (Prelude.map show $ Set.toList terms) ++ "}"
+  show (TermHask value _ _) = "TermHask(" ++ show value ++ ")"
 
 -- | Specialized Show instance for PureTerm that doesn't show Identity wrapper
 instance {-# OVERLAPPING #-} Show PureTerm where
@@ -258,6 +282,7 @@ instance {-# OVERLAPPING #-} Show PureTerm where
   show (TermValue value _ _) = show value
   show (IncludedIn var term _) = var ++ " in " ++ show term
   show (SetOfTerms terms _ _) = "{" ++ intercalate ", " (Prelude.map show $ Set.toList terms) ++ "}"
+  show (TermHask v _ _) = absurd v
 
 type PureTerm = PureTerm' ParsePhase
 type PureTerm' p = Term' p Identity
@@ -274,6 +299,7 @@ atomNames = \case Atom a _ _ -> Set.singleton $ runIdentity a
                   TermValue {} -> Set.empty
                   IncludedIn var term _ -> Set.singleton var `Set.union` atomNames term
                   SetOfTerms terms _ _ -> foldMap atomNames terms
+                  TermHask {} -> Set.empty
 
 
 -- | Returns the name of the functor embedded in the term (if any),
@@ -297,6 +323,7 @@ instance RangeOf (Term' p f) where
                   TermValue _ _ r -> r
                   IncludedIn _ _ r -> r
                   SetOfTerms _ _ r -> r
+                  TermHask _ _ r -> r
 
 -- | Extract the name of the variable from variables suffixed with numbers
 variableName :: String -> String
@@ -329,9 +356,10 @@ termEqIgnoreRange (Transition n1 l1 r1 _ _) (Transition n2 l2 r2 _ _) =
 termEqIgnoreRange (HaskellExpr expr1 _ _) (HaskellExpr expr2 _ _) = expr1 == expr2
 termEqIgnoreRange (TermValue value1 _ _) (TermValue value2 _ _) = value1 == value2
 termEqIgnoreRange (IncludedIn v1 t1 _) (IncludedIn v2 t2 _) = v1 == v2 && termEqIgnoreRange t1 t2
-termEqIgnoreRange (SetOfTerms terms1 _ _) (SetOfTerms terms2 _ _) = 
-  Set.size terms1 == Set.size terms2 && 
+termEqIgnoreRange (SetOfTerms terms1 _ _) (SetOfTerms terms2 _ _) =
+  Set.size terms1 == Set.size terms2 &&
   all (\t1 -> any (termEqIgnoreRange t1) (Set.toList terms2)) (Set.toList terms1)
+termEqIgnoreRange (TermHask value1 _ _) (TermHask value2 _ _) = value1 == value2
 termEqIgnoreRange _ _ = False
 
 -- | Check whether the term is fully ground (i.e., does not contain any atoms)
@@ -342,10 +370,11 @@ isTermGround = \case
   Eqq left right _ _ -> isTermGround left && isTermGround right
   Neq left right _ _ -> isTermGround left && isTermGround right
   Transition _ left right _ _ -> isTermGround left && isTermGround right
-  HaskellExpr {} -> True
+  HaskellExpr {} -> False
   TermValue {} -> True
   IncludedIn _ term _ -> isTermGround term
   SetOfTerms terms _ _ -> all isTermGround terms
+  TermHask {} -> True
 
 
 -------------------------------------------------------------

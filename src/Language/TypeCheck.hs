@@ -11,6 +11,7 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.Set as Set
 import Data.Set (Set)
+import Data.Void (absurd)
 import Control.Monad.State
 import Control.Lens hiding (Context)
 import Language.AST
@@ -294,10 +295,10 @@ pass0VisitDecl (Syntax decls _) = mapM_ pass0VisitSyntaxDecl decls
   where
     -- no productions denotes a reference to an existing type, this means that:
     -- * variables are associated with types
-    -- * more relaxed set of types allowed (i.e., type constructors of arity 0)
+    -- * more relaxed set of types allowed (i.e., not just type constructors of arity 0)
     -- * checks whether type is actually valid
     pass0VisitSyntaxDecl (SyntaxDecl vars tpy [] range) = do
-      case fromTypeCtor tpy of
+      case fromTypeCon tpy of
         Left err -> throwErrorAt range (SortNotDefined err)
         Right sortTyp -> do
           -- Add the type to the environment if not already defined
@@ -312,13 +313,13 @@ pass0VisitDecl (Syntax decls _) = mapM_ pass0VisitSyntaxDecl decls
     -- * ensure the type is not duplicate
     -- * more strict type constructors (only arity 0) 
     pass0VisitSyntaxDecl (SyntaxDecl vars tpy _ctors range) = do
-      case fromTypeCtor tpy of
+      case fromTypeCon  tpy of
         Left err -> throwErrorAt range (SortNotDefined err)
         Right sortTyp -> do
           ifM (isSortDefined sortTyp)
               (throwError (DuplicateSort sortTyp))
-              (do recordSortDefSite (ctorName tpy) range
-                  registerTypeName (ctorName tpy) sortTyp
+              (do recordSortDefSite (toSortName sortTyp) range
+                  registerTypeName (toSortName sortTyp) sortTyp
                   mapM_ (typeAsUnique (DataAtom sortTyp) sortTyp) vars)
 pass0VisitDecl (TransitionDecl nam _from _to range) = do
   recordSortDefSite nam range
@@ -351,6 +352,7 @@ pass1VisitCtor sortName = \case
   (TermValue _ _ range) -> throwErrorAt range $ InvalidConstructor "Values cannot be used as constructors in syntax declarations"
   (IncludedIn _ _ range) -> throwErrorAt range $ InvalidConstructor "Inclusion terms cannot be used as constructors in syntax declarations"
   (SetOfTerms _ _ range) -> throwErrorAt range $ InvalidConstructor "Set literals cannot be used as constructors in syntax declarations"
+  (TermHask v _ _) -> absurd v
   where
     collectAtoms (Atom nam _ _) = return (runIdentity nam)
     collectAtoms t = throwErrorAt (rangeOf t) $ NoNestingAt sortName
@@ -359,7 +361,7 @@ pass1VisitDecl :: MonadCheck m => Decl -> m ()
 pass1VisitDecl (Syntax decls _) = mapM_ pass1VisitSyntaxDecl decls
   where
     pass1VisitSyntaxDecl (SyntaxDecl _vars tpy ctors range) = do
-      case fromTypeCtor tpy of
+      case fromTypeCon tpy of
         Left err -> throwErrorAt range (SortNotDefined err)
         Right sortTyp -> mapM_ (pass1VisitCtor sortTyp) ctors
 pass1VisitDecl (TransitionDecl nam (Sort from, _) (Sort to, _) _range) = do
@@ -472,6 +474,7 @@ checkTerm (SetOfTerms terms _ range) = do
   generalType <- foldM (widenType range) VoidType types
   let resultSet = Set.fromList typedTerms
   return (SetOfTerms resultSet (SetOf generalType) range, SetOf generalType)
+checkTerm (TermHask v _ _) = absurd v
 
 checkTerm_ :: MonadCheck m => PureTerm -> m Typ
 checkTerm_ = fmap snd . checkTerm

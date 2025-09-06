@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, RecordWildCards, TypeApplications #-}
+{-# LANGUAGE RecordWildCards, TypeApplications #-}
 module Main where
 
 import Prelude hiding (lex)
@@ -21,6 +21,7 @@ import qualified SolverDebugger
 import Language.Solver
 import qualified Language.Solver.BacktrackingST as ST
 import System.Timeout (timeout)
+import Text.Pretty.Simple (pPrint)
 
 -------------------------------------------------------------
 -- Data types
@@ -36,16 +37,26 @@ newtype GlobalOptions = GlobalOptions
   { runAction :: IO ()   -- ^ The IO action to run based on the parsed command
   }
 
+-- | Options for the "codegen" command
+newtype CodeGenOptions = CodeGenOptions {
+                           verbose :: Bool -- ^ whether the code generation should output the typing context
+                        }
+                    deriving (Ord, Eq, Show)
+
 -------------------------------------------------------------
 -- Command line parsers
 -------------------------------------------------------------
 
--- | Parser for input file options (reusable across commands)
+-- | Parser for input file options
 inputOptionsParser :: Parser InputOptions
 inputOptionsParser = InputOptions
   <$> strArgument
       ( metavar "FILE"
      <> help "Input file to process" )
+
+-- | Parser for the code generation options
+codegenOptionsParser :: Parser CodeGenOptions
+codegenOptionsParser = CodeGenOptions <$> switch ( short 'v'<> help "Enable verbose output (i.e., typing context is printed to stderr)" )
 
 -- | Parser for the 'check' subcommand
 checkCommand :: Parser (IO ())
@@ -63,7 +74,7 @@ lspCommand = pure $ do
 
 -- | Parser for the 'codegen' subcommand
 codegenCommand :: Parser (IO ())
-codegenCommand = runCodegenCommand <$> inputOptionsParser
+codegenCommand = runCodegenCommand <$> inputOptionsParser <*> codegenOptionsParser
 
 -- | Parser for the 'runcodegen' subcommand
 runcodegenCommand :: Parser (IO ())
@@ -95,7 +106,7 @@ globalOptions :: Parser GlobalOptions
 globalOptions = GlobalOptions <$> commandParser
 
 -- | Parser info for the entire program
-opts :: ParserInfo GlobalOptions  
+opts :: ParserInfo GlobalOptions
 opts = info (globalOptions <**> helper)
   ( fullDesc
  <> progDesc "Analysis language tools"
@@ -142,7 +153,7 @@ runTestQuery (Program decls _) queryStr = do
       let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
       let engineCtx = fromRules rules :: EngineCtx ParsePhase [] s
       let solverComputation = ST.runST $ runSolver engineCtx (solve @ParsePhase query)
-      
+
       -- Run with 5 second timeout to catch non-termination
       timeoutResult <- timeout 5000000 (return $! solverComputation) -- 5 seconds in microseconds
       case timeoutResult of
@@ -170,10 +181,13 @@ runDebugCommand :: InputOptions -> IO ()
 runDebugCommand (InputOptions filename) = SolverDebugger.debugSession filename
 
 -- | Execute the code generation command
-runCodegenCommand :: InputOptions -> IO ()
-runCodegenCommand (InputOptions filename) = do
+runCodegenCommand :: InputOptions -> CodeGenOptions -> IO ()
+runCodegenCommand (InputOptions filename) (CodeGenOptions verbose) = do
   (contents, ast) <- loadAndParseFile filename
-  either (printError contents) (uncurry codegen >=> putStrLn) $ runChecker' ast
+  r@(ctx, _) <- either (printError contents >=> const exitFailure) return $ runChecker' ast
+  when verbose $ do
+    pPrint ctx
+  (uncurry codegen >=> putStrLn) r
 
 -- | Execute the code generation and run command
 runRuncodegenCommand :: InputOptions -> IO ()
@@ -203,13 +217,13 @@ runRunsolverCommand (InputOptions filename) = do
       let passed = length $ filter id results
           total = length results
           failed = total - passed
-      
+
       putStrLn $ "Results: " ++ show passed ++ "/" ++ show total ++ " passed"
-      
+
       if failed == 0
         then do
           printGreen "All tests passed!"
-          exitWith ExitSuccess
+          exitSuccess
         else do
           putStrLn $ show failed ++ " tests failed"
           exitWith (ExitFailure 1)
@@ -223,5 +237,5 @@ main :: IO ()
 main = do
   GlobalOptions{..} <- execParser opts
   runAction
-  
+
 

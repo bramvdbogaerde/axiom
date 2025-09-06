@@ -1,0 +1,27 @@
+%% Taken from 'init/std/domains.sem' with fixed domain as "CP Bool"
+{{{
+import Lattice.ConstantPropagationLattice
+import Domain.Class
+import qualified Domain.Core.BoolDomain as B
+}}}
+
+%% This should generate a Haskell value
+%% with the following structure:
+%% 
+%% data HaskellValue where
+%%   Term_CP_Bool :: CP Int -> HaskellValue
+%%
+%% The type of "v" is 'HaskTyp "CP Int"'
+syntax {
+	v in ${CP Bool};
+	i in ${CP Int};
+	boleanTruth in Truth ::= isTrue(v) | isFalse(v);
+};
+
+rules {
+	rule "IsTrue" [ true = ${B.isTrue _'v} ] => [ isTrue(v) ];
+	rule "IsFalse" [ true = ${B.isFalse _'v} ] => [ isFalse(v) ];
+};
+
+
+%codegen_test: isTrue(${inject True})
