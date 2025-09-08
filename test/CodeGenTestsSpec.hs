@@ -117,7 +117,7 @@ testCodegenFile filePath = runExceptT $ do
       (context, typedProgram) <- ExceptT $ return $ first show $ runChecker' program
 
       -- Generate code and execute
-      ExceptT $ codegen context typedProgram >>= executeGeneratedCode
+      ExceptT $ codegen False context typedProgram >>= executeGeneratedCode
 
 -- | Create a test for a single file
 createCodegenTest :: FilePath -> Spec

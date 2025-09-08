@@ -43,8 +43,8 @@ import Language.Haskell.Meta (parseType)
 -- Prelude & module creation
 ------------------------------------------------------------
 
-makeModule :: String -> String -> String -> String -> String
-makeModule prelude ast testQueries termDecls = T.unpack
+makeModule :: Bool -> String -> String -> String -> String -> String  
+makeModule enableDebugger prelude ast testQueries termDecls = T.unpack
   [text|
   {-# LANGUAGE ScopedTypeVariables #-}
   {-# LANGUAGE TypeApplications #-}
@@ -59,6 +59,7 @@ makeModule prelude ast testQueries termDecls = T.unpack
   import qualified Language.Types
   import Language.Solver
   import qualified Language.Solver.BacktrackingST as ST
+  $debuggerImports'
 
   -- Haskell imports
   import Data.Functor.Identity
@@ -71,8 +72,8 @@ makeModule prelude ast testQueries termDecls = T.unpack
   import Data.List (stripPrefix)
   import Data.Maybe (catMaybes)
   import qualified Data.Map.Internal
-
-  
+  -- GHC imports
+  import GHC.Show  
   import GHC.Maybe
 
   -- User prelude
@@ -99,21 +100,9 @@ makeModule prelude ast testQueries termDecls = T.unpack
 
   main :: IO ()
   main = do
-    putStrLn $ "Running " ++ show (length testQueries) ++ " test queries..."
-    results <- mapM runTestQuery (zip [1..] testQueries)
-    let passed = length $ filter id results
-        total = length results
-        failed = total - passed
-    
-    putStrLn $ "Results: " ++ show passed ++ "/" ++ show total ++ " passed"
-    
-    if failed == 0
-      then do
-        putStrLn "All tests passed!"
-        exitWith ExitSuccess
-      else do
-        putStrLn $ show failed ++ " tests failed"
-        exitWith (ExitFailure 1)
+    $debuggerMain'
+
+  $debuggerREPL'
 
   runTestQuery :: (Int, (PureTerm' CodeGenPhase, Bool)) -> IO Bool
   runTestQuery (idx, (query, shouldPass)) = do
@@ -140,6 +129,92 @@ makeModule prelude ast testQueries termDecls = T.unpack
     testQueries' = T.pack testQueries
     prelude' = T.pack prelude
     termDecls' = T.pack termDecls
+    debuggerImports' = T.pack $ if enableDebugger 
+                                then unlines
+                                  [ "import qualified Language.SolverDebugger"
+                                  , "import qualified System.IO" 
+                                  , "import qualified Text.Read"
+                                  ]
+                                else ""
+    debuggerMain' = T.pack $ if enableDebugger
+                            then debuggerMainCode
+                            else testRunnerMainCode
+    
+    testRunnerMainCode = unlines
+      [ "putStrLn $ \"Running \" ++ show (length testQueries) ++ \" test queries...\""
+      , "results <- mapM runTestQuery (zip [1..] testQueries)"
+      , "let passed = length $ filter id results"
+      , "    total = length results"
+      , "    failed = total - passed"
+      , ""
+      , "putStrLn $ \"Results: \" ++ show passed ++ \"/\" ++ show total ++ \" passed\""
+      , ""
+      , "if failed == 0"
+      , "  then do"
+      , "    putStrLn \"All tests passed!\""
+      , "    exitWith ExitSuccess"  
+      , "  else do"
+      , "    putStrLn $ show failed ++ \" tests failed\""
+      , "    exitWith (ExitFailure 1)"
+      ]
+    
+    debuggerMainCode = unlines
+      [ "putStrLn \"Generated code debugger\""
+      , "putStrLn \"Available test queries:\""
+      , "mapM_ (\\(i, (query, _)) -> putStrLn $ show i ++ \": \" ++ show query) (zip [1..] testQueries)"
+      , "debuggerREPL"
+      ]
+    
+    debuggerREPL' = T.pack $ if enableDebugger then debuggerREPLCode else ""
+    
+    debuggerREPLCode = unlines
+      [ "debuggerREPL :: IO ()"
+      , "debuggerREPL = do"
+      , "  putStr \"debug> \""
+      , "  System.IO.hFlush System.IO.stdout"
+      , "  input <- getLine"
+      , "  case input of"
+      , "    \"quit\" -> putStrLn \"Goodbye!\""
+      , "    \"help\" -> do"
+      , "      putStrLn \"Commands:\""
+      , "      putStrLn \"  help    - Show this help\""
+      , "      putStrLn \"  list    - List available queries\""
+      , "      putStrLn \"  run N   - Debug query number N\""
+      , "      putStrLn \"  quit    - Exit debugger\""
+      , "      debuggerREPL"
+      , "    \"list\" -> do"
+      , "      putStrLn \"Available test queries:\""
+      , "      mapM_ (\\(i, (query, _)) -> putStrLn $ show i ++ \": \" ++ show query) (zip [1..] testQueries)"
+      , "      debuggerREPL"
+      , "    _ | Just queryNumStr <- Data.List.stripPrefix \"run \" input -> do"
+      , "        case Text.Read.readMaybe queryNumStr of"
+      , "          Just queryNum | queryNum >= 1 && queryNum <= length testQueries -> do"
+      , "            let (query, _) = testQueries !! (queryNum - 1)"
+      , "            debugQuery query"
+      , "            debuggerREPL"
+      , "          _ -> do"
+      , "            putStrLn $ \"Invalid query number. Use 1-\" ++ show (length testQueries)"
+      , "            debuggerREPL"
+      , "    _ -> do"
+      , "      putStrLn \"Unknown command. Type 'help' for available commands.\""
+      , "      debuggerREPL"
+      , ""
+      , "debugQuery :: PureTerm' CodeGenPhase -> IO ()"
+      , "debugQuery query = do"
+      , "  putStrLn $ \"Debugging query: \" ++ show query"
+      , "  let Program decls _ = ast"
+      , "  let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]"
+      , "  let config = Language.SolverDebugger.defaultConfig"
+      , "  (solutions, trace) <- Language.SolverDebugger.debugSolve config rules query"
+      , "  putStrLn \"\\n=== TRACE ===\""
+      , "  putStrLn $ Language.SolverDebugger.prettyTrace trace"
+      , "  putStrLn \"=== RESULTS ===\""
+      , "  if null solutions"
+      , "    then putStrLn \"No solutions found.\""
+      , "    else do"
+      , "      putStrLn $ \"Found \" ++ show (length solutions) ++ \" solution(s):\""
+      , "      mapM_ (putStrLn . (\"  \" ++) . show) solutions"
+      ]
 
 
 ------------------------------------------------------------
@@ -409,10 +484,11 @@ processTestQueries ctx = mapM (fmap (either error id) . runExceptT . processQuer
         [| ($(return queryExp), $( if shouldPass then [| True |] else [| False |] )) |]
 
 -- | Generate a Haskell program representing the Typed program with executable Haskell functions in it.
-codegen :: CheckingContext -> TypedProgram -> IO String
-codegen context prog@(Program _ comments) = runQ $ do
+codegen :: Bool -> CheckingContext -> TypedProgram -> IO String
+codegen enableDebugger context prog@(Program _ comments) = runQ $ do
   let testQueryStrings = extractTestQueries comments
   makeModule
+        enableDebugger
         (concat (haskellBlocks prog))
     <$> (pprint <$> astToCode context prog)
     <*> (pprint <$> (processTestQueries context testQueryStrings >>= listE . map return))
