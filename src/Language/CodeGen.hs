@@ -282,7 +282,6 @@ generateExtraction typingCtx mappingName varName = do
   runMaybeT $ do
       baseVarName <- MaybeT $ return $ safeVariableName varName
       sortName <- MaybeT $ return $ lookupGamma baseVarName typingCtx
-      liftIO (putStrLn $ "sort name for " ++ baseVarName ++ " (base) " ++ show varName ++ " (original) is " ++ show sortName)
       let typ = sortName
 
       case typ of
