@@ -370,7 +370,7 @@ isTermGround = \case
   Eqq left right _ _ -> isTermGround left && isTermGround right
   Neq left right _ _ -> isTermGround left && isTermGround right
   Transition _ left right _ _ -> isTermGround left && isTermGround right
-  HaskellExpr {} -> False
+  HaskellExpr {} -> True
   TermValue {} -> True
   IncludedIn _ term _ -> isTermGround term
   SetOfTerms terms _ _ -> all isTermGround terms

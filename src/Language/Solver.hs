@@ -12,9 +12,9 @@ module Language.Solver where
 import Control.Lens
 import Control.Monad.Except
 import Control.Monad.State
-import Data.Map (Map)
+import Data.Map.Strict (Map)
 import Data.Proxy
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Language.AST
@@ -48,19 +48,19 @@ data SearchState p s = SearchState
   { -- | Unique identifier for this search state
     _searchStateId :: Int,
     -- | Remaining goals to be solved
-    _searchGoals :: [SearchGoal p s],
+    _searchGoals :: ![SearchGoal p s],
     -- | Snapshot to restore when resuming this search    
     _searchSnapshot :: ST.Snapshot s,
     -- | Mapping from variable names to their 'Cell's
     _searchMapping :: Unification.VariableMapping p s,
     -- | Goals to add to the cache when all the search goals in this state
     -- have been solved.
-    _searchWhenSucceeds :: [InOut p s]
+    _searchWhenSucceeds :: ![InOut p s]
   }
 
 data SearchCtx p q s = SearchCtx
-  { _searchQueue :: q (SearchState p s),
-    _currentMapping :: Unification.VariableMapping p s
+  { _searchQueue :: !(q (SearchState p s)),
+    _currentMapping :: !(Unification.VariableMapping p s)
   }
 
 type SolverResult = Either String (Map String PureTerm)
@@ -74,13 +74,13 @@ $(makeLenses ''SearchCtx)
 
 data EngineCtx p q s = EngineCtx
   { -- | Mapping from functor names to their appropriate rule, used in backwards reasoning
-    _conclusionFunctors :: Map String (Set (RuleDecl' p)),
+    _conclusionFunctors :: !(Map String (Set (RuleDecl' p))),
     -- | Unique variables counter
     _numUniqueVariables :: Int,
     -- | Search context for query resolution
-    _searchCtx :: SearchCtx p q s,
+    _searchCtx :: !(SearchCtx p q s),
     -- | Out-caching mechanism as a mapping from terms to ground terms
-    _outCache :: Map (PureTerm' p) (Set (PureTerm' p))
+    _outCache :: !(Map (PureTerm' p) (Set (PureTerm' p)))
   }
 
 -- | Create an empty search context
@@ -157,7 +157,7 @@ data CacheResult p   = InCache (PureTerm' p)        -- ^ indicates that the item
 -- | Add a term to the cache together with its unification result 
 addToCache :: (HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p)) => PureTerm' p -> Solver p q s ()
 addToCache t = do
-  -- TODO: don't use uniqueTerm, use a normalizer that results in variables without unique names
+  -- use a normalizer that results in variables without unique names
   -- this is important so that the cache satisfies the ascending chain condition
   let t' = Renamer.unrenameTerm t
   tr <- refTerm t

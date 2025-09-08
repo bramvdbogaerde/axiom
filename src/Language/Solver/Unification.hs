@@ -258,7 +258,6 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
     -- 
     -- Haskell expressions
     -- 
-    unifyTermsImpl hh@(HaskellExpr {}) otherTerm = unifyTermsImpl otherTerm hh
     unifyTermsImpl otherTerm (HaskellExpr hatch _ _) = do
       -- Try to execute the Haskell expression and unify with the result
       varMapping <- ask
@@ -269,7 +268,7 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
           (resultRef, _) <- lift $ lift $ refTerm result varMapping
           -- TODO: The resultRef should not contain any variables and this should be enforced somehow in the future
           unifyTermsImpl otherTerm resultRef
-
+    unifyTermsImpl hh@(HaskellExpr {}) otherTerm = unifyTermsImpl otherTerm hh
     --
     -- Unification with atoms
     -- 
