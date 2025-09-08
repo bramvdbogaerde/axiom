@@ -29,6 +29,7 @@ library
                   , Language.Parser
                   , Language.TypeCheck
                   , Language.Solver
+                  , Language.SolverDebugger
                   , Language.ImportResolver
                   , Language.Solver.Unification
                   , Language.Solver.Renamer
@@ -68,7 +69,6 @@ executable analysislang
                , LanguageServer
                , LanguageServer.Diagnostics
                , LanguageServer.Symbols
-               , SolverDebugger
   hs-source-dirs: app
   main-is: Main.hs
   ghc-options: -Werror -Wall -Wno-name-shadowing -Wno-unused-record-wildcards

@@ -17,7 +17,7 @@ import System.FilePath
 import Reporting
 import Options.Applicative
 import qualified LanguageServer
-import qualified SolverDebugger
+import qualified Language.SolverDebugger as SolverDebugger
 import Language.Solver
 import qualified Language.Solver.BacktrackingST as ST
 import System.Timeout (timeout)
@@ -38,9 +38,10 @@ newtype GlobalOptions = GlobalOptions
   }
 
 -- | Options for the "codegen" command
-newtype CodeGenOptions = CodeGenOptions {
-                           verbose :: Bool -- ^ whether the code generation should output the typing context
-                        }
+data CodeGenOptions = CodeGenOptions {
+                        verbose :: Bool, -- ^ whether the code generation should output the typing context
+                        enableDebugger :: Bool -- ^ whether to include debugger support in generated code
+                      }
                     deriving (Ord, Eq, Show)
 
 -------------------------------------------------------------
@@ -56,7 +57,9 @@ inputOptionsParser = InputOptions
 
 -- | Parser for the code generation options
 codegenOptionsParser :: Parser CodeGenOptions
-codegenOptionsParser = CodeGenOptions <$> switch ( short 'v'<> help "Enable verbose output (i.e., typing context is printed to stderr)" )
+codegenOptionsParser = CodeGenOptions 
+  <$> switch ( short 'v' <> help "Enable verbose output (i.e., typing context is printed to stderr)" )
+  <*> switch ( short 'd' <> long "debug" <> help "Include debugger support in generated code" )
 
 -- | Parser for the 'check' subcommand
 checkCommand :: Parser (IO ())
@@ -182,12 +185,12 @@ runDebugCommand (InputOptions filename) = SolverDebugger.debugSession filename
 
 -- | Execute the code generation command
 runCodegenCommand :: InputOptions -> CodeGenOptions -> IO ()
-runCodegenCommand (InputOptions filename) (CodeGenOptions verbose) = do
+runCodegenCommand (InputOptions filename) (CodeGenOptions verbose enableDebug) = do
   (contents, ast) <- loadAndParseFile filename
   r@(ctx, _) <- either (printError contents >=> const exitFailure) return $ runChecker' ast
   when verbose $ do
     pPrint ctx
-  (uncurry codegen >=> putStrLn) r
+  (uncurry (codegen enableDebug) >=> putStrLn) r
 
 -- | Execute the code generation and run command
 runRuncodegenCommand :: InputOptions -> IO ()
@@ -196,7 +199,7 @@ runRuncodegenCommand (InputOptions filename) = do
   either (printError contents) runGenerated $ runChecker' ast
   where
     runGenerated (context, typedProgram) = do
-      generatedCode <- codegen context typedProgram
+      generatedCode <- codegen False context typedProgram
       let outName = replaceExtension filename "out.hs"
       writeFile outName generatedCode
       putStrLn $ "Generated code written to: " ++ outName
