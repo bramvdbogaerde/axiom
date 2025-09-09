@@ -25,3 +25,8 @@ rules {
 
 
 %codegen_test: isTrue(${inject True})
+%codegen_test: isFalse(${inject False})
+%codegen_test: isFalse(${B.boolTop})
+%codegen_test: isTrue(${B.boolTop})
+%codegen_fail_test: isFalse(${inject True})
+%codegen_fail_test: isTrue(${inject False})

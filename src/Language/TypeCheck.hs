@@ -331,6 +331,8 @@ pass0VisitDecl _ = return ()
 pass0 :: MonadCheck m => Program -> m ()
 pass0 (Program decls _) = mapM_ pass0VisitDecl decls
 
+-- TODO: after pass 0 we should check that all types have been defined correctly in the defined sorts, for instance when Map(Adr, Val) is used then there should be an Adr and a Val!
+
 -----------------------------------------
 -- Pass 1: associate functors in the syntax declarations with sorts, register subtyping for variables
 -----------------------------------------

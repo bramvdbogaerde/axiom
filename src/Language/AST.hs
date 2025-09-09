@@ -161,6 +161,7 @@ instance RangeOf TypeCon where
   -- | Convert a type constructor to a type
 fromTypeCon :: TypeCon -> Either String Typ
 fromTypeCon = \case (TypeApp (TypeTyp "Set" _) [t] _) -> SetOf <$> fromTypeCon t
+                    (TypeApp (TypeTyp "Map" _) [t1, t2] _) -> MapOf <$> fromTypeCon t1 <*> fromTypeCon t2
                     (TypeHas h _)                  -> return $ HaskType h
                     (TypeApp (TypeTyp nam _) [] _) -> return $ fromSortName nam
                     ctor -> throwError $ "Invalid type constructor used " ++ show ctor

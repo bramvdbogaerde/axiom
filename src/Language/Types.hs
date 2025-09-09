@@ -54,6 +54,7 @@ data Typ = Sort String -- ^ a user-defined (or system) sort
          | StrType     -- ^ values are integers
          | BooType     -- ^ values are boolean
          | SetOf Typ   -- ^ a set of values from the given type
+         | MapOf Typ Typ
          | AnyType
          | VoidType    -- ^ type for expressions that don't have a meaningful type (incompatible with all others)
          | HaskType String 
@@ -134,6 +135,7 @@ instance Lift Typ where
   liftTyped AnyType   = [|| AnyType ||]
   liftTyped VoidType  = [|| VoidType ||]
   liftTyped (SetOf t) = [|| SetOf $$(liftTyped t) ||]
+  liftTyped (MapOf t1 t2) = [|| MapOf $$(liftTyped t1) $$(liftTyped t2) ||]
   liftTyped (HaskType s) = [|| HaskType $$(liftTyped s) ||]
 
 instance Lift Value where
@@ -170,6 +172,7 @@ toSortName StrType = "String"
 toSortName BooType = "Bool"
 toSortName AnyType = "Any"
 toSortName (SetOf typ) = "Set(" ++ toSortName typ ++ ")"
+toSortName (MapOf t1 t2) = "Map(" ++ toSortName t1 ++ "," ++ toSortName t2 ++ ")"
 toSortName VoidType = "Void"
 toSortName (HaskType s) = "${" ++ s ++ "}"
 
