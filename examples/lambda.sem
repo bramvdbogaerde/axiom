@@ -1,0 +1,18 @@
+
+syntax {
+	s in String;
+	n in Int;
+	adr in Adr ::= n;
+	env in Map(Ident, Adr);
+	sto in Map(Adr, Set(Val));
+	x in Ident ::= s;
+	cv in Val ::= closure(x, e, env) | n;
+	v in Set(Val);	
+	e in Exp ::= lambda(x, e) | app(e, e) | v | if(e, e, e) | nonzero(e);
+};
+
+
+rules {
+	rule "Lookup" [ sto(false) ] => [];
+};
+
