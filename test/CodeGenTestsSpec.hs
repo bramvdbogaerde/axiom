@@ -85,7 +85,7 @@ executeGeneratedCode generatedCode = withSystemTempFile "codegen_test.hs" $ \tem
 
   -- Execute with timeout (30 seconds)
   let cmd = "cabal"
-  let args = ["exec", "--", "runghc", "--ghc-arg=-package", "--ghc-arg=analysislang", "--ghc-arg=-package", "--ghc-arg=maf2-domains", tempFilePath]
+  let args = ["exec", "--", "runghc", "--ghc-arg=-package", "--ghc-arg=analysislang", tempFilePath]
 
   timeoutResult <- timeout defaultTimeout $ readProcessWithExitCode cmd args ""
   case timeoutResult of

@@ -1,8 +1,19 @@
 %% Taken from 'init/std/domains.sem' with fixed domain as "CP Bool"
 {{{
-import Lattice.ConstantPropagationLattice
-import Domain.Class
-import qualified Domain.Core.BoolDomain as B
+data CP a = Constant a | Top deriving (Ord, Eq, Show)
+isTrue :: CP Bool -> Bool
+isTrue (Constant a) = a
+isTrue Top = True
+
+isFalse :: CP Bool -> Bool
+isFalse (Constant a) = not a
+isFalse Top = True
+
+boolTop :: CP Bool
+boolTop = Top
+
+inject :: a -> CP a
+inject = Constant
 }}}
 
 %% This should generate a Haskell value
@@ -19,14 +30,14 @@ syntax {
 };
 
 rules {
-	rule "IsTrue" [ true = ${B.isTrue _'v} ] => [ isTrue(v) ];
-	rule "IsFalse" [ true = ${B.isFalse _'v} ] => [ isFalse(v) ];
+	rule "IsTrue" [ true = ${isTrue _'v} ] => [ isTrue(v) ];
+	rule "IsFalse" [ true = ${isFalse _'v} ] => [ isFalse(v) ];
 };
 
 
 %codegen_test: isTrue(${inject True})
 %codegen_test: isFalse(${inject False})
-%codegen_test: isFalse(${B.boolTop})
-%codegen_test: isTrue(${B.boolTop})
+%codegen_test: isFalse(${boolTop})
+%codegen_test: isTrue(${boolTop})
 %codegen_fail_test: isFalse(${inject True})
 %codegen_fail_test: isTrue(${inject False})
