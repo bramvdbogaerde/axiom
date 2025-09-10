@@ -177,7 +177,8 @@ runCheckCommand :: InputOptions -> IO ()
 runCheckCommand (InputOptions filename) = do
   putStrLn $ "Checking " ++ filename
   (contents, ast) <- loadAndParseFile filename
-  either (printError contents) (const printSuccess) $ runChecker ast
+  result <- traverse (\(ctx, ast') -> pPrint ctx >> return (ctx, ast')) $ runChecker' ast
+  either (printError contents) (const printSuccess) result
 
 -- | Execute the solver debugging command
 runDebugCommand :: InputOptions -> IO ()

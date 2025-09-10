@@ -52,7 +52,7 @@ data Error = Error { err :: ModelError, raisedAt :: Maybe Range,  ctx :: Checkin
 type Var = String
 
 -- | A data constructor is either an atom or a tag paired with a list of sorts
-data DataCtor = DataAtom Typ | DataTagged String [Typ]
+data DataCtor = DataTagged String [Typ]
               deriving (Ord, Eq, Show)
 
 -- | Typeclass for extracting sorts from data types
@@ -63,7 +63,6 @@ instance HasSorts Typ where
   getSorts s = [s]
 
 instance HasSorts DataCtor where
-  getSorts (DataAtom s) = [s]
   getSorts (DataTagged _ ss) = ss
 
 
@@ -188,7 +187,11 @@ maybeOrError range err = maybe (throwErrorMaybe range err) return
 -- raises an error if the variable or functor is not defined.
 lookupCtor :: MonadCheck m => Maybe Range -> String -> m DataCtor
 lookupCtor maybeRange nam =
-  gets (lookupEnvironment nam . _environment) >>= maybeOrError maybeRange (NameNotDefined nam)
+   lookupCtor' nam >>= maybeOrError maybeRange (NameNotDefined nam)
+
+-- | Same as 'lookupCtor' but does not raise an error
+lookupCtor' :: MonadCheck m => String -> m (Maybe DataCtor)
+lookupCtor' nam = gets (lookupEnvironment nam . _environment)
 
 -- | Looks up the sort associated with the variable and raises an error if the sort does not exist
 lookupSort :: MonadCheck m => Maybe Range -> String -> m Typ
@@ -247,10 +250,8 @@ class SubtypeOf s where
   subtypeOf :: MonadCheck m => s -> s -> m Bool
 
 instance SubtypeOf DataCtor where
-  subtypeOf (DataAtom nam1) (DataAtom nam2) = nam1 `subtypeOf` nam2
   subtypeOf (DataTagged nam1 s1) (DataTagged nam2 s2) =
     (nam1 == nam2 &&) <$> s1 `subtypeOf` s2
-  subtypeOf _ _ = return False
 
 instance SubtypeOf s => SubtypeOf [s] where
   subtypeOf l1 l2
@@ -271,7 +272,6 @@ sortsInFunctor functorName = do
   env <- gets _environment
   case lookupEnvironment functorName env of
     Nothing -> throwError (NameNotDefined functorName)
-    Just (DataAtom sortName) -> return [sortName]
     Just (DataTagged _ sorts) -> return sorts
 
 -----------------------------------------
@@ -306,7 +306,7 @@ pass0VisitDecl (Syntax decls _) = mapM_ pass0VisitSyntaxDecl decls
               (return ())
               (defineSort sortTyp)
           -- Type all variables as unique with this type
-          mapM_ (typeAsUnique (DataAtom sortTyp) sortTyp) vars
+          mapM_ (`typedAs` sortTyp) vars
     -- one or more productions denotes a declaration of a type, the checker will:
     -- * associate the variables with types
     -- * declare the type
@@ -320,7 +320,7 @@ pass0VisitDecl (Syntax decls _) = mapM_ pass0VisitSyntaxDecl decls
               (throwError (DuplicateSort sortTyp))
               (do recordSortDefSite (toSortName sortTyp) range
                   registerTypeName (toSortName sortTyp) sortTyp
-                  mapM_ (typeAsUnique (DataAtom sortTyp) sortTyp) vars)
+                  mapM_ (`typedAs` sortTyp) vars)
 pass0VisitDecl (TransitionDecl nam _from _to range) = do
   recordSortDefSite nam range
   -- Register the transition name as its own type
@@ -412,10 +412,10 @@ checkTerm :: MonadCheck m => PureTerm -> m (TypedTerm, Typ)
 checkTerm (Atom nam _ range) = do
   let varName = variableName (runIdentity nam)
   -- Check that the atom is not associated with a functor (DataTagged constructor)
-  ctor <- lookupCtor (Just range) varName
+  ctor <- lookupCtor' varName
   case ctor of
-    DataTagged _ _ -> throwErrorAt range (NameNotDefined varName) -- Should be used as functor, not atom
-    DataAtom _ -> do
+    Just (DataTagged _ _) -> throwErrorAt range (NameNotDefined varName) -- Should be used as functor, not atom
+    _ -> do
       sort <- lookupSort (Just range) varName
       return (Atom nam sort range, sort)
 checkTerm (Functor tpy terms _ range) = do
@@ -444,7 +444,7 @@ checkTerm (Transition transitionName t1 t2 tpy range) = do
   -- NOTE: the assumption is that checkTerm always returns a functor of the same shape, hence the pattern match on the lines below never fails.
   term <- checkTerm (Functor transitionName [t1, t2] tpy range)
   case term of
-    (Functor nam [term1', term2'] t range, sortname) -> 
+    (Functor nam [term1', term2'] t range, sortname) ->
       return (Transition nam term1' term2' t range, sortname)
     _ -> error "checkTerm: transition should always return a functor with 2 arguments"
 checkTerm (HaskellExpr expr _ range) =
@@ -563,7 +563,7 @@ pass3VisitDecl (TransitionDecl nam s1@(Sort fromSort, r1) s2@(Sort toSort, r2) r
   assertSortDefinedAt r1 fromSort
   assertSortDefinedAt r2 toSort
   return (TransitionDecl nam s1 s2 range)
-pass3VisitDecl (TransitionDecl _ (_, r1) _ _) = 
+pass3VisitDecl (TransitionDecl _ (_, r1) _ _) =
   throwErrorAt r1 $ NameNotDefined "Only Sort types are supported in transition declarations"
 pass3VisitDecl (Rewrite rewrite range) =
   Rewrite <$> typeRewrite rewrite <*> pure range
