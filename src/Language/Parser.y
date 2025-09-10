@@ -166,8 +166,6 @@ HaskellBlock : HASKBLOCK                     { HaskellDecl (getHaskellBlock $1) 
 -- Terms with precedence handling
 Term :: { PureTerm }
 Term : BasicTerm                             { $1 }
-     | Term '=' Term                         { Eqq $1 $3 () (mkRange $1 $3) }
-     | Term '/=' Term                        { Neq $1 $3 () (mkRange $1 $3) }
      | Term '~>' Term                        { Transition "~>" $1 $3 () (mkRange $1 $3) }
      | '{' Elements '}'                      { SetOfTerms (Set.fromList $2) () (mkRange $1 $3) }
 
@@ -188,6 +186,9 @@ BasicTerm : IDENT                            { Atom (Identity (getIdent $1)) () 
 Goal :: { PureTerm }
 Goal : Term { $1 }
      | IDENT 'in' Term { IncludedIn (getIdent $1) $3 (mkRange $1 $3) }
+     | Term '=' Term                         { Eqq $1 $3 () (mkRange $1 $3) }
+     | Term '/=' Term                        { Neq $1 $3 () (mkRange $1 $3) }
+
 
 {
 

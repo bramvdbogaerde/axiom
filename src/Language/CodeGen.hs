@@ -71,6 +71,7 @@ makeModule enableDebugger prelude ast testQueries termDecls = T.unpack
   import System.Exit
   import Data.List (stripPrefix)
   import Data.Maybe (catMaybes)
+  import qualified Data.Set.Internal
   import qualified Data.Map.Internal
   -- GHC imports
   import GHC.Show  

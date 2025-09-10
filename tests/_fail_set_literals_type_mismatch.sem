@@ -10,11 +10,11 @@ syntax {
 rules {
   %% This should fail - mixing numbers and letters in a set
   rule "mixed-types-in-set"
-  [ ] =>
-  [ numSet = {one(), a()} ];  %% Type error: mixing Number and Letter
+  [ numSet = {one(), a()} ] =>
+  [ ];  %% Type error: mixing Number and Letter
   
   %% This should also fail - assigning letter set to number set variable
   rule "wrong-set-assignment"
-  [ ] =>
-  [ numSet = {a(), b()} ];  %% Type error: Set(Letter) assigned to Set(Number)
+  [ numSet = {a(), b()}] =>
+  [ ];  %% Type error: Set(Letter) assigned to Set(Number)
 };

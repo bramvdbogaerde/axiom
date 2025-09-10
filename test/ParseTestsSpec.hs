@@ -23,7 +23,7 @@ spec = do
         atomNames term `shouldBe` Set.fromList ["x", "y"]
       
       it "extracts functor names from Eqq" $ do
-        term <- parseTermHelper "x = y"
+        term <- parseGoalHelper "x = y"
         atomNames term `shouldBe` Set.fromList ["x", "y"]
       
       it "extracts functor names from Transition" $ do
@@ -32,10 +32,10 @@ spec = do
     
     describe "termEqIgnoreRange comparison" $ do
       it "compares Eqq terms ignoring range" $ do
-        liftA2 termEqIgnoreRange (parseTermHelper "x = y") (parseTermHelper "x = y") `shouldReturn` True
+        liftA2 termEqIgnoreRange (parseGoalHelper "x = y") (parseGoalHelper "x = y") `shouldReturn` True
       
       it "detects different Eqq terms" $ do
-        liftA2 termEqIgnoreRange (parseTermHelper "x = y") (parseTermHelper "x = z") `shouldReturn` False
+        liftA2 termEqIgnoreRange (parseGoalHelper "x = y") (parseGoalHelper "x = z") `shouldReturn` False
       
       it "compares Transition terms ignoring range" $ do
         liftA2 termEqIgnoreRange (parseTermHelper "x ~> y") (parseTermHelper "x ~> y") `shouldReturn` True
@@ -62,7 +62,7 @@ spec = do
         positionColumn (rangeStart range) `shouldBe` 1
       
       it "gets range from Eqq" $ do
-        term <- parseTermHelper "x = y"
+        term <- parseGoalHelper "x = y"
         let range = rangeOf term
         range `shouldNotBe` dummyRange
         positionLine (rangeStart range) `shouldBe` 1
@@ -100,7 +100,7 @@ spec = do
           _ -> expectationFailure $ "Expected TermValue (IntValue 123456), got: " ++ show term
       
       it "works in equality expressions" $ do
-        term <- parseTermHelper "x = 42"
+        term <- parseGoalHelper "x = 42"
         case term of
           Eqq (Atom (Identity "x") _ _) (TermValue (IntValue 42) _ _) _ _ -> return ()
           _ -> expectationFailure $ "Expected 'x = 42' with integer literal, got: " ++ show term
@@ -163,7 +163,7 @@ spec = do
           _ -> expectationFailure $ "Expected SetOfTerms, got: " ++ show term
       
       it "works in equality expressions" $ do
-        term <- parseTermHelper "x = {a(), b()}"
+        term <- parseGoalHelper "x = {a(), b()}"
         case term of
           Eqq (Atom (Identity "x") _ _) (SetOfTerms terms _ _) _ _ -> 
             Set.size terms `shouldBe` 2

@@ -21,7 +21,7 @@ runUnification = Unification.runUnification @ParsePhase
 -- Test that refTerm and pureTerm are inverses for a given term
 testInverse :: String -> Expectation
 testInverse termStr = do
-  original <- parseTermHelper termStr
+  original <- parseGoalHelper termStr
   let result = runST $ refTerm original Map.empty >>= uncurry pureTerm
   result `shouldBe` original
 
@@ -33,9 +33,9 @@ testInverseFor termStr = it ("refTerm and pureTerm are inverses for '" ++ termSt
 testUnificationSuccess :: String -> String -> String -> [(String, String)] -> Spec
 testUnificationSuccess desc term1Str term2Str expectedMappings =
   it (desc ++ ": " ++ term1Str ++ " = " ++ term2Str) $ do
-    term1 <- parseTermHelper term1Str
-    term2 <- parseTermHelper term2Str
-    expectedPairs <- mapM (\(var, termStr) -> (var,) <$> parseTermHelper termStr) expectedMappings
+    term1 <- parseGoalHelper term1Str
+    term2 <- parseGoalHelper term2Str
+    expectedPairs <- mapM (\(var, termStr) -> (var,) <$> parseGoalHelper termStr) expectedMappings
     case runUnification term1 term2 of
       Right mapping ->
         mapM_ (\(var, expectedTerm) ->
@@ -48,8 +48,8 @@ testUnificationSuccess desc term1Str term2Str expectedMappings =
 testUnificationFailure :: String -> String -> String -> Spec
 testUnificationFailure desc term1Str term2Str =
   it (desc ++ ": " ++ term1Str ++ " = " ++ term2Str) $ do
-    term1 <- parseTermHelper term1Str
-    term2 <- parseTermHelper term2Str
+    term1 <- parseGoalHelper term1Str
+    term2 <- parseGoalHelper term2Str
     case runUnification term1 term2 of
       Left _ -> return () -- Expected failure
       Right _ -> assertFailure "Expected unification to fail"
@@ -58,8 +58,8 @@ testUnificationFailure desc term1Str term2Str =
 testPartialUnification :: String -> String -> String -> [String] -> Spec
 testPartialUnification desc term1Str term2Str varNames =
   it (desc ++ ": " ++ term1Str ++ " = " ++ term2Str) $ do
-    term1 <- parseTermHelper term1Str
-    term2 <- parseTermHelper term2Str
+    term1 <- parseGoalHelper term1Str
+    term2 <- parseGoalHelper term2Str
     case runUnification term1 term2 of
       Right mapping -> do
         let hasMapping = any (`Map.member` mapping) varNames

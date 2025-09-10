@@ -348,7 +348,7 @@ checkTerm (Atom nam _ range) = do
   tpy <- lookupType (Just range) varName
   return (Atom nam tpy range, tpy)
 checkTerm (Functor nam terms _ range) = do
-  -- For funtors we also lookup the type associated with its name,
+  -- For funtors we lookup the type associated with its name,
   -- and then try to apply "applyTpy" to it to ensure that all arguments
   -- have the correct type.
   functorTpy <- lookupType (Just range) nam
