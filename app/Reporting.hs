@@ -37,7 +37,7 @@ formatModelError (DuplicateSort sortName) =
 formatModelError (NoNestingAt sortName) =
   "Nested terms are not allowed in sort '" ++ toSortName sortName ++ "' - only atoms are permitted"
 formatModelError (NameNotDefined var) =
-  "Name '" ++ var ++ "' is used but not defined"
+  "Name '" ++ var ++ "' is used as a functor but not defined."
 formatModelError (IncompatibleTypes expected actual) =
   "Type mismatch: " ++ formatTypeDifference expected actual
 formatModelError (SortNotDefined sortName) =

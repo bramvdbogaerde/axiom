@@ -24,11 +24,14 @@ import Control.Monad
 import Control.Monad.Extra
 import Language.Types
 import Data.Tuple
+import Data.Maybe (isJust)
+
 
 -----------------------------------------
 -- Errors
 -----------------------------------------
 
+-- First, we define errors that could be produced in the type checker.
 data ModelError = DuplicateVariable String Typ
                 | DuplicateSort Typ
                 | NoNestingAt Typ
@@ -43,127 +46,17 @@ data ModelError = DuplicateVariable String Typ
 data Error = Error { err :: ModelError, raisedAt :: Maybe Range,  ctx :: CheckingContext }
            deriving (Ord, Eq, Show)
 
------------------------------------------
--- Data types
------------------------------------------
-
-
--- | Variables
-type Var = String
-
--- | A data constructor is either an atom or a tag paired with a list of sorts
-data DataCtor = DataTagged String [Typ]
-              deriving (Ord, Eq, Show)
-
--- | Typeclass for extracting sorts from data types
-class HasSorts s where
-  getSorts :: s -> [Typ]
-
-instance HasSorts Typ where
-  getSorts s = [s]
-
-instance HasSorts DataCtor where
-  getSorts (DataTagged _ ss) = ss
-
-
------------------------------------------
--- Environment
------------------------------------------
-
--- | An environment is a mapping from variables and functors to their data constructors
-newtype Environment = Environment { getEnvironment :: Map String DataCtor }
-                    deriving (Ord, Eq, Show)
-
-
-lookupEnvironment :: String -> Environment -> Maybe DataCtor
-lookupEnvironment k = Map.lookup k . getEnvironment
-
--- | Extend the environment with the given functor name and data constructor
-extendEnvironment :: String -> DataCtor -> Environment -> Environment
-extendEnvironment k d = Environment . Map.insert k d . getEnvironment
-
--- | Create an empty environment
-emptyEnvironment :: Environment
-emptyEnvironment = Environment Map.empty
-
------------------------------------------
--- Typing context
------------------------------------------
-
--- | A typing context maps atoms and functors to their sorts
-newtype Gamma = Gamma { getGamma :: Map String Typ }
-              deriving (Ord, Eq, Show)
-
--- | Lookup the type of the given functor or variable in the typing contex
-lookupGamma :: String -> Gamma -> Maybe Typ
-lookupGamma k = Map.lookup k . getGamma
-
--- | Associate the given type with the given variable or atom
-typesAs :: String -> Typ -> Gamma -> Gamma
-typesAs k s =
-  Gamma . Map.insert k s . getGamma
-
--- | Create an empty typing context
-emptyTypingContext :: Gamma
-emptyTypingContext = Gamma Map.empty
-
------------------------------------------
--- Subtyping relation
------------------------------------------
-
--- | Keeps track of subtyping information
-newtype Subtyping = Subtyping { subtypingSupertypes :: UnlabeledGraph Typ }
-                  deriving (Ord, Eq, Show)
-
--- | Registers the first argument as a subtype of the second
-makeSubtypeOf :: Typ -> Typ -> Subtyping -> Subtyping
-makeSubtypeOf from to = Subtyping . Graph.addEdge () from to . subtypingSupertypes
-
--- | Checks whether the first argument is a subtype of the second
-isSubtypeOf :: Typ -> Typ -> Subtyping -> Bool
-isSubtypeOf from to = Graph.isReachable from to . subtypingSupertypes
-
--- | Create an empty subtyping graph
-emptySubtyping :: Subtyping
-emptySubtyping = Subtyping Graph.empty
-
------------------------------------------
--- Full checking context
------------------------------------------
-
-data CheckingContext = CheckingContext {
-                        _environment :: Environment
-                      , _typingContext :: Gamma
-                      , _subtypingContext :: Subtyping
-                      , _definedSorts :: Set Typ
-                      , _sortToDefSite :: Map String Range
-                      , _typeNameMapping :: Map String Typ  -- ^ maps type names to their Typ representation
-                      , _typeCheckingErrors :: [Error]
-                     } deriving (Ord, Eq, Show)
-
-
-$(makeLenses ''CheckingContext)
-
-emptyCheckingContext :: CheckingContext
-emptyCheckingContext = CheckingContext emptyEnvironment emptyTypingContext emptySubtyping Set.empty Map.empty builtinTypeMapping []
-  where
-    builtinTypeMapping = Map.fromList [("Int", IntType), ("String", StrType), ("Any", AnyType)]
 
 -----------------------------------------
 -- Monadic context
 -----------------------------------------
 
-type MonadCheck m = (MonadState CheckingContext m, MonadError Error m, MonadReader (Maybe Typ) m)
-
--------------------------
--- Monadic error handling
--------------------------
-
--- | Registers an error boundary where all the thrown errors are catched and added
--- to the context instead of being propagated to the caller
-boundary :: MonadCheck m => m () -> m ()
-boundary = (`catchError` (\e -> modify (over typeCheckingErrors (e:))))
-
+-- Next, we define a monadic context in which most of the type checking will be performed.
+type MonadCheck m = (MonadState CheckingContext m, -- the type checking context itself
+                     MonadError Error m,           -- error-producing monad
+                     MonadReader (Maybe Typ) m     -- propagation of types in parent used for Haskell expressions (cf. below)
+                     )
+-- In this monad, we can also raise errors.
 -- | Throw an error with an optional range
 throwErrorMaybe :: MonadCheck m => Maybe Range -> ModelError -> m a
 throwErrorMaybe range err = get >>= Except.throwError . Error err range
@@ -179,79 +72,94 @@ throwErrorAt range = throwErrorMaybe (Just range)
 maybeOrError :: MonadCheck m => Maybe Range -> ModelError -> Maybe a -> m a
 maybeOrError range err = maybe (throwErrorMaybe range err) return
 
----------------------------
--- Context ineractions
----------------------------
 
--- | Find the associated data constructor of the given variable or functor,
--- raises an error if the variable or functor is not defined.
-lookupCtor :: MonadCheck m => Maybe Range -> String -> m DataCtor
-lookupCtor maybeRange nam =
-   lookupCtor' nam >>= maybeOrError maybeRange (NameNotDefined nam)
+-- Types are declared in syntax blocks. Types can be defined with our without data constructors.
+-- (1) Types with data constructors:
+-- ```
+-- exp in Exp ::= if(exp, exp, exp) | app(exp, exp) | lam(x, exp)
+-- ```
+-- denotes a type called "Exp" which has three data constructors, "if", "app" and "lam".
+-- The type of the "app" data constructor is "app :: Exp -> Exp -> Exp", while the "lam"
+-- data constructor has type "Ident -> Exp -> Exp".
+--
+-- (2) Types without data constructors:
+-- ```
+-- vlu in Set(Val);
+-- ```
+-- states that atoms named "vlu\d+" are of type "Set(Val)" but does not associate any data constructors
+-- with the type. Importantly, this association **always** happens regardless of whether there are
+-- data constructors or not. The lack of data constructors does not mean that there are no terms for
+-- that type. Indeed, for some builtin types such as "Int", the language provides **literal** support.
+--
 
--- | Same as 'lookupCtor' but does not raise an error
-lookupCtor' :: MonadCheck m => String -> m (Maybe DataCtor)
-lookupCtor' nam = gets (lookupEnvironment nam . _environment)
+type Subtyping         = UnlabeledGraph Typ
+type TypingContext     = Map String Typ
 
--- | Looks up the sort associated with the variable and raises an error if the sort does not exist
-lookupSort :: MonadCheck m => Maybe Range -> String -> m Typ
-lookupSort maybeRange nam =
-  gets (lookupGamma nam . _typingContext) >>= maybeOrError maybeRange (SortNotDefined nam)
+-- The typing context is tracked throughout the type checking, and corresponds to "Γ". The context also includes
+-- the subtyping graph, as well as a set of defined sorts which is used in code generation to generate the appropriate
+-- data types for embedded Haskell expressions.
+data CheckingContext = CheckingContext { _typingContext :: TypingContext, _subtypingGraph :: Subtyping, _definedSorts :: Map Typ (Set Range) }
+                     deriving (Ord, Eq, Show)
 
--- | Check if a sort is defined
-isSortDefined :: MonadCheck m => Typ -> m Bool
-isSortDefined sortName = gets (Set.member sortName . _definedSorts)
+-- Next, we define some auxilary functions for interacting with the checking and type context data types.
+emptyCheckingContext :: CheckingContext
+emptyCheckingContext = CheckingContext Map.empty Graph.empty builtins
+  where builtins = Map.fromList ((,Set.empty) <$> [IntType, StrType, BooType, AnyType, VoidType])
+
+$(makeLenses ''CheckingContext)
+
+
+-- For convenience, we also define some auxilary functions to interact with this typing context within the monad.
+-- | Lookup the type associated with the given name. Returns an error if the type does not exist.
+lookupType :: MonadCheck m => Maybe Range -> String -> m Typ
+lookupType r nam = gets (^. typingContext) >>= maybe (throwErrorMaybe r (NameNotDefined nam)) return . Map.lookup nam
+
+-- | Checks whether the name has already a type associated with it 
+hasType :: MonadCheck m => String -> m Bool
+hasType nam = gets (isJust . Map.lookup nam . _typingContext)
+
+-- | Associate the given name with the given type. 
+typedAsUpdated :: MonadCheck m => String -> Typ -> m ()
+typedAsUpdated nam tpy = typingContext %= Map.insert nam tpy
+
+-- | Same as 'typedAsUpdated' but produces an error if the term has already been typed 
+typedAs :: MonadCheck m => Maybe Range -> String -> Typ -> m ()
+typedAs r nam tpy =
+  ifM (hasType nam)
+      (throwErrorMaybe r (DuplicateVariable nam tpy))
+      (typedAsUpdated nam tpy)
+
+-- | Checks if the type has been defined  
+isDefinedSort :: MonadCheck m => Typ -> m Bool
+isDefinedSort tpy = gets (Map.member tpy . _definedSorts)
 
 -- | Add a sort to the set of defined sorts
-defineSort :: MonadCheck m => Typ -> m ()
-defineSort sortName = do
-  modify (over definedSorts (Set.insert sortName))
-  -- all sorts is a subtype of 'Any'
-  subtyped sortName AnyType
-
--- | Define a sort by name, registering both the type mapping and adding it to defined sorts
-defineSortByName :: MonadCheck m => String -> m ()
-defineSortByName typeName = do
-  typ <- resolveTypeName typeName
-  registerTypeName typeName typ
-  defineSort typ
-
--- | Record the definition site of a sort
-recordSortDefSite :: MonadCheck m => String -> Range -> m ()
-recordSortDefSite sortName range = modify (over sortToDefSite (Map.insert sortName range))
-
--- | Register a type name with its corresponding Typ
-registerTypeName :: MonadCheck m => String -> Typ -> m ()
-registerTypeName typeName typ = modify (over typeNameMapping (Map.insert typeName typ))
-
--- | Resolve a type name to its Typ representation
-resolveTypeName :: MonadCheck m => String -> m Typ
-resolveTypeName typeName = do
-  mapping <- gets _typeNameMapping
-  maybe (throwError $ NameNotDefined typeName) return (Map.lookup typeName mapping)
-
--- | Associate the given type with the given variable or atom in the typing context
--- and add the sort to the set of defined sorts
-typedAs :: MonadCheck m => String -> Typ -> m ()
-typedAs var sortName = do
-  modify (over typingContext (typesAs var sortName))
-  defineSort sortName
-
--- | Registers the first argument as a subtype of the second
-subtyped :: MonadCheck m => Typ -> Typ -> m ()
-subtyped subtype parenttype =
-  modify (over subtypingContext (makeSubtypeOf subtype parenttype))
+defineSort :: MonadCheck m => Typ -> Range -> m ()
+defineSort sortName range = do
+  modify (over definedSorts (Map.insertWith Set.union sortName (Set.singleton range)))
 
 -----------------------------------------
--- Subtyping relations
+-- Typing infrastructure
 -----------------------------------------
 
+-- We define subtyping checks through a type class so that this check is easier to perform on a range of types and combinations
+-- thereof. To define subtyping rules we create a new judgement "T1 <: T2". In practice, this judgement needs a 'CheckingContext'
+-- to access the subtyping graph, however, we omit this here for brevity and assume that can ask whether a type is a subtype
+-- of another "out of thin air". The rules below define the judgement
+--
+-- (1) T <: T (reflexive)
+-- (2) Void <: T (void is a subtype of everything)
+-- (3) T <: Any  (any is a supertype of everything)
+-- (4) T1 <: T2 => Set(T1) <: Set(T2) (covariance of sets)
+-- (5) T2 <: T1 && T3 <: T4 => T1 -> T3 <: T2 -> T4 (contravariance in argument, covariance in return)
+--
+-- Other than these rules, subtyping relationships can be defined by the user of AnalysisLang resulting
+-- in additional "<:" judgements to be created (cf. below).
+
+-- The "subtypeOf" functions represents the "<:" judgement.
+-- | Checks whether the given type is a subtype of the other type
 class SubtypeOf s where
   subtypeOf :: MonadCheck m => s -> s -> m Bool
-
-instance SubtypeOf DataCtor where
-  subtypeOf (DataTagged nam1 s1) (DataTagged nam2 s2) =
-    (nam1 == nam2 &&) <$> s1 `subtypeOf` s2
 
 instance SubtypeOf s => SubtypeOf [s] where
   subtypeOf l1 l2
@@ -259,94 +167,123 @@ instance SubtypeOf s => SubtypeOf [s] where
     | otherwise = and <$> zipWithM subtypeOf l1 l2
 
 instance SubtypeOf Typ where
-  subtypeOf VoidType _ = return True -- VoidType is a subtype of everything
-  subtypeOf _ VoidType = return False  -- Nothing is ever a subtype of VoidType
-  subtypeOf (SetOf a) (SetOf b) = subtypeOf a b -- Sets are covariant in their type parameter
-  subtypeOf s1 s2 = do
-    subCtx <- gets _subtypingContext
-    return $ isSubtypeOf s1 s2 subCtx
+  subtypeOf VoidType _ = return True   -- (2)
+  subtypeOf _ VoidType = return False  -- (2)
+  subtypeOf _ AnyType = return True    -- (3)
+  subtypeOf AnyType _ = return False   -- (3)
+  subtypeOf (SetOf a) (SetOf b) = subtypeOf a b -- (4)
+  -- TODO: functions
+  subtypeOf s1 s2
+    | s1 == s2 = return True -- (1) 
+    | otherwise = do
+       subCtx <- gets _subtypingGraph
+       return $ isSubtypeOf s1 s2 subCtx
 
--- | Return a list of sorts associated with the functor
-sortsInFunctor :: MonadCheck m => String -> m [Typ]
-sortsInFunctor functorName = do
-  env <- gets _environment
-  case lookupEnvironment functorName env of
-    Nothing -> throwError (NameNotDefined functorName)
-    Just (DataTagged _ sorts) -> return sorts
+-- | Records a subtyping relationship between the given types
+subtype :: MonadCheck m => Typ -> Typ -> m ()
+subtype from to =
+  subtypingGraph %= Graph.addEdge () from to
+
+isSubtypeOf :: Typ -> Typ -> Subtyping -> Bool
+isSubtypeOf = Graph.isReachable
+
+-- Based on subtyping rules, types can also be widened. Viewing the subtyping relation as a partial
+-- order between types, the widened type corresponds to the join of the lattice induced by partial order.
+-- More concretely, the 'widenType' function  always returns the most specific common type between the given types.
+-- 
+-- | Generic widening function that works with any type.
+widenType :: (MonadCheck m) => Range -> Typ  -> Typ -> m Typ
+widenType range type1 type2 = do
+  -- TODO: if two types are not directly compatible but share a common ancenstor then that common
+  -- ancestor should be returned. The implementation is currently too restrictive.
+  isSubset1 <- subtypeOf type1 type2
+  isSubset2 <- subtypeOf type2 type1
+  if isSubset1
+    then return type2      -- type2 is more general
+    else if isSubset2 then return type1 -- type1 is more general
+    else throwErrorAt range (IncompatibleTypes [type1] [type2])
+
+
+-- In effect, we differentiate between two different kinds of types:
+-- - primitive types that do not contain any other types
+-- - function types that need to be applied with values (data constructors)
+--
+-- To obtain the type resulting from applying a data constructor, one should
+-- supply values to the data constructor. Here, we define a function that receives
+-- a list of a types to apply to a curried function. If the types do not match an error is returned.
+--
+-- Matching typing rule (the capital Ti's on the left handside of the typing judgement are a shorthand for terms `Γ, ti |- Ti`):
+--         T1' <: T1
+--   ======================= T_App
+--   Γ, (T1 -> T2) T1' |- T2
+applyTpy :: MonadCheck m => Maybe Range -> Typ -> [m (a, Typ)] -> m ([a], Typ)
+applyTpy r (FunType t1 ts) (mt1':ts') = do
+   (v, t1') <- local (const $ Just t1) mt1'
+   ifM (subtypeOf t1' t1)
+       (do (vs, tr) <- applyTpy r ts ts'
+           return (v:vs, tr))
+       (throwErrorMaybe r (IncompatibleTypes [t1] [t1']))
+applyTpy _ t [] = return ([], t)
+applyTpy r t ts = throwErrorMaybe r (ArityMismatch (show t) 0 (length ts))
 
 -----------------------------------------
+-- Type checker
+-----------------------------------------
+
+-- The type checker itself proceeds in three passes over the program.
+-- The first pass associates all atoms on the left hand-side the "in" keyword with the type on the right-handside,
+-- this makes all of these names available for the next pass.
+-- The second pass then associates all data constructor names with their types, this also includes transitions
+-- which are actually just data constructors. The third pass then considers rewrite and regular rules, and annotates 
+-- the AST with the appropriate types.
+--
+
+----------------------------------
 -- Pass 0: declare all sorts and variable names
------------------------------------------
-
--- | Associate a single variable to the given type or return
--- an error if there is already a type associated with the given variable.
--- Also associates the atom with the specified constructor in the environment.
-typeAsUnique :: MonadCheck m => DataCtor -> Typ -> Var -> m ()
-typeAsUnique ctor sortName var = do
-  env <- gets _environment
-  case lookupEnvironment var env of
-    Just _ -> throwError (DuplicateVariable var sortName)
-    Nothing -> do
-      modify (over environment (extendEnvironment var ctor))
-      typedAs var sortName
+----------------------------------
 
 pass0VisitDecl :: MonadCheck m => Decl -> m ()
 pass0VisitDecl (Syntax decls _) = mapM_ pass0VisitSyntaxDecl decls
   where
-    -- no productions denotes a reference to an existing type, this means that:
-    -- * variables are associated with types
-    -- * more relaxed set of types allowed (i.e., not just type constructors of arity 0)
-    -- * checks whether type is actually valid
-    pass0VisitSyntaxDecl (SyntaxDecl vars tpy [] range) = do
-      case fromTypeCon tpy of
-        Left err -> throwErrorAt range (SortNotDefined err)
-        Right sortTyp -> do
-          -- Add the type to the environment if not already defined
-          ifM (isSortDefined sortTyp)
-              (return ())
-              (defineSort sortTyp)
-          -- Type all variables as unique with this type
-          mapM_ (`typedAs` sortTyp) vars
-    -- one or more productions denotes a declaration of a type, the checker will:
-    -- * associate the variables with types
-    -- * declare the type
-    -- * ensure the type is not duplicate
-    -- * more strict type constructors (only arity 0) 
-    pass0VisitSyntaxDecl (SyntaxDecl vars tpy _ctors range) = do
-      case fromTypeCon  tpy of
-        Left err -> throwErrorAt range (SortNotDefined err)
-        Right sortTyp -> do
-          ifM (isSortDefined sortTyp)
-              (throwError (DuplicateSort sortTyp))
-              (do recordSortDefSite (toSortName sortTyp) range
-                  registerTypeName (toSortName sortTyp) sortTyp
-                  mapM_ (`typedAs` sortTyp) vars)
-pass0VisitDecl (TransitionDecl nam _from _to range) = do
-  recordSortDefSite nam range
-  -- Register the transition name as its own type
-  let transitionTyp = Sort nam
-  registerTypeName nam transitionTyp
+    -- In this phase, we only need to associate the atoms in "vars" with the type denoted by "tpy".
+    -- We also check whether the declaration has any data constructors. These are only allowed when
+    -- the type denotes a user-defined sort (i.e., none of the builtin ones).
+    pass0VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) = do
+      tpy' <- either (const $ throwErrorAt range (SortNotDefined (show tpy))) return $ fromTypeCon tpy
+      defineSort tpy' range
+      when (not (isUserDefined tpy') && not (null ctors)) $
+        throwErrorAt range (InvalidConstructor (toSortName tpy'))
+      mapM_ (flip (typedAs (Just range)) tpy') vars
 pass0VisitDecl _ = return ()
 
 pass0 :: MonadCheck m => Program -> m ()
-pass0 (Program decls _) = mapM_ pass0VisitDecl decls
-
--- TODO: after pass 0 we should check that all types have been defined correctly in the defined sorts, for instance when Map(Adr, Val) is used then there should be an Adr and a Val!
+pass0 (Program decls _) = do
+    mapM_ pass0VisitDecl decls
+    gets (Map.toList . fmap Set.toList . _definedSorts) >>= mapM_ (uncurry checkTypeInstantiated)
+  where checkTypeInstantiated sort rs  =
+            mapM_ (\sort -> ifM (isDefinedSort sort)
+                                (return ())
+                                (throwErrorMaybe (safeHead rs) (SortNotDefined (toSortName sort))))
+                  (referencedTypes sort)
+        safeHead [] = Nothing
+        safeHead (r:_) = Just r
 
 -----------------------------------------
 -- Pass 1: associate functors in the syntax declarations with sorts, register subtyping for variables
 -----------------------------------------
 
+-- Here we just have to look for the data constructors are convert the atoms occuring in the terms
+-- to their correct type, and then type the data constructor itself in the typing context.
 -- | Process and associate the data constructors in the given sort
 pass1VisitCtor :: MonadCheck m => Typ -> PureTerm -> m ()
 pass1VisitCtor sortName = \case
   (Atom nam _ range) -> do
-    sort <- lookupSort (Just range) (runIdentity nam)
-    subtyped sort sortName
-  (Functor nam ts _ _range) -> do
-    sorts <- mapM (\t -> collectAtoms t >>= lookupSort (Just (rangeOf t))) ts
-    let ctor = DataTagged nam sorts
-    typeAsUnique ctor sortName nam
+    sort <- lookupType (Just range) (runIdentity nam)
+    subtype sort sortName
+  (Functor nam ts _ range) -> do
+    sorts <- mapM (\t -> ensureAtom t >>= lookupType (Just (rangeOf t))) ts
+    let tpy = curryFunType (sorts ++ [sortName])
+    typedAs (Just range) nam tpy
   (Eqq _ _ _ range) -> throwErrorAt range $ InvalidConstructor "Equality terms cannot be used as constructors in syntax declarations"
   (Neq _ _ _ range) -> throwErrorAt range $ InvalidConstructor "Inequality terms cannot be used as constructors in syntax declarations"
   (Transition _ _ _ _ range) -> throwErrorAt range $ InvalidConstructor "Transition terms cannot be used as constructors in syntax declarations"
@@ -356,8 +293,8 @@ pass1VisitCtor sortName = \case
   (SetOfTerms _ _ range) -> throwErrorAt range $ InvalidConstructor "Set literals cannot be used as constructors in syntax declarations"
   (TermHask v _ _) -> absurd v
   where
-    collectAtoms (Atom nam _ _) = return (runIdentity nam)
-    collectAtoms t = throwErrorAt (rangeOf t) $ NoNestingAt sortName
+    ensureAtom (Atom nam _ _) = return (runIdentity nam)
+    ensureAtom t = throwErrorAt (rangeOf t) $ NoNestingAt sortName
 
 pass1VisitDecl :: MonadCheck m => Decl -> m ()
 pass1VisitDecl (Syntax decls _) = mapM_ pass1VisitSyntaxDecl decls
@@ -366,14 +303,11 @@ pass1VisitDecl (Syntax decls _) = mapM_ pass1VisitSyntaxDecl decls
       case fromTypeCon tpy of
         Left err -> throwErrorAt range (SortNotDefined err)
         Right sortTyp -> mapM_ (pass1VisitCtor sortTyp) ctors
-pass1VisitDecl (TransitionDecl nam (Sort from, _) (Sort to, _) _range) = do
+pass1VisitDecl (TransitionDecl nam (Sort from, _) (Sort to, _) range) = do
   -- transition State ~> State is equivalent to the syntax rule:
   -- ~> ::= ~>(state, state) from a typing perspective
-  fromTyp <- resolveTypeName from
-  toTyp <- resolveTypeName to
-  transitionTyp <- resolveTypeName nam
-  let ctor = DataTagged nam [fromTyp, toTyp]
-  typeAsUnique ctor transitionTyp nam
+  let tpy = curryFunType [Sort from, Sort to, Sort nam]
+  typedAs (Just range) nam tpy
 pass1VisitDecl _ = return ()
 
 pass1 :: MonadCheck m => Program -> m ()
@@ -411,30 +345,16 @@ checkBinaryEqualityTerm constructor term1 term2 range = do
 checkTerm :: MonadCheck m => PureTerm -> m (TypedTerm, Typ)
 checkTerm (Atom nam _ range) = do
   let varName = variableName (runIdentity nam)
-  -- Check that the atom is not associated with a functor (DataTagged constructor)
-  ctor <- lookupCtor' varName
-  case ctor of
-    Just (DataTagged _ _) -> throwErrorAt range (NameNotDefined varName) -- Should be used as functor, not atom
-    _ -> do
-      sort <- lookupSort (Just range) varName
-      return (Atom nam sort range, sort)
-checkTerm (Functor tpy terms _ range) = do
-  -- Check if functor is defined and get its arity from the constructor
-  ctor <- lookupCtor (Just range) tpy
-  let expected = getSorts ctor
-  functorSort <- lookupSort (Just range) tpy
-  -- Check arity matches
-  if length terms /= length expected
-    then throwErrorAt range $ ArityMismatch tpy (length expected) (length terms)
-    else do
-      -- Type check each argument with its expected type in the reader context
-      let expectedTypes = map Just expected
-      (terms', ts') <- mapAndUnzipM (\(term, expectedType) ->
-        local (const expectedType) (checkTerm term)) (zip terms expectedTypes)
-      ok <- and <$> zipWithM subtypeOf ts' expected
-      if ok
-        then return (Functor tpy terms' functorSort range, functorSort)
-        else throwErrorAt range $ IncompatibleTypes expected ts'
+  tpy <- lookupType (Just range) varName
+  return (Atom nam tpy range, tpy)
+checkTerm (Functor nam terms _ range) = do
+  -- For funtors we also lookup the type associated with its name,
+  -- and then try to apply "applyTpy" to it to ensure that all arguments
+  -- have the correct type.
+  functorTpy <- lookupType (Just range) nam
+  -- Obtain the type of the arguments and pass them to the `applyTpy` function
+  (typedTerms, resultTpy) <- applyTpy (Just range) functorTpy (map checkTerm terms)
+  return (Functor nam typedTerms resultTpy range, resultTpy)
 checkTerm (Eqq term1 term2 _ range) =
   checkBinaryEqualityTerm Eqq term1 term2 range
 checkTerm (Neq term1 term2 _ range) =
@@ -459,14 +379,14 @@ checkTerm (IncludedIn var term range) = do
   case termType of
     SetOf elementType -> do
       -- Ensure the variable is defined and has the right type
-      varSort <- lookupSort (Just range) var
+      varSort <- lookupType (Just range) var
       -- Check if the variable type is compatible with the set element type
       ifM (subtypeOf varSort elementType)
           (return (IncludedIn var checkedTerm range, VoidType)) -- Set inclusion has VoidType
           (throwErrorAt range (IncompatibleTypes [varSort] [elementType]))
     _ -> do
       -- Get the variable type to show what kind of set was expected
-      varSort <- lookupSort (Just range) var
+      varSort <- lookupType (Just range) var
       throwErrorAt range (IncompatibleTypes [SetOf varSort] [termType]) -- Expected a set of the variable's type
 checkTerm (SetOfTerms terms _ range) = do
   -- Check all terms in the set and ensure they have compatible types
@@ -481,45 +401,22 @@ checkTerm (TermHask v _ _) = absurd v
 checkTerm_ :: MonadCheck m => PureTerm -> m Typ
 checkTerm_ = fmap snd . checkTerm
 
--- | Generic widening function that works with any type that has SubtypeOf and HasSorts instances
-widenType :: (SubtypeOf s, HasSorts s, MonadCheck m) => Range -> s -> s -> m s
-widenType range type1 type2 = do
-  isSubset1 <- subtypeOf type1 type2
-  isSubset2 <- subtypeOf type2 type1
-  if isSubset1
-    then return type2      -- type2 is more general
-    else if isSubset2 then return type1 -- type1 is more general
-    else throwErrorAt range (IncompatibleTypes (getSorts type1) (getSorts type2))
-
--- | Update or widen the constructor for a rewrite rule head
-updateOrWidenCtor :: MonadCheck m => String -> DataCtor -> Range -> m ()
-updateOrWidenCtor nam newCtor range = do
-  env <- gets _environment
-  case lookupEnvironment nam env of
-    Nothing -> modify (over environment (extendEnvironment nam newCtor))
-    Just existingCtor -> do
-      widenedCtor <- widenType range existingCtor newCtor
-      modify (over environment (extendEnvironment nam widenedCtor))
-
 -- | Update or widen the sort name for a rewrite rule
 updateOrWidenSort :: MonadCheck m => String -> Typ -> Range -> m ()
 updateOrWidenSort nam newSort range = do
-  gamma <- gets _typingContext
-  case lookupGamma nam gamma of
-    Nothing -> typedAs nam newSort
-    Just existingSort -> do
-      widenedSort <- widenType range existingSort newSort
-      typedAs nam widenedSort
+  ifM (hasType nam)
+      (do existingSort <- lookupType (Just range) nam
+          widenedSort  <- widenType range existingSort newSort
+          typedAsUpdated nam widenedSort)
+      (typedAs (Just range) nam newSort)
 
 pass2VisitDecl :: MonadCheck m => Decl -> m ()
 pass2VisitDecl (Rewrite (RewriteDecl nam args bdy range) _) = do
-  sorts <- mapM checkTerm_ args
-  bdySort <- checkTerm_ bdy
-  let ctor = DataTagged nam sorts
+  tpys <- mapM checkTerm_ args
+  bdyTpy <- checkTerm_ bdy
+  let rewriteTpy = curryFunType (tpys ++ [bdyTpy])
   -- Update or widen the constructor for the rewrite rule head
-  updateOrWidenCtor nam ctor range
-  -- Update or widen the sort for the rewrite rule itself (body sort)
-  updateOrWidenSort nam bdySort (rangeOf bdy)
+  updateOrWidenSort nam rewriteTpy range
 pass2VisitDecl _ = return ()
 
 pass2 :: MonadCheck m => Program -> m ()
@@ -529,14 +426,6 @@ pass2 (Program decls _) = mapM_ pass2VisitDecl decls
 -- Pass 3: type check the terms in the rules
 -----------------------------------------
 
--- | Check that the given sort exists at a specific location
-assertSortDefinedAt :: MonadCheck m => Range -> String -> m ()
-assertSortDefinedAt range sortName = do
-  sortTyp <- resolveTypeName sortName
-  ifM (isSortDefined sortTyp)
-      (return ())
-      (throwErrorAt range (SortNotDefined sortName))
-
 -- | Check a rule in the given context
 checkRule :: MonadCheck m => RuleDecl -> m TypedRuleDecl
 checkRule (RuleDecl nam precedent consequent range) = do
@@ -545,23 +434,19 @@ checkRule (RuleDecl nam precedent consequent range) = do
 -- | Type a rewrite rule
 typeRewrite :: MonadCheck m => RewriteDecl -> m TypedRewriteDecl
 typeRewrite (RewriteDecl name args body range) = do
-  -- TODO: annotate with the correct type instead of AnyType
   typedArgs <- mapM (fmap fst . checkTerm) args
   typedBody <- fmap fst (checkTerm body)
   return $ RewriteDecl name typedArgs typedBody range
 
 typeSyntax :: MonadCheck m => SyntaxDecl -> m TypedSyntaxDecl
 typeSyntax (SyntaxDecl vars tpy prods range) = do
-  -- TODO: annotate with the correct type instead of AnyType
   typedProds <- mapM (fmap fst . checkTerm) prods
   return $ SyntaxDecl vars tpy typedProds range
 
 pass3VisitDecl :: MonadCheck m => Decl -> m TypedDecl
 pass3VisitDecl (RulesDecl rules range) =
   RulesDecl <$> mapM checkRule rules <*> pure range
-pass3VisitDecl (TransitionDecl nam s1@(Sort fromSort, r1) s2@(Sort toSort, r2) range) = do
-  assertSortDefinedAt r1 fromSort
-  assertSortDefinedAt r2 toSort
+pass3VisitDecl (TransitionDecl nam s1@(Sort {}, _) s2@(Sort {}, _) range) = do
   return (TransitionDecl nam s1 s2 range)
 pass3VisitDecl (TransitionDecl _ (_, r1) _ _) =
   throwErrorAt r1 $ NameNotDefined "Only Sort types are supported in transition declarations"
@@ -594,5 +479,4 @@ runChecker' program = do
 runCheckTerm :: CheckingContext -> PureTerm -> Either Error TypedTerm
 runCheckTerm ctx term =
   fst <$> evalStateT (runReaderT (checkTerm term) Nothing) ctx
-
 

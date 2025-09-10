@@ -13,6 +13,6 @@ syntax {
 
 
 rules {
-	rule "Lookup" [ sto(false) ] => [];
+	rule "Lookup" [ sto(0) ] => [];
 };
 

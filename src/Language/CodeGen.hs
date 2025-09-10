@@ -252,7 +252,7 @@ embedExpression haskellCode expectedType = do
     [| HaskellHatch $(lift haskellCode) $(lift (map extractTermVariable freeVarList)) Map.empty $(generateExecuteFunction haskellExp freeVarList typingCtx expectedType) |]
 
 -- | Generate the execute function for a Haskell expression  
-generateExecuteFunction :: Exp -> [String] -> Gamma -> Typ -> Q Exp
+generateExecuteFunction :: Exp -> [String] -> TypingContext -> Typ -> Q Exp
 generateExecuteFunction haskellExp freeVarList typingCtx expectedType = do
   -- Generate unique variable names
   proxName <- newName "prox"
@@ -277,11 +277,11 @@ generateExecuteFunction haskellExp freeVarList typingCtx expectedType = do
 
 
 -- | Generate extraction code for a single variable
-generateExtraction :: Gamma -> Name -> String -> Q (Maybe Exp)
+generateExtraction :: TypingContext -> Name -> String -> Q (Maybe Exp)
 generateExtraction typingCtx mappingName varName = do
   runMaybeT $ do
       baseVarName <- MaybeT $ return $ safeVariableName varName
-      sortName <- MaybeT $ return $ lookupGamma baseVarName typingCtx
+      sortName <- MaybeT $ return $ Map.lookup baseVarName typingCtx
       let typ = sortName
 
       case typ of
@@ -319,7 +319,7 @@ generateExtraction typingCtx mappingName varName = do
 -- For example: if context contains HaskType "CP Bool" and HaskType "Map String Int", 
 -- this returns ["CP Bool", "Map String Int"]
 getHaskellTypes :: CheckingContext -> [String]
-getHaskellTypes ctx = mapMaybe (\case HaskType h -> Just h ; _ -> Nothing) $ Set.toList $ _definedSorts ctx
+getHaskellTypes ctx = mapMaybe (\case HaskType h -> Just h ; _ -> Nothing) $ Set.toList $ Map.keysSet $ _definedSorts ctx
 
 -- | Sanitize Haskell type names for use as constructor names
 -- To do so, it converts spaces to underscores.

@@ -20,6 +20,15 @@ module Language.Types(
     toValue,
     typeOf,
     primTyp,
+
+    -- * Constructing types
+    curryFunType,
+
+    -- * Type extractions
+    referencedTypes,
+
+    -- * Type predicates
+    isUserDefined, 
     
     -- * Template Haskell
     typHaskEx
@@ -49,16 +58,32 @@ type family Find (k :: [Type]) (t :: k1) :: Type where
 ------------------------------------------------------------
 
 -- | The different types that can be taken by a term
-data Typ = Sort String -- ^ a user-defined (or system) sort
-         | IntType     -- ^ values are strings 
-         | StrType     -- ^ values are integers
-         | BooType     -- ^ values are boolean
-         | SetOf Typ   -- ^ a set of values from the given type
-         | MapOf Typ Typ
+data Typ = Sort String     -- ^ a user-defined (or system) sort
+         | IntType         -- ^ values are strings 
+         | StrType         -- ^ values are integers
+         | BooType         -- ^ values are boolean
+         | SetOf Typ       -- ^ a set of values from the given type
          | AnyType
-         | VoidType    -- ^ type for expressions that don't have a meaningful type (incompatible with all others)
+         | VoidType        -- ^ type for expressions that don't have a meaningful type 
          | HaskType String 
+         | FunType Typ Typ -- ^ type of (partial) functions
         deriving (Ord, Eq, Show)        
+
+-- | Checks whether the type is a user-defined type
+isUserDefined :: Typ -> Bool
+isUserDefined (Sort _) = True
+isUserDefined _ = False
+
+-- | Extract all referenced types 
+referencedTypes :: Typ -> [Typ]
+referencedTypes (SetOf t) = referencedTypes t
+referencedTypes (FunType t1 t2) = referencedTypes t1 ++ referencedTypes t2
+referencedTypes t = [t]
+
+-- | Curry a list of types into a "FunType"
+curryFunType :: [Typ] -> Typ
+curryFunType [] = VoidType
+curryFunType ts = foldr1 FunType ts 
 
 -- | LEGACY (TODO): converts a user-defined type to primitive type
 primTyp :: Typ -> Typ
@@ -135,8 +160,8 @@ instance Lift Typ where
   liftTyped AnyType   = [|| AnyType ||]
   liftTyped VoidType  = [|| VoidType ||]
   liftTyped (SetOf t) = [|| SetOf $$(liftTyped t) ||]
-  liftTyped (MapOf t1 t2) = [|| MapOf $$(liftTyped t1) $$(liftTyped t2) ||]
-  liftTyped (HaskType s) = [|| HaskType $$(liftTyped s) ||]
+  liftTyped (HaskType s)  = [|| HaskType $$(liftTyped s) ||]
+  liftTyped (FunType a b) = [|| FunType $$(liftTyped a) $$(liftTyped b) ||]
 
 instance Lift Value where
   liftTyped (IntValue i) = [|| IntValue $$(liftTyped i) ||]
@@ -172,7 +197,7 @@ toSortName StrType = "String"
 toSortName BooType = "Bool"
 toSortName AnyType = "Any"
 toSortName (SetOf typ) = "Set(" ++ toSortName typ ++ ")"
-toSortName (MapOf t1 t2) = "Map(" ++ toSortName t1 ++ "," ++ toSortName t2 ++ ")"
 toSortName VoidType = "Void"
+toSortName (FunType a b) = toSortName a ++ "->" ++ toSortName b
 toSortName (HaskType s) = "${" ++ s ++ "}"
 
