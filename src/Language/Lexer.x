@@ -21,8 +21,8 @@ import Control.Monad
 %wrapper "monadUserState"
 
 $digit = 0-9
-$alpha = [a-zA-Z]
-$alphanum = [a-zA-Z0-9]
+$alpha = [a-zA-Z\x80-\x10ffff] -- ASCII letters + Unicode symbols
+$alphanum = [a-zA-Z0-9\x80-\x10ffff] -- ASCII letters/digits + Unicode symbols
 
 tokens :-
 
@@ -34,6 +34,7 @@ tokens :-
   <0> "=>"                          { mkToken Implies }
   <0> "/="                          { mkToken NotEqual }
   <0> "="                           { mkToken Equal }
+  <0> "⇓"                           { mkToken BigStep }
   <0> "rules"                       { mkToken Rules }
   <0> "rule"                        { mkToken Rule }
   <0> "true"                        { mkToken (Boo True)  }

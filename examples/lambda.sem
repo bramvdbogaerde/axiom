@@ -31,7 +31,7 @@ syntax {
 	sto in Map(Adr, Set(Val));
 
 	% evaluation function
-	Eval ::= eval(e, env, sto, v, env, sto);
+	Eval ::= (e, env, sto) ⇓ (v, sto);  
 };
 
 
@@ -39,7 +39,7 @@ rules {
 	rule "Var"
 		 [ env(x) = adr; sto(adr) = v ]
 		  =>
-		 [ eval(x, env, sto, v, env, sto) ];
+		 [ (x, env, sto) ⇓ (v, sto) ];
 
 
 	%% TODO: the "b in v1; b = true; " is quite annoying but is required
@@ -47,14 +47,14 @@ rules {
 	%% the "in" keyword. But we should actually support any term type as
 	%% long as it is also ground.
 	rule "IfTrue"
-		[ eval(e1, env, sto, v1, env1, sto1) ; b in v1 ; b = true ; eval(e2, env1, sto1, v2, env2, sto2)  ]
+		[ (e1, env, sto) ⇓ (v1, sto1) ; b in v1 ; b = true ; (e2, env) ⇓ (sto1, v2, sto2)  ]
 		=>
-		[ eval(if(e1, e2, e3), env, sto, v2, env2, sto2) ];
+		[ (if(e1, e2, e3), env, sto) ⇓ (v2, sto2) ];
 
 	rule "IfFalse"
-		[ eval(e1, env, sto, v2, env1, sto1) ; b in v1 ; b = true ; eval(e3, env1, sto1, v2, env2, sto2)  ]
+		[ (e1, env, sto) ⇓ (v1, sto1) ; b in v1 ; b = false ; (e3, env, sto1) ⇓ (v2, sto2)  ]
 		=> 
-		[ eval(if(e1, e2, e3), env, sto, v2, env2, sto2) ];
+		[ (if(e1, e2, e3), env, sto) ⇓ (v2, sto2) ];
 };
 
 
