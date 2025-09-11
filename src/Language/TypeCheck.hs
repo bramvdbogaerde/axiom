@@ -148,20 +148,7 @@ defineSort sortName range = do
 -----------------------------------------
 
 -- We define subtyping checks through a type class so that this check is easier to perform on a range of types and combinations
--- thereof. To define subtyping rules we create a new judgement "T1 <: T2". In practice, this judgement needs a 'CheckingContext'
--- to access the subtyping graph, however, we omit this here for brevity and assume that can ask whether a type is a subtype
--- of another "out of thin air". The rules below define the judgement
---
--- (1) T <: T (reflexive)
--- (2) Void <: T (void is a subtype of everything)
--- (3) T <: Any  (any is a supertype of everything)
--- (4) T1 <: T2 => Set(T1) <: Set(T2) (covariance of sets)
--- (5) T2 <: T1 && T3 <: T4 => T1 -> T3 <: T2 -> T4 (contravariance in argument, covariance in return)
---
--- Other than these rules, subtyping relationships can be defined by the user of AnalysisLang resulting
--- in additional "<:" judgements to be created (cf. below).
-
--- The "subtypeOf" functions represents the "<:" judgement.
+-- thereof. -- The "subtypeOf" functions represents the "<:" judgement.
 -- | Checks whether the given type is a subtype of the other type
 class SubtypeOf s where
   subtypeOf :: MonadCheck m => s -> s -> m Bool
@@ -172,17 +159,10 @@ instance SubtypeOf s => SubtypeOf [s] where
     | otherwise = and <$> zipWithM subtypeOf l1 l2
 
 instance SubtypeOf Typ where
-  subtypeOf VoidType _ = return True   -- (2)
-  subtypeOf _ VoidType = return False  -- (2)
-  subtypeOf _ AnyType = return True    -- (3)
-  subtypeOf AnyType _ = return False   -- (3)
-  subtypeOf (SetOf a) (SetOf b) = subtypeOf a b -- (4)
-  -- TODO: functions
   subtypeOf s1 s2
     | s1 == s2 = return True -- (1) 
-    | otherwise = do
-       subCtx <- gets _subtypingGraph
-       return $ isSubtypeOf s1 s2 subCtx
+    | otherwise = gets (isSubtypeOf s1 s2 . _subtypingGraph)
+
 
 -- | Records a subtyping relationship between the given types
 subtype :: MonadCheck m => Typ -> Typ -> m ()

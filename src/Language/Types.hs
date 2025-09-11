@@ -79,14 +79,30 @@ fromAdjacencyList = foldr (\(from, tos) g -> foldr (Graph.addEdge () from) g tos
 toAdjacencyList :: Subtyping -> [(Typ, [Typ])]
 toAdjacencyList = fmap (second (fmap fst . Set.toList)) . Map.toList . Graph.getAdjList
 
--- | Returns true if the first type is a subtype of the second type
+-- | To define subtyping rules we create a new judgement "T1 <: T2". In practice, this judgement needs a 'CheckingContext'
+-- to access the subtyping graph, however, we omit this here for brevity and assume that can ask whether a type is a subtype
+-- of another "out of thin air". The rules below define the judgement
+--
+-- (1) T <: T (reflexive)
+-- (2) Void <: T (void is a subtype of everything)
+-- (3) T <: Any  (any is a supertype of everything)
+-- (4) T1 <: T2 => Set(T1) <: Set(T2) (covariance of sets)
+-- (5) T2 <: T1 && T3 <: T4 => T1 -> T3 <: T2 -> T4 (contravariance in argument, covariance in return)
+--
+-- Other than these rules, subtyping relationships can be defined by the user of AnalysisLang resulting
+-- in additional "<:" judgements to be created (cf. 'Language.TypeCheck').
+--
+-- Returns true if the first type is a subtype of the second type
 isSubtypeOf :: Typ -> Typ -> Subtyping -> Bool
 isSubtypeOf _ AnyType = const True
 isSubtypeOf AnyType _ = const False
 isSubtypeOf VoidType _ = const True
 isSubtypeOf _ VoidType = const False
 isSubtypeOf (SetOf t1) (SetOf t2) = isSubtypeOf t1 t2
-isSubtypeOf t1 t2 = Graph.isReachable t1 t2
+-- TODO: functions
+isSubtypeOf t1 t2 
+  | t1 == t2 = const True
+  | otherwise = Graph.isReachable t1 t2
 
 -- | Narrow the type to the most specific argument, returns Nothing if types are incompatible
 narrowType :: Typ -> Typ -> Subtyping -> Maybe Typ
