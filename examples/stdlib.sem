@@ -1,0 +1,8 @@
+
+
+%% TODO: move this to the actual standard library, but for this we need to parametrize the abstract domain by using a functor module system just as in Ocaml
+
+syntax {
+	b in ${Set Bool};
+	Truth ::= isTrue(b) | isFalse(b);
+};

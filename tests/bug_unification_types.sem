@@ -1,6 +1,3 @@
-
-
-
 syntax {
 	i in Int;
 	b in Bool;
@@ -23,3 +20,4 @@ rules {
 %% Since there is no possible assignment for 'b' in which 'done(b)' holds
 %% the query should fail.
 %codegen_fail_test: done(b)
+%codegen_fail_test: result(b)
