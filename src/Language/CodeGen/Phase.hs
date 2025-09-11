@@ -36,6 +36,8 @@ instance HaskellExprExecutor CodeGenPhase where
 instance AnnotateType CodeGenPhase where
   typeAnnot _ = id
   isAssignable = isSubtypeOf
+  -- For codegen phase, the XTypeAnnot is just Typ, so return it directly
+  getTermType typ = typ
 
 instance HaskellExprRename CodeGenPhase where
   haskellExprRename mapping hatch = hatch {  renamedVariables = mapping }

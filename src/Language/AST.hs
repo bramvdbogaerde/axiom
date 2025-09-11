@@ -8,6 +8,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 module Language.AST(
@@ -64,14 +65,16 @@ module Language.AST(
     termEqIgnoreRange,
     infixNames,
     isTermGround,
+    termTypeAnnot,
     HaskellExprExecutor(..),
     HaskellExprRename(..),
     AnnotateType(..),
+    anyTyped,
     module Language.Range
   ) where
 
-import Data.Set hiding (map)
-import qualified Data.Set as Set hiding (map)
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Text.Regex (mkRegex, matchRegex)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Language.Range
@@ -377,6 +380,20 @@ isTermGround = \case
   SetOfTerms terms _ _ -> all isTermGround terms
   TermHask {} -> True
 
+-- | Extract the type annotation from a term
+termTypeAnnot :: forall p x. AnnotateType p => Term' p x -> XTypeAnnot p
+termTypeAnnot = \case
+  Atom _ tpy _ -> tpy
+  Functor _ _ tpy _ -> tpy
+  Eqq _ _ tpy _ -> tpy
+  Neq _ _ tpy _ -> tpy
+  Transition _ _ _ tpy _ -> tpy
+  TermValue _ tpy _ -> tpy
+  HaskellExpr _ tpy _ -> tpy
+  SetOfTerms _ tpy _ -> tpy
+  IncludedIn _ _ _ -> typeAnnot (Proxy @p) BooType -- IncludedIn is boolean
+  TermHask _ tpy _ -> tpy
+
 -------------------------------------------------------------
 -- Phase-dependent Haskell expression execution
 -------------------------------------------------------------
@@ -411,16 +428,22 @@ class AnnotateType p where
   -- (*) allowed: v := b
   -- (*) not allowed b := v
   isAssignable :: XTypeAnnot p -> XTypeAnnot p -> Subtyping ->  Bool
+  -- | Extract the Typ from a phase-dependent type annotation
+  getTermType :: XTypeAnnot p -> Typ
 
 instance AnnotateType ParsePhase where
   typeAnnot _ = const ()
   -- Sicne the parse phase does not contain any type information, anything is assignable to anything else
   isAssignable = const . const . const True
+  -- For parse phase, we don't have type information, so return AnyType
+  getTermType _ = AnyType
 
 instance AnnotateType TypingPhase where
   typeAnnot _ = id
   -- After the typing phase we must use subtyping information to check whether the types are compatible
   isAssignable = isSubtypeOf
+  -- For typing phase, the XTypeAnnot is just Typ, so return it directly
+  getTermType typ = typ
 
 
 -- | Phase-indexed type class for associating a renaming mapping with the Haskell expression
@@ -438,3 +461,17 @@ instance HaskellExprRename ParsePhase where
 instance HaskellExprRename TypingPhase where
   haskellExprRename = const id
   haskellExprFreeVars = const Set.empty
+
+-- | Convert a ParsePhase term to TypingPhase by annotating AnyType everywhere
+anyTyped :: Ord (a String) => Term' ParsePhase a -> Term' TypingPhase a
+anyTyped = \case
+  Atom atomId _ range -> Atom atomId AnyType range
+  Functor name terms _ range -> Functor name (anyTyped <$> terms) AnyType range
+  TermValue value _ range -> TermValue value AnyType range
+  Eqq left right _ range -> Eqq (anyTyped left) (anyTyped right) AnyType range
+  Neq left right _ range -> Neq (anyTyped left) (anyTyped right) AnyType range
+  Transition tname from to _ range -> Transition tname (anyTyped from) (anyTyped to) AnyType range
+  SetOfTerms terms _ range -> SetOfTerms (Set.map anyTyped terms) AnyType range
+  HaskellExpr expr _ range -> HaskellExpr expr AnyType range
+  IncludedIn var term range -> IncludedIn var (anyTyped term) range
+  TermHask value _ range -> TermHask (absurd value) AnyType range

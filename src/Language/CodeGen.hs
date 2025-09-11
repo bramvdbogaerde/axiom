@@ -43,8 +43,8 @@ import Language.Haskell.Meta (parseType)
 -- Prelude & module creation
 ------------------------------------------------------------
 
-makeModule :: Bool -> String -> String -> String -> String -> String  
-makeModule enableDebugger prelude ast testQueries termDecls = T.unpack
+makeModule :: Bool -> String -> String -> String -> String -> String -> String  
+makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
   [text|
   {-# LANGUAGE ScopedTypeVariables #-}
   {-# LANGUAGE TypeApplications #-}
@@ -95,6 +95,11 @@ makeModule enableDebugger prelude ast testQueries termDecls = T.unpack
   ast :: CodeGenProgram
   ast = $ast'
 
+  -- Subtyping graph
+
+  subtyping :: Language.Types.Subtyping
+  subtyping = $subtyping'
+
   -- Queries
 
   -- Test queries parsed and type checked during code generation
@@ -113,7 +118,8 @@ makeModule enableDebugger prelude ast testQueries termDecls = T.unpack
              " (expected: " ++ (if shouldPass then "PASS" else "FAIL") ++ ") ... "
     let Program decls _ = ast
     let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
-    let engineCtx = fromRules @[] rules
+    -- subtyping is already available as a top-level variable
+    let engineCtx = fromRules Main.subtyping rules
     let solverComputation = ST.runST $ runSolver engineCtx (solve @CodeGenPhase @[] query)
     
     let hasSolution = not $ null solverComputation
@@ -132,6 +138,7 @@ makeModule enableDebugger prelude ast testQueries termDecls = T.unpack
     testQueries' = T.pack testQueries
     prelude' = T.pack prelude
     termDecls' = T.pack termDecls
+    subtyping' = T.pack subtyping
     debuggerImports' = T.pack $ if enableDebugger 
                                 then unlines
                                   [ "import qualified Language.SolverDebugger"
@@ -487,6 +494,11 @@ processTestQueries ctx = mapM (fmap (either error id) . runExceptT . processQuer
         queryExp <- pureTermToExp ctx typedQuery
         [| ($(return queryExp), $( if shouldPass then [| True |] else [| False |] )) |]
 
+-- | Generate Template Haskell expression for subtyping graph
+generateSubtyping :: CheckingContext -> Q Exp
+generateSubtyping context = 
+  [| Language.Types.fromAdjacencyList $(lift . toAdjacencyList . _subtypingGraph $ context) |]
+
 -- | Generate a Haskell program representing the Typed program with executable Haskell functions in it.
 codegen :: Bool -> CheckingContext -> TypedProgram -> IO String
 codegen enableDebugger context prog@(Program _ comments) = runQ $ do
@@ -497,4 +509,5 @@ codegen enableDebugger context prog@(Program _ comments) = runQ $ do
     <$> (pprint <$> astToCode context prog)
     <*> (pprint <$> (processTestQueries context testQueryStrings >>= listE . map return))
     <*> (pprint <$> generateTermTypes context)
+    <*> (pprint <$> generateSubtyping context)
 

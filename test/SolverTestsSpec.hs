@@ -6,6 +6,7 @@ import Language.AST
 import Language.Parser (parseTerm)
 import Language.ImportResolver
 import Language.Solver
+import Language.TypeCheck (runChecker', CheckingContext(..))
 import qualified Language.Solver.BacktrackingST as ST
 import System.Directory
 import System.FilePath
@@ -47,15 +48,21 @@ runTestQuery (Program decls _) queryStr = do
   case parseTerm queryStr of
     Left parseError -> return $ Left $ "Parse error: " ++ show parseError
     Right query -> do
-      let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
-      let engineCtx = fromRules rules :: EngineCtx ParsePhase [] s
-      let solverComputation = ST.runST $ runSolver engineCtx (solve @ParsePhase query)
-
-      -- Run with 5 second timeout to catch non-termination
-      timeoutResult <- timeout 5000000 (return $! solverComputation) -- 5 seconds in microseconds
-      case timeoutResult of
-        Nothing -> return $ Left $ "Solver timeout: Query '" ++ queryStr ++ "' did not terminate within 5 seconds"
-        Just solutions -> return $ Right (not $ null solutions)
+      -- First type check the program to get the subtyping graph
+      case runChecker' (Program decls []) of
+        Left typeError -> return $ Left $ "Type error: " ++ show typeError
+        Right (checkingCtx, typedProgram) -> do
+          let rules = [rule | RulesDecl rules _ <- getDecls typedProgram, rule <- rules]
+          let subtyping = _subtypingGraph checkingCtx
+          let typedQuery = anyTyped query
+          let engineCtx = fromRules subtyping rules :: EngineCtx TypingPhase [] s
+          let solverComputation = ST.runST $ runSolver engineCtx (solve @TypingPhase typedQuery)
+          
+          -- Run with 5 second timeout to catch non-termination
+          timeoutResult <- timeout 5000000 (return $! solverComputation) -- 5 seconds in microseconds
+          case timeoutResult of
+            Nothing -> return $ Left $ "Solver timeout: Query '" ++ queryStr ++ "' did not terminate within 5 seconds"
+            Just solutions -> return $ Right (not $ null solutions)
 
 -- | Load and parse a test file, returning either an error or (program, queries)
 loadTestFile :: FilePath -> ExceptT String IO (Program, [(String, Bool)])

@@ -39,7 +39,10 @@ module Language.Types(
 
     -- * Typing environments
     TypingContext,
-    Subtyping
+    Subtyping,
+    emptySubtyping,
+    fromAdjacencyList,
+    toAdjacencyList
   ) where
 
 import Language.Haskell.TH.Syntax hiding (Type)
@@ -47,6 +50,9 @@ import Data.Dynamic
 import Data.Kind
 import Data.Singletons
 import Data.Map (Map)
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import Data.Bifunctor (second)
 import GHC.TypeError
 import Data.Graph (UnlabeledGraph)
 import qualified Data.Graph as Graph
@@ -61,16 +67,33 @@ type TypingContext = Map String Typ
 -- | A hierarchy of types
 type Subtyping     = UnlabeledGraph Typ
 
+-- | Create an empty subtyping graph
+emptySubtyping :: Subtyping
+emptySubtyping = Graph.empty
+
+-- | Create a subtyping graph from an adjacency list representation
+fromAdjacencyList :: [(Typ, [Typ])] -> Subtyping
+fromAdjacencyList = foldr (\(from, tos) g -> foldr (Graph.addEdge () from) g tos) Graph.empty
+
+-- | Extract an adjacency list representation from a subtyping graph
+toAdjacencyList :: Subtyping -> [(Typ, [Typ])]
+toAdjacencyList = fmap (second (fmap fst . Set.toList)) . Map.toList . Graph.getAdjList
+
 -- | Returns true if the first type is a subtype of the second type
 isSubtypeOf :: Typ -> Typ -> Subtyping -> Bool
-isSubtypeOf = Graph.isReachable
+isSubtypeOf _ AnyType = const True
+isSubtypeOf AnyType _ = const False
+isSubtypeOf VoidType _ = const True
+isSubtypeOf _ VoidType = const False
+isSubtypeOf (SetOf t1) (SetOf t2) = isSubtypeOf t1 t2
+isSubtypeOf t1 t2 = Graph.isReachable t1 t2
 
--- | Narrow the type to the most specific argument
-narrowType :: Typ -> Typ -> Subtyping -> Typ
-narrowType from to subtyping =
-  -- TODO: this is too strict we should actually also be able to return a type that is even more specific.
-  -- For instance if you have "Int" `narrowType` "Bool" then the resulting type should be Void
-  if isSubtypeOf from to subtyping then from else to
+-- | Narrow the type to the most specific argument, returns Nothing if types are incompatible
+narrowType :: Typ -> Typ -> Subtyping -> Maybe Typ
+narrowType from to subtyping
+  | isSubtypeOf from to subtyping = Just from
+  | isSubtypeOf to from subtyping = Just to
+  | otherwise = Nothing  -- Types are incompatible
   
 ------------------------------------------------------------
 -- Utilities

@@ -4,7 +4,7 @@ module Main where
 import Prelude hiding (lex)
 import Language.AST
 import Language.Parser
-import Language.TypeCheck
+import Language.TypeCheck (runChecker', CheckingContext(..))
 import Language.CodeGen
 import Language.ImportResolver
 import Control.Monad
@@ -153,20 +153,28 @@ runTestQuery (Program decls _) queryStr = do
       putStrLn $ "PARSE ERROR: " ++ show parseError
       return False
     Right query -> do
-      let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
-      let engineCtx = fromRules rules :: EngineCtx ParsePhase [] s
-      let solverComputation = ST.runST $ runSolver engineCtx (solve @ParsePhase query)
-
-      -- Run with 5 second timeout to catch non-termination
-      timeoutResult <- timeout 5000000 (return $! solverComputation) -- 5 seconds in microseconds
-      case timeoutResult of
-        Nothing -> do
-          putStrLn "TIMEOUT (non-termination detected)"
+      -- First type check the program to get the subtyping graph
+      case runChecker' (Program decls []) of
+        Left typeError -> do
+          putStrLn $ "TYPE ERROR: " ++ show typeError
           return False
-        Just solutions -> do
-          let hasSolution = not $ null solutions
-          putStrLn $ if hasSolution then "PASS" else "FAIL"
-          return hasSolution
+        Right (checkingCtx, typedProgram) -> do
+          let rules = [rule | RulesDecl rules _ <- getDecls typedProgram, rule <- rules]
+          let subtyping = _subtypingGraph checkingCtx
+          let engineCtx = fromRules subtyping rules :: EngineCtx TypingPhase [] s
+          let typedQuery = anyTyped query
+          let solverComputation = ST.runST $ runSolver engineCtx (solve @TypingPhase typedQuery)
+          
+          -- Run with 5 second timeout to catch non-termination
+          timeoutResult <- timeout 5000000 (return $! solverComputation) -- 5 seconds in microseconds
+          case timeoutResult of
+            Nothing -> do
+              putStrLn "TIMEOUT (non-termination detected)"
+              return False
+            Just solutions -> do
+              let hasSolution = not $ null solutions
+              putStrLn $ if hasSolution then "PASS" else "FAIL"
+              return hasSolution
 
 -------------------------------------------------------------
 -- Command implementations

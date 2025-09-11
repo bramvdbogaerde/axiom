@@ -80,7 +80,9 @@ data EngineCtx p q s = EngineCtx
     -- | Search context for query resolution
     _searchCtx :: !(SearchCtx p q s),
     -- | Out-caching mechanism as a mapping from terms to ground terms
-    _outCache :: !(Map (PureTerm' p) (Set (PureTerm' p)))
+    _outCache :: !(Map (PureTerm' p) (Set (PureTerm' p))),
+    -- | Subtyping graph for type-aware unification
+    _subtyping :: !Subtyping
   }
 
 -- | Create an empty search context
@@ -88,8 +90,8 @@ emptySearchCtx :: (Queue q) => SearchCtx p q s
 emptySearchCtx = SearchCtx emptyQueue Map.empty
 
 -- | Create an empty solver engine context
-emptyEngineCtx :: (Queue q) => EngineCtx p q s
-emptyEngineCtx = EngineCtx Map.empty 0 emptySearchCtx Map.empty
+emptyEngineCtx :: (Queue q) => Subtyping -> EngineCtx p q s
+emptyEngineCtx subtyping = EngineCtx Map.empty 0 emptySearchCtx Map.empty subtyping
 
 $(makeLenses ''EngineCtx)
 
@@ -99,8 +101,8 @@ addConclusionFunctor nam decl =
   over conclusionFunctors (Map.insertWith Set.union nam (Set.singleton decl))
 
 -- | Construct an initial context from the rules defined the program
-fromRules :: (Queue q, ForAllPhases Ord p) => [RuleDecl' p] -> EngineCtx p q s
-fromRules = foldr visit emptyEngineCtx
+fromRules :: (Queue q, ForAllPhases Ord p) => Subtyping -> [RuleDecl' p] -> EngineCtx p q s
+fromRules subtyping = foldr visit (emptyEngineCtx subtyping)
   where
     visit rule@(RuleDecl _ _precedent consequent _) =
       flip (foldr (`addConclusionFunctor` rule)) (foldMap functorName consequent)
@@ -131,7 +133,7 @@ restoreSnapshot :: ST.Snapshot s -> Solver p q s ()
 restoreSnapshot = liftST . ST.restore
 
 -- | Convert a PureTerm to RefTerm and update the solver's current mapping
-refTerm :: (ForAllPhases Ord p) => PureTerm' p -> Solver p q s (RefTerm p s)
+refTerm :: (ForAllPhases Ord p, AnnotateType p) => PureTerm' p -> Solver p q s (RefTerm p s)
 refTerm term = do
   mapping <- gets (^. searchCtx . currentMapping)
   (refTerm, newMapping) <- liftST $ Unification.refTerm term mapping
@@ -155,7 +157,7 @@ data CacheResult p   = InCache (PureTerm' p)        -- ^ indicates that the item
                      | NotInCache                   -- ^ indicates that the item is not in the in-cache
 
 -- | Add a term to the cache together with its unification result 
-addToCache :: (HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p)) => PureTerm' p -> Solver p q s ()
+addToCache :: (HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p), AnnotateType p) => PureTerm' p -> Solver p q s ()
 addToCache t = do
   -- use a normalizer that results in variables without unique names
   -- this is important so that the cache satisfies the ascending chain condition
@@ -252,7 +254,8 @@ unify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p)
       -> Solver p q s (Either String ())
 unify left right  = do
   mapping <- gets (^. searchCtx . currentMapping)
-  liftST $ runExceptT $ flip runReaderT mapping $ Unification.unifyTerms left right
+  subtyping <- gets (^. subtyping)
+  liftST $ runExceptT $ flip runReaderT (mapping, subtyping) $ Unification.unifyTerms left right
 
 -- | Returns "True" if the given terms can/are unified
 doesUnify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p)
@@ -268,7 +271,7 @@ doesUnify t1 t2 = do
 ------------------------------------------------------------
 
 -- | Initialize the queue with the query
-initialWL :: (ForAllPhases Ord p, Queue q) => PureTerm' p -> Solver p q s ()
+initialWL :: (ForAllPhases Ord p, Queue q, AnnotateType p) => PureTerm' p -> Solver p q s ()
 initialWL query = do
   refQuery <- refTerm query
   mapping <- gets (^. searchCtx . currentMapping)
