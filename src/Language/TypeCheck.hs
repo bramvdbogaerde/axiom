@@ -5,7 +5,23 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
-module Language.TypeCheck where
+module Language.TypeCheck(
+  -- * Errors
+  ModelError(..),
+  Error(..),
+
+  -- * Type checking
+  runChecker,
+  runChecker',
+  runCheckTerm,
+
+  -- * Contexts
+  CheckingContext(..),
+
+  -- * Re-exports
+  TypingContext,
+  Subtyping)
+ where
 
 import qualified Data.Map as Map
 import Data.Map (Map)
@@ -16,7 +32,6 @@ import Control.Monad.State
 import Control.Lens hiding (Context)
 import Language.AST
 import qualified Data.Graph as Graph
-import Data.Graph (UnlabeledGraph)
 import Control.Monad.Except hiding (throwError)
 import qualified Control.Monad.Except as Except
 import Control.Monad.Reader
@@ -61,16 +76,9 @@ type MonadCheck m = (MonadState CheckingContext m, -- the type checking context 
 throwErrorMaybe :: MonadCheck m => Maybe Range -> ModelError -> m a
 throwErrorMaybe range err = get >>= Except.throwError . Error err range
 
--- | Throw an error by adding the current context to it
-throwError :: MonadCheck m => ModelError -> m a
-throwError = throwErrorMaybe Nothing
-
 -- | Throw an error at the given location in the sourcez by adding the current context to it 
 throwErrorAt :: MonadCheck m => Range -> ModelError -> m a
 throwErrorAt range = throwErrorMaybe (Just range)
-
-maybeOrError :: MonadCheck m => Maybe Range -> ModelError -> Maybe a -> m a
-maybeOrError range err = maybe (throwErrorMaybe range err) return
 
 
 -- Types are declared in syntax blocks. Types can be defined with our without data constructors.
@@ -91,9 +99,6 @@ maybeOrError range err = maybe (throwErrorMaybe range err) return
 -- data constructors or not. The lack of data constructors does not mean that there are no terms for
 -- that type. Indeed, for some builtin types such as "Int", the language provides **literal** support.
 --
-
-type Subtyping         = UnlabeledGraph Typ
-type TypingContext     = Map String Typ
 
 -- The typing context is tracked throughout the type checking, and corresponds to "Γ". The context also includes
 -- the subtyping graph, as well as a set of defined sorts which is used in code generation to generate the appropriate
@@ -183,9 +188,6 @@ instance SubtypeOf Typ where
 subtype :: MonadCheck m => Typ -> Typ -> m ()
 subtype from to =
   subtypingGraph %= Graph.addEdge () from to
-
-isSubtypeOf :: Typ -> Typ -> Subtyping -> Bool
-isSubtypeOf = Graph.isReachable
 
 -- Based on subtyping rules, types can also be widened. Viewing the subtyping relation as a partial
 -- order between types, the widened type corresponds to the join of the lattice induced by partial order.

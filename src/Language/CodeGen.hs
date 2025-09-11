@@ -76,6 +76,8 @@ makeModule enableDebugger prelude ast testQueries termDecls = T.unpack
   -- GHC imports
   import GHC.Show  
   import GHC.Maybe
+  import qualified GHC.Show  
+  import qualified GHC.Err  
 
   -- User prelude
 
@@ -292,7 +294,7 @@ generateExtraction typingCtx mappingName varName = do
           Trans.lift [|
                maybe (Left $ UserError $ "Variable " ++ $(lift varName) ++ " not found")
                      (\case
-                       TermValue {} -> Left $ UserError $ "Expected TermHask for Haskell type " ++ $(lift haskType) ++ " but got TermValue for variable " ++ $(lift varName)
+                       TermValue {} -> error $ "Expected TermHask for Haskell type " ++ $(lift haskType) ++ " but got TermValue for variable " ++ $(lift varName)
                        TermHask haskellValue _ _ -> 
                          case haskellValue of
                            $(conP constructorName [varP (mkName "v")]) -> Right v
@@ -304,7 +306,9 @@ generateExtraction typingCtx mappingName varName = do
         _ -> Trans.lift [|
                maybe (Left $ UserError $ "Variable " ++ $(lift varName) ++ " not found")
                      (\case
-                       TermValue value _ _ -> maybe (Left $ InvalidTypePassed $(lift typ) (typeOf value))
+                       -- Since the code is type checked, an invalid type
+                       -- should not have been passed here.
+                       TermValue value _ _ -> maybe (error $ show $ InvalidTypePassed $(lift typ) (typeOf value))
                                                    Right
                                                    (asType $(typHaskEx typ) value)
                        _ -> Left $ UserError $ "Expected TermValue for variable " ++ $(lift varName))

@@ -5,7 +5,7 @@ module Language.CodeGen.Phase(CodeGenPhase, CodeGenProgram) where
 
 import Language.AST
 import Language.CodeGen.HaskellHatch
-import Language.Types (Typ)
+import Language.Types (Typ, isSubtypeOf)
 import Data.Data
 import qualified Data.Set as Set
 import qualified Data.Map as Map
@@ -35,6 +35,7 @@ instance HaskellExprExecutor CodeGenPhase where
 
 instance AnnotateType CodeGenPhase where
   typeAnnot _ = id
+  isAssignable = isSubtypeOf
 
 instance HaskellExprRename CodeGenPhase where
   haskellExprRename mapping hatch = hatch {  renamedVariables = mapping }

@@ -29,7 +29,7 @@ module Language.AST(
     RewriteDecl'(..),
     RuleDecl'(..),
     Term'(..),
-    
+
     TypeCon(..),
     fromTypeCon,
     typeSubst,
@@ -377,7 +377,6 @@ isTermGround = \case
   SetOfTerms terms _ _ -> all isTermGround terms
   TermHask {} -> True
 
-
 -------------------------------------------------------------
 -- Phase-dependent Haskell expression execution
 -------------------------------------------------------------
@@ -397,12 +396,32 @@ instance HaskellExprExecutor TypingPhase where
 
 -- | Type class for associating a type with a term in a phase-independent manner 
 class AnnotateType p where
+  -- | Turn the given type in phase-compatible type
   typeAnnot :: Proxy p -> Typ -> XTypeAnnot p
+  -- | Checks whether the first type is assignable to the second.
+  -- Example, given the following syntax:
+  -- ```
+  -- syntax {
+  --    b in Bool;
+  --    i in Int;
+  --    v in Val ::= b | i; 
+  -- }
+  -- ```
+  -- The following holds:
+  -- (*) allowed: v := b
+  -- (*) not allowed b := v
+  isAssignable :: XTypeAnnot p -> XTypeAnnot p -> Subtyping ->  Bool
 
 instance AnnotateType ParsePhase where
   typeAnnot _ = const ()
+  -- Sicne the parse phase does not contain any type information, anything is assignable to anything else
+  isAssignable = const . const . const True
+
 instance AnnotateType TypingPhase where
   typeAnnot _ = id
+  -- After the typing phase we must use subtyping information to check whether the types are compatible
+  isAssignable = isSubtypeOf
+
 
 -- | Phase-indexed type class for associating a renaming mapping with the Haskell expression
 class HaskellExprRename p where

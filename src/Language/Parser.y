@@ -90,7 +90,8 @@ SyntaxDecls : {- empty -}                    { [] }
             | SyntaxDecl ';' SyntaxDecls     { $1 : $3 }
 
 SyntaxDecl :: { SyntaxDecl }
-SyntaxDecl : IdentList 'in' TypeRef MaybeProductions { SyntaxDecl $1 $3 (fromMaybe [] $4) (rangeOf $3) }
+SyntaxDecl : TypeRef MaybeProductions { SyntaxDecl [] $1 (fromMaybe [] $2) (rangeOf $1) }
+           | IdentList 'in' TypeRef MaybeProductions { SyntaxDecl $1 $3 (fromMaybe [] $4) (rangeOf $3) }
 
 TypeRef :: { TypeCon }
 TypeRef : IDENT { TypeApp (TypeTyp (getIdent $1) (rangeOf $1)) [] (rangeOf $1) }

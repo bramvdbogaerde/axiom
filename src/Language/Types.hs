@@ -21,6 +21,9 @@ module Language.Types(
     typeOf,
     primTyp,
 
+    -- * Type modifiers
+    narrowType,  
+  
     -- * Constructing types
     curryFunType,
 
@@ -29,17 +32,46 @@ module Language.Types(
 
     -- * Type predicates
     isUserDefined, 
+    isSubtypeOf,
     
     -- * Template Haskell
-    typHaskEx
+    typHaskEx,
+
+    -- * Typing environments
+    TypingContext,
+    Subtyping
   ) where
 
 import Language.Haskell.TH.Syntax hiding (Type)
 import Data.Dynamic
 import Data.Kind
 import Data.Singletons
+import Data.Map (Map)
 import GHC.TypeError
+import Data.Graph (UnlabeledGraph)
+import qualified Data.Graph as Graph
 
+
+------------------------------------------------------------
+-- Typing environments 
+------------------------------------------------------------
+
+-- | A mapping from term names to their types
+type TypingContext = Map String Typ
+-- | A hierarchy of types
+type Subtyping     = UnlabeledGraph Typ
+
+-- | Returns true if the first type is a subtype of the second type
+isSubtypeOf :: Typ -> Typ -> Subtyping -> Bool
+isSubtypeOf = Graph.isReachable
+
+-- | Narrow the type to the most specific argument
+narrowType :: Typ -> Typ -> Subtyping -> Typ
+narrowType from to subtyping =
+  -- TODO: this is too strict we should actually also be able to return a type that is even more specific.
+  -- For instance if you have "Int" `narrowType` "Bool" then the resulting type should be Void
+  if isSubtypeOf from to subtyping then from else to
+  
 ------------------------------------------------------------
 -- Utilities
 ------------------------------------------------------------

@@ -13,6 +13,7 @@ import Data.Data
 -- | Errors that can be produced by embedded Haskell expressions
 data HatchError = InvalidTypePassed Typ Typ -- ^ invalid type: expected, actual
                 | UserError String -- ^ any error that gets thrown by the Haskell expression
+                deriving (Show)
 
 -- | Represents an embedded Haskell expression
 data HaskellHatch p = HaskellHatch {
