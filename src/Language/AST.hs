@@ -63,8 +63,10 @@ module Language.AST(
     atomNames,
     functorName,
     termEqIgnoreRange,
+    eqIgnoreRange,
     infixNames,
     isTermGround,
+    isGround,
     termTypeAnnot,
     HaskellExprExecutor(..),
     HaskellExprRename(..),
@@ -120,7 +122,7 @@ type ForAllPhases c p = (c (XHaskellExpr p), c (XTypeAnnot p), c (XEmbeddedValue
 
 
 -------------------------------------------------------------
--- The AST
+-- Program AST
 -------------------------------------------------------------
 
 -- | A program is a sequence of declarations with optional top-level comments
@@ -144,6 +146,12 @@ type Comment = Comment' ParsePhase
 typeComment :: Comment' p -> Comment' q
 -- NOTE: id does not work since "id :: a -> a", and p /= q forall p, q.
 typeComment (Comment nam ran) = Comment nam ran
+
+
+
+-------------------------------------------------------------
+-- Type AST
+------------------------------------------------------------
 
 -- | Names of types
 type Tpy = String
@@ -177,6 +185,11 @@ typeSubst var typ =
         t@TypeTyp {} -> t
         tv@(TypeVar var' _) -> if var == var' then typ else tv
         th@TypeHas {} -> th
+
+
+------------------------------------------------------------
+-- Declarations AST
+------------------------------------------------------------
 
 -- | A declaration is either a syntax section, rules section, transition
 -- declaration or or a rewrite rule.
@@ -237,6 +250,33 @@ instance (ForAllPhases Show p) => Show (RuleDecl' p) where
     " => " ++
     "[" ++ intercalate ", " (Prelude.map show consequent) ++ "]" ++
     ";"
+
+------------------------------------------------------------
+-- Expression AST
+------------------------------------------------------------
+
+-- | The expression language is used for terms that need to be
+-- evaluated and that reuqire that all parts are ground.
+--
+-- Contrary to what one might think, expressions may still contain
+-- terms, as long as those terms are ground. To enforce this we only
+-- allow pure terms, making it more difficult to put references to
+-- to-be-unified variables during unification.
+data Expr p = LookupMap (PureTerm' p) (PureTerm' p) (XTypeAnnot p) Range -- -- ^ lookup the first term into a map represented by the second
+            | UpdateMap {- Map -} (PureTerm' p) {- Key -} (PureTerm' p) {- Value -} (PureTerm' p) (XTypeAnnot p) Range
+-- TOOD: also add the set literals from the term language
+
+instance RangeOf (Expr p) where
+  rangeOf (LookupMap _ _ _ r)   = r
+  rangeOf (UpdateMap _ _ _ _ r) = r
+
+instance IsGround (Expr p) where
+  isGround (LookupMap t1 t2 _ _) = isGround t1 && isGround t2
+  isGround (UpdateMap t1 t2 t3 _ _) = isGround t1 && isGround t2 && isGround t3 
+
+-----------------------------------------------------------
+-- Term AST
+------------------------------------------------------------
 
 -- | term \in Term ::= atom
 --                  | atom(term0, term1, ...)
@@ -345,6 +385,20 @@ infixNames = [ "=", "/=", "~>"]
 -------------------------------------------------------------
 -- Predicates
 -------------------------------------------------------------
+
+class EqIgnoreRange t where
+  -- | Returns true if the first term is equal to the second, ignoring their ranges
+  eqIgnoreRange :: t -> t -> Bool
+
+class IsGround t where
+  -- | Returns true if the given value is ground (i.e., does not contain any variables)
+  isGround :: t -> Bool
+
+
+instance (Eq (f String), ForAllPhases Eq p) => EqIgnoreRange (Term' p f) where
+  eqIgnoreRange = termEqIgnoreRange
+instance IsGround (Term' p f) where 
+  isGround = isTermGround
 
 -- | Compare two terms for equality ignoring range information
 termEqIgnoreRange :: (Eq (f String), ForAllPhases Eq p) => Term' p f -> Term' p f -> Bool
