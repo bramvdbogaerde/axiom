@@ -6,6 +6,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE MonoLocalBinds #-}
 
 module Language.SolverDebugger where
 

@@ -56,6 +56,3 @@ rules {
 		=> 
 		[ (if(e1, e2, e3), env, sto) ⇓ (v2, sto2) ];
 };
-
-
-

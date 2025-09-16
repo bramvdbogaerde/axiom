@@ -5,7 +5,7 @@ module Language.CodeGen.Phase(CodeGenPhase, CodeGenProgram) where
 
 import Language.AST
 import Language.CodeGen.HaskellHatch
-import Language.Types (Typ, isSubtypeOf)
+import Language.Types (Typ)
 import Data.Data
 import qualified Data.Set as Set
 import qualified Data.Map as Map
@@ -35,7 +35,6 @@ instance HaskellExprExecutor CodeGenPhase where
 
 instance AnnotateType CodeGenPhase where
   typeAnnot _ = id
-  isAssignable = isSubtypeOf
   -- For codegen phase, the XTypeAnnot is just Typ, so return it directly
   getTermType typ = typ
 

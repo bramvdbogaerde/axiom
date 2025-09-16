@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections, MonoLocalBinds #-}
 
 module Language.Solver where
 

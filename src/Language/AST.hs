@@ -42,6 +42,10 @@ module Language.AST(
     PureTerm,
     PureTerm',
 
+    Expr(..),
+    PureExpr,
+    curryUpdateMap,
+
     TypedTerm,
     TypedDecl,
     TypedRewriteDecl,
@@ -72,7 +76,8 @@ module Language.AST(
     HaskellExprRename(..),
     AnnotateType(..),
     anyTyped,
-    module Language.Range
+    module Language.Range,
+    removeRange
   ) where
 
 import Data.Set (Set)
@@ -90,6 +95,9 @@ import Data.Void (Void, absurd)
 import Language.Types
 import Data.Data
 import Control.Monad.Error.Class
+import qualified Data.List as List
+import qualified Text.Printf as Printf
+import Data.Bifunctor
 
 -------------------------------------------------------------
 -- Phase seperation
@@ -172,7 +180,7 @@ instance RangeOf TypeCon where
   -- | Convert a type constructor to a type
 fromTypeCon :: TypeCon -> Either String Typ
 fromTypeCon = \case (TypeApp (TypeTyp "Set" _) [t] _) -> SetOf <$> fromTypeCon t
-                    (TypeApp (TypeTyp "Map" _) [t1, t2] _) -> FunType <$> fromTypeCon t1 <*> fromTypeCon t2
+                    (TypeApp (TypeTyp "Map" _) [t1, t2] _) -> MapOf <$> fromTypeCon t1 <*> fromTypeCon t2
                     (TypeHas h _)                  -> return $ HaskType h
                     (TypeApp (TypeTyp nam _) [] _) -> return $ fromSortName nam
                     ctor -> throwError $ "Invalid type constructor used " ++ show ctor
@@ -262,23 +270,61 @@ instance (ForAllPhases Show p) => Show (RuleDecl' p) where
 -- terms, as long as those terms are ground. To enforce this we only
 -- allow pure terms, making it more difficult to put references to
 -- to-be-unified variables during unification.
-data Expr p = LookupMap (PureTerm' p) (PureTerm' p) (XTypeAnnot p) Range -- -- ^ lookup the first term into a map represented by the second
-            | UpdateMap {- Map -} (PureTerm' p) {- Key -} (PureTerm' p) {- Value -} (PureTerm' p) (XTypeAnnot p) Range
+data Expr p s = LookupMap (Term' p s) (Term' p s) (XTypeAnnot p) Range -- ^ lookup the first term into a map represented by the second
+            | UpdateMap {- Map -} (Expr p s) {- Key -} (Term' p s) {- Value -} (Term' p s) (XTypeAnnot p) Range
 -- TOOD: also add the set literals from the term language
+            | EmptyMap (XTypeAnnot p) Range
+            | RewriteApp String [Term' p s] (XTypeAnnot p) Range
+            | GroundTerm (Term' p s) (XTypeAnnot p) Range
+-- | A pure expression after the parsing phase
+type PureExpr = Expr ParsePhase Identity
 
-instance RangeOf (Expr p) where
+
+deriving instance (Eq (s String), ForAllPhases Eq p) => Eq (Expr p s)
+deriving instance (Ord (s String), ForAllPhases Ord p) => Ord (Expr p s)
+
+instance (Show (Term' p s)) => Show (Expr p s) where
+  show (LookupMap mapping key _ _) = show mapping ++ "_lookup(" ++ show key ++ ")"
+  show (UpdateMap mapping key value _ _) = show mapping ++ "[" ++ show key ++ " ↦ " ++ show value ++ "]"
+  show (EmptyMap _ _) = "∅"
+  show (RewriteApp functor args _ _) = show functor ++ "(" ++ List.intercalate "," (map show args) ++ ")"
+  show (GroundTerm t _ _) = "g(" ++ show t ++ ")"
+
+instance RangeOf (Expr p s) where
   rangeOf (LookupMap _ _ _ r)   = r
   rangeOf (UpdateMap _ _ _ _ r) = r
+  rangeOf (EmptyMap _ r) = r
+  rangeOf (RewriteApp _ _ _ r) = r
+  rangeOf (GroundTerm _ _ r) = r
 
-instance IsGround (Expr p) where
+instance IsGround (Expr p s) where
   isGround (LookupMap t1 t2 _ _) = isGround t1 && isGround t2
-  isGround (UpdateMap t1 t2 t3 _ _) = isGround t1 && isGround t2 && isGround t3 
+  isGround (UpdateMap t1 t2 t3 _ _) = isGround t1 && isGround t2 && isGround t3
+  isGround (RewriteApp _ ts _ _) = all isGround ts
+  isGround (EmptyMap _ _) = True
+  isGround (GroundTerm t _ _) = isGround t
+
+instance (Eq (s String), ForAllPhases Eq p) => EqIgnoreRange (Expr p s) where
+   eqIgnoreRange (LookupMap t1 t2 ty _) (LookupMap t1' t2' ty' _)  =
+    eqIgnoreRange t1 t1' && eqIgnoreRange t2 t2' && ty == ty'
+   eqIgnoreRange (UpdateMap t1 t2 t3 ty _) (UpdateMap t1' t2' t3' ty' _) =
+    eqIgnoreRange t1 t1' && eqIgnoreRange t2 t2' && eqIgnoreRange t3 t3' && ty == ty'
+   eqIgnoreRange (RewriteApp nam ags ty _) (RewriteApp nam' ags' ty' _)  =
+    nam == nam' && and (zipWith eqIgnoreRange ags ags') && ty == ty'
+   eqIgnoreRange (EmptyMap ty _) (EmptyMap ty' _) = ty == ty'
+   eqIgnoreRange (GroundTerm t tpy _) (GroundTerm t' tpy' _) = eqIgnoreRange t t' && tpy == tpy'
+   eqIgnoreRange _ _ = False
+
+
+curryUpdateMap :: Term' p s -> [(Term' p s, Term' p s)] -> XTypeAnnot p -> Range -> Expr p s
+curryUpdateMap mapping bds tpy r = foldl updateMap (GroundTerm mapping tpy r) bds
+  where updateMap mapping' (k, v) = UpdateMap mapping' k v tpy r
 
 -----------------------------------------------------------
 -- Term AST
 ------------------------------------------------------------
 
--- | term \in Term ::= atom
+-- | term ∈ Term ::= atom
 --                  | atom(term0, term1, ...)
 --                  | term0 = term1
 --                  | term0 /= term1
@@ -292,9 +338,11 @@ data Term' p f  = Atom (f String) (XTypeAnnot p)  Range
                 | Transition String (Term' p f) (Term' p f) (XTypeAnnot p)  Range
                 | HaskellExpr (XHaskellExpr p) (XTypeAnnot p) Range
                 | TermValue Value (XTypeAnnot p) Range
+                | TermMap (Map (Term' p f) (Term' p f)) (XTypeAnnot p) Range
                 | IncludedIn String (Term' p f) Range
                 | SetOfTerms (Set (Term' p f)) (XTypeAnnot p) Range
                 | TermHask (XEmbeddedValue p) (XTypeAnnot p) Range
+                | TermExpr (Expr p f) Range
 type Term = Term' ParsePhase
 
 deriving instance (Ord (f String), ForAllPhases Ord p) => Ord (Term' p f)
@@ -313,38 +361,51 @@ instance (Show (f String), ForAllPhases Show p) => Show (Term' p f) where
   show (IncludedIn var term _) = var ++ " in " ++ show term
   show (SetOfTerms terms _ _) = "{" ++ intercalate ", " (Prelude.map show $ Set.toList terms) ++ "}"
   show (TermHask value _ _) = "TermHask(" ++ show value ++ ")"
+  show (TermExpr expr _) = "e("  ++ show expr ++ ")"
+  show (TermMap mapping _ _) = "["  ++ List.intercalate "," (map (\(key, value) -> Printf.printf "%s ↦ %s" (show key) (show value)) (Map.toList mapping)) ++ "]"
 
 -- | Specialized Show instance for PureTerm that doesn't show Identity wrapper
-instance {-# OVERLAPPING #-} Show PureTerm where
+instance {-# OVERLAPPING #-} Show (PureTerm' p) where
   show (Atom (Identity name)_ _) = name
   show (Functor fname [] _ _) = fname ++ "()"
   show (Functor fname args _ _) = fname ++ "(" ++ intercalate ", " (Prelude.map show args) ++ ")"
   show (Eqq left right _ _) = show left ++ " = " ++ show right
   show (Neq left right _ _) = show left ++ " /= " ++ show right
   show (Transition tname left right _ _) = show left ++ " " ++ tname ++ " " ++ show right
-  show (HaskellExpr expr _ _) = "${" ++ expr ++ "}"
+  show (HaskellExpr _expr _ _) = "${" ++ "}" -- TODO
   show (TermValue value _ _) = show value
   show (IncludedIn var term _) = var ++ " in " ++ show term
   show (SetOfTerms terms _ _) = "{" ++ intercalate ", " (Prelude.map show $ Set.toList terms) ++ "}"
-  show (TermHask v _ _) = absurd v
+  show (TermHask _v _ _) = "" -- TODO
+  show (TermExpr expr _) = "e(" ++ show expr ++ ")"
+  show (TermMap mapping _ _) = "["  ++ List.intercalate "," (map (\(key, value) -> Printf.printf "%s ↦ %s" (show key) (show value)) (Map.toList mapping)) ++ "]"
 
 type PureTerm = PureTerm' ParsePhase
 type PureTerm' p = Term' p Identity
 -- | A typed pure term
 type TypedTerm = PureTerm' TypingPhase
 
-atomNames :: PureTerm' p -> Set String
-atomNames = \case Atom a _ _ -> Set.singleton $ runIdentity a
-                  Functor _ ts _ _ -> foldMap atomNames ts
-                  Eqq t1 t2 _ _ -> atomNames t1 `Set.union` atomNames t2
-                  Neq t1 t2 _ _ -> atomNames t1 `Set.union` atomNames t2
-                  Transition _ t1 t2 _ _ -> atomNames t1 `Set.union` atomNames t2
-                  HaskellExpr {} -> Set.empty
-                  TermValue {} -> Set.empty
-                  IncludedIn var term _ -> Set.singleton var `Set.union` atomNames term
-                  SetOfTerms terms _ _ -> foldMap atomNames terms
-                  TermHask {} -> Set.empty
-
+class AtomNames t where
+  atomNames :: t -> Set String
+instance AtomNames (PureTerm' p) where
+  atomNames = \case Atom a _ _ -> Set.singleton $ runIdentity a
+                    Functor _ ts _ _ -> foldMap atomNames ts
+                    Eqq t1 t2 _ _ -> atomNames t1 `Set.union` atomNames t2
+                    Neq t1 t2 _ _ -> atomNames t1 `Set.union` atomNames t2
+                    Transition _ t1 t2 _ _ -> atomNames t1 `Set.union` atomNames t2
+                    HaskellExpr {} -> Set.empty
+                    TermValue {} -> Set.empty
+                    IncludedIn var term _ -> Set.singleton var `Set.union` atomNames term
+                    SetOfTerms terms _ _ -> foldMap atomNames terms
+                    TermHask {} -> Set.empty
+                    TermExpr expr _ -> atomNames expr
+                    TermMap mapping _ _ -> foldMap (\(key, value) -> atomNames key `Set.union` atomNames value) $ Map.toList mapping
+instance AtomNames (Expr p Identity) where
+  atomNames = \case LookupMap t1 t2 _ _ -> atomNames t1 `Set.union` atomNames t2
+                    UpdateMap t1 t2 t3 _ _ -> atomNames t1 `Set.union` atomNames t2 `Set.union` atomNames t3
+                    EmptyMap _ _ -> Set.empty
+                    RewriteApp _ ags _ _ -> foldMap atomNames ags
+                    GroundTerm t _ _ -> atomNames t
 
 -- | Returns the name of the functor embedded in the term (if any),
 -- also matches on equality and transition relations and returns the obvious functor names for them.
@@ -368,6 +429,8 @@ instance RangeOf (Term' p f) where
                   IncludedIn _ _ r -> r
                   SetOfTerms _ _ r -> r
                   TermHask _ _ r -> r
+                  TermExpr _ r -> r
+                  TermMap _ _ r -> r
 
 -- | Extract the name of the variable from variables suffixed with numbers
 variableName :: String -> String
@@ -397,7 +460,7 @@ class IsGround t where
 
 instance (Eq (f String), ForAllPhases Eq p) => EqIgnoreRange (Term' p f) where
   eqIgnoreRange = termEqIgnoreRange
-instance IsGround (Term' p f) where 
+instance IsGround (Term' p f) where
   isGround = isTermGround
 
 -- | Compare two terms for equality ignoring range information
@@ -418,6 +481,7 @@ termEqIgnoreRange (SetOfTerms terms1 _ _) (SetOfTerms terms2 _ _) =
   Set.size terms1 == Set.size terms2 &&
   all (\t1 -> any (termEqIgnoreRange t1) (Set.toList terms2)) (Set.toList terms1)
 termEqIgnoreRange (TermHask value1 _ _) (TermHask value2 _ _) = value1 == value2
+termEqIgnoreRange (TermExpr expr1 _) (TermExpr expr2 _) = eqIgnoreRange expr1 expr2
 termEqIgnoreRange _ _ = False
 
 -- | Check whether the term is fully ground (i.e., does not contain any atoms)
@@ -433,6 +497,17 @@ isTermGround = \case
   IncludedIn _ term _ -> isTermGround term
   SetOfTerms terms _ _ -> all isTermGround terms
   TermHask {} -> True
+  TermExpr expr _ -> isGround expr
+  TermMap mapping _ _ -> all (\(key, value) -> isGround key && isGround value) $ Map.toList mapping
+
+-- | Extract the type annotation from an expression
+exprTypeAnnot :: Expr p s -> XTypeAnnot p
+exprTypeAnnot = \case
+  LookupMap _ _ tpy _ -> tpy
+  UpdateMap _ _ _ tpy _ -> tpy
+  RewriteApp _ _ tpy _ -> tpy
+  EmptyMap tpy _ -> tpy
+  GroundTerm _ tpy _ -> tpy
 
 -- | Extract the type annotation from a term
 termTypeAnnot :: forall p x. AnnotateType p => Term' p x -> XTypeAnnot p
@@ -445,8 +520,10 @@ termTypeAnnot = \case
   TermValue _ tpy _ -> tpy
   HaskellExpr _ tpy _ -> tpy
   SetOfTerms _ tpy _ -> tpy
-  IncludedIn _ _ _ -> typeAnnot (Proxy @p) BooType -- IncludedIn is boolean
+  IncludedIn {} -> typeAnnot (Proxy @p) BooType -- IncludedIn is boolean, TODO: this should be moved
   TermHask _ tpy _ -> tpy
+  TermExpr expr _ -> exprTypeAnnot expr
+  TermMap _ t _ -> t
 
 -------------------------------------------------------------
 -- Phase-dependent Haskell expression execution
@@ -469,33 +546,16 @@ instance HaskellExprExecutor TypingPhase where
 class AnnotateType p where
   -- | Turn the given type in phase-compatible type
   typeAnnot :: Proxy p -> Typ -> XTypeAnnot p
-  -- | Checks whether the first type is assignable to the second.
-  -- Example, given the following syntax:
-  -- ```
-  -- syntax {
-  --    b in Bool;
-  --    i in Int;
-  --    v in Val ::= b | i; 
-  -- }
-  -- ```
-  -- The following holds:
-  -- (*) allowed: v := b
-  -- (*) not allowed b := v
-  isAssignable :: XTypeAnnot p -> XTypeAnnot p -> Subtyping ->  Bool
   -- | Extract the Typ from a phase-dependent type annotation
   getTermType :: XTypeAnnot p -> Typ
 
 instance AnnotateType ParsePhase where
   typeAnnot _ = const ()
-  -- Sicne the parse phase does not contain any type information, anything is assignable to anything else
-  isAssignable = const . const . const True
   -- For parse phase, we don't have type information, so return AnyType
   getTermType _ = AnyType
 
 instance AnnotateType TypingPhase where
   typeAnnot _ = id
-  -- After the typing phase we must use subtyping information to check whether the types are compatible
-  isAssignable = isSubtypeOf
   -- For typing phase, the XTypeAnnot is just Typ, so return it directly
   getTermType typ = typ
 
@@ -516,6 +576,15 @@ instance HaskellExprRename TypingPhase where
   haskellExprRename = const id
   haskellExprFreeVars = const Set.empty
 
+-- | Convert a ParsePhase expression to a TypingPhase expression by annotating "AnyType" everywhere
+anyTypedExpr :: Ord (a String) => Expr ParsePhase a -> Expr TypingPhase a
+anyTypedExpr = \case
+  LookupMap mapping key _ r -> LookupMap (anyTyped mapping) (anyTyped key) AnyType r
+  UpdateMap mapping key val _ r -> UpdateMap (anyTypedExpr mapping) (anyTyped key) (anyTyped val) AnyType r
+  EmptyMap _ r -> EmptyMap AnyType r
+  RewriteApp nam ags _ r -> RewriteApp nam (map anyTyped ags) AnyType r
+  GroundTerm t _ r -> GroundTerm (anyTyped t) AnyType r
+
 -- | Convert a ParsePhase term to TypingPhase by annotating AnyType everywhere
 anyTyped :: Ord (a String) => Term' ParsePhase a -> Term' TypingPhase a
 anyTyped = \case
@@ -529,3 +598,31 @@ anyTyped = \case
   HaskellExpr expr _ range -> HaskellExpr expr AnyType range
   IncludedIn var term range -> IncludedIn var (anyTyped term) range
   TermHask value _ range -> TermHask (absurd value) AnyType range
+  TermExpr expr range -> TermExpr (anyTypedExpr expr) range
+  TermMap mapping _ range -> TermMap (Map.fromList $ map (bimap anyTyped anyTyped) $ Map.toList  mapping) AnyType range
+
+-- | Remove the range information from an expression and replace it with a dummy range
+removeRangeExpr :: (ForAllPhases Ord p, Ord (a String)) => Expr p a -> Expr p a
+removeRangeExpr = \case
+  LookupMap mapping key tpy _ -> LookupMap (removeRange mapping) (removeRange key) tpy dummyRange
+  UpdateMap mapping key val tpy _ -> UpdateMap (removeRangeExpr mapping) (removeRange key) (removeRange val) tpy dummyRange
+  EmptyMap tpy _ -> EmptyMap tpy dummyRange
+  RewriteApp nam ags tpy _ -> RewriteApp nam (map removeRange ags) tpy dummyRange
+  GroundTerm t tpy _ -> GroundTerm (removeRange t) tpy dummyRange
+
+-- | Remove the range information from a term and replace it with a dummy range
+removeRange :: (ForAllPhases Ord p, Ord (a String)) => Term' p a -> Term' p a
+removeRange = \case
+  Atom atomId tpy _ -> Atom atomId tpy dummyRange
+  Functor name terms tpy _ -> Functor name (removeRange <$> terms) tpy dummyRange
+  TermValue value tpy _ -> TermValue value tpy dummyRange
+  Eqq left right tpy _ -> Eqq (removeRange left) (removeRange right) tpy dummyRange
+  Neq left right tpy _ -> Neq (removeRange left) (removeRange right) tpy dummyRange
+  Transition tname from to tpy _ -> Transition tname (removeRange from) (removeRange to) tpy dummyRange
+  SetOfTerms terms tpy _ -> SetOfTerms (Set.map removeRange terms) tpy dummyRange
+  HaskellExpr expr tpy _ -> HaskellExpr expr tpy dummyRange
+  IncludedIn var term _ -> IncludedIn var (removeRange term) dummyRange
+  TermHask value tpy _ -> TermHask value tpy dummyRange
+  TermExpr expr _ -> TermExpr (removeRangeExpr expr) dummyRange
+  TermMap mapping tpy _ -> TermMap (Map.fromList $ map (bimap removeRange removeRange) $ Map.toList  mapping) tpy dummyRange    
+

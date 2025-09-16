@@ -179,3 +179,54 @@ spec = do
       it "atomNames extracts from set elements" $ do
         term <- parseTermHelper "{x, f(y, z)}"
         atomNames term `shouldBe` Set.fromList ["x", "y", "z"]
+
+    describe "EmptyMap parsing" $ do
+      it "parses empty map" $ do
+        term <- parseTermHelper "[]"
+        case term of
+          TermExpr (GroundTerm (TermExpr (EmptyMap _ _) _) _ _) _ -> return ()
+          _ -> expectationFailure $ "Expected TermExpr (EmptyMap), got: " ++ show term
+
+      it "works in functor arguments" $ do
+        term <- parseTermHelper "f([], x)"
+        case term of
+          Functor "f" [TermExpr (GroundTerm (TermExpr (EmptyMap _ _) _) _ _) _, Atom (Identity "x") _ _] _ _ -> return ()
+          _ -> expectationFailure $ "Expected 'f(∅, x)', got: " ++ show term
+
+    describe "UpdateMap parsing" $ do
+      it "parses single binding from empty map" $ do
+        term <- parseTermHelper "[x |-> y]"
+        case term of
+          TermExpr (UpdateMap (GroundTerm (TermExpr (EmptyMap _ _) _) _ _) (Atom (Identity "x") _ _) (Atom (Identity "y") _ _) _ _) _ -> return ()
+          _ -> expectationFailure $ "Expected '[x |-> y]' with UpdateMap, got: " ++ show term
+
+      it "parses single binding with integer value" $ do
+        term <- parseTermHelper "[x |-> 42]"
+        case term of
+          TermExpr (UpdateMap (GroundTerm (TermExpr (EmptyMap _ _) _) _ _) (Atom (Identity "x") _ _) (TermValue (IntValue 42) _ _) _ _) _ -> return ()
+          _ -> expectationFailure $ "Expected '[x |-> 42]' with UpdateMap, got: " ++ show term
+
+      it "parses single binding with functor value" $ do
+        term <- parseTermHelper "[x |-> f(a, b)]"
+        case term of
+          TermExpr (UpdateMap (GroundTerm (TermExpr (EmptyMap _ _) _) _ _) (Atom (Identity "x") _ _) (Functor "f" [Atom (Identity "a") _ _, Atom (Identity "b") _ _] _ _) _ _) _ -> return ()
+          _ -> expectationFailure $ "Expected '[x |-> f(a, b)]' with UpdateMap, got: " ++ show term
+
+      it "works in equality expressions" $ do
+        term <- parseGoalHelper "map = [key |-> value]"
+        case term of
+          Eqq (Atom (Identity "map") _ _) (TermExpr (UpdateMap _ (Atom (Identity "key") _ _) (Atom (Identity "value") _ _) _ _) _) _ _ -> return ()
+          _ -> expectationFailure $ "Expected 'map = [key |-> value]', got: " ++ show term
+
+      it "parses multiple bindings from empty map" $ do
+        term <- parseTermHelper "[x |-> y; a |-> b]"
+        case term of
+          TermExpr (UpdateMap (UpdateMap (GroundTerm (TermExpr (EmptyMap _ _) _) _ _) (Atom (Identity "x") _ _) (Atom (Identity "y") _ _) _ _) (Atom (Identity "a") _ _) (Atom (Identity "b") _ _) _ _) _ -> return ()
+          _ -> expectationFailure $ "Expected '[x |-> y; a |-> b]' with nested UpdateMap, got: " ++ show term
+
+      it "parses three bindings from empty map" $ do
+        term <- parseTermHelper "[x |-> 1; y |-> 2; z |-> 3]"
+        case term of
+          TermExpr (UpdateMap (UpdateMap (UpdateMap (GroundTerm (TermExpr (EmptyMap _ _) _) _ _) (Atom (Identity "x") _ _) (TermValue (IntValue 1) _ _) _ _) (Atom (Identity "y") _ _) (TermValue (IntValue 2) _ _) _ _) (Atom (Identity "z") _ _) (TermValue (IntValue 3) _ _) _ _) _ -> return ()
+          _ -> expectationFailure $ "Expected '[x |-> 1; y |-> 2; z |-> 3]' with triple nested UpdateMap, got: " ++ show term
+

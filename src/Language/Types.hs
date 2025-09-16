@@ -88,6 +88,7 @@ toAdjacencyList = fmap (second (fmap fst . Set.toList)) . Map.toList . Graph.get
 -- (3) T <: Any  (any is a supertype of everything)
 -- (4) T1 <: T2 => Set(T1) <: Set(T2) (covariance of sets)
 -- (5) T2 <: T1 && T3 <: T4 => T1 -> T3 <: T2 -> T4 (contravariance in argument, covariance in return)
+-- (6) contravariance of map keys and covariance of map values
 --
 -- Other than these rules, subtyping relationships can be defined by the user of AnalysisLang resulting
 -- in additional "<:" judgements to be created (cf. 'Language.TypeCheck').
@@ -99,6 +100,8 @@ isSubtypeOf AnyType _ = const False
 isSubtypeOf VoidType _ = const True
 isSubtypeOf _ VoidType = const False
 isSubtypeOf (SetOf t1) (SetOf t2) = isSubtypeOf t1 t2
+isSubtypeOf (MapOf k1 v1) (MapOf k2 v2) =
+  \subtyping -> isSubtypeOf k2 k1 subtyping && isSubtypeOf v1 v2 subtyping
 -- TODO: functions
 isSubtypeOf t1 t2 
   | t1 == t2 = const True
@@ -137,7 +140,8 @@ data Typ = Sort String     -- ^ a user-defined (or system) sort
          | AnyType
          | VoidType        -- ^ type for expressions that don't have a meaningful type 
          | HaskType String 
-         | FunType Typ Typ -- ^ type of (partial) functions
+         | FunType Typ Typ -- ^ type of total functions
+         | MapOf Typ Typ   -- ^ type of partial functions
         deriving (Ord, Eq, Show)        
 
 -- | Checks whether the type is a user-defined type
@@ -149,6 +153,7 @@ isUserDefined _ = False
 referencedTypes :: Typ -> [Typ]
 referencedTypes (SetOf t) = referencedTypes t
 referencedTypes (FunType t1 t2) = referencedTypes t1 ++ referencedTypes t2
+referencedTypes (MapOf t1 t2) = referencedTypes t1 ++ referencedTypes t2
 referencedTypes t = [t]
 
 -- | Curry a list of types into a "FunType"
@@ -233,6 +238,7 @@ instance Lift Typ where
   liftTyped (SetOf t) = [|| SetOf $$(liftTyped t) ||]
   liftTyped (HaskType s)  = [|| HaskType $$(liftTyped s) ||]
   liftTyped (FunType a b) = [|| FunType $$(liftTyped a) $$(liftTyped b) ||]
+  liftTyped (MapOf a b)   = [|| MapOf $$(liftTyped a) $$(liftTyped b) ||]
 
 instance Lift Value where
   liftTyped (IntValue i) = [|| IntValue $$(liftTyped i) ||]
@@ -270,4 +276,5 @@ toSortName AnyType = "Any"
 toSortName (SetOf typ) = "Set(" ++ toSortName typ ++ ")"
 toSortName VoidType = "Void"
 toSortName (FunType a b) = toSortName a ++ "->" ++ toSortName b
+toSortName (MapOf a b) = toSortName a ++ "↦" ++ toSortName b
 toSortName (HaskType s) = "${" ++ s ++ "}"
