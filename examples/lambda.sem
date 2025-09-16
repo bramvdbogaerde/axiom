@@ -1,0 +1,61 @@
+%% TODO: syntax for Map lookups
+%% TODO: syntax for Map updates
+%% TODO: figure out how to denote weak updates?
+%% TODO: set union syntax.
+
+%% Primitive types
+syntax {
+	s in String;
+	n in Int;
+	b in Bool;
+};
+
+% Syntactic forms
+syntax {
+	e in Exp ::= lambda(x, e)
+			   | app(e, e)
+			   | if(e, e, e)
+			   | nonzero(e)
+			   | x;
+};
+
+% State space
+syntax {
+	adr in Adr ::= n;
+	x in Ident ::= s;
+	cv in Val ::= closure(x, e, env) | aint | b;
+	aint in ${CP Int};
+	v in Set(Val);
+	
+	env in Map(Ident, Adr);
+	sto in Map(Adr, Set(Val));
+
+	% evaluation function
+	Eval ::= (e, env, sto) ⇓ (v, sto);  
+};
+
+
+rules {
+	rule "Var"
+		 [ env(x) = adr; sto(adr) = v ]
+		  =>
+		 [ (x, env, sto) ⇓ (v, sto) ];
+
+
+	%% TODO: the "b in v1; b = true; " is quite annoying but is required
+	%% by the current syntax definition that only allows identifiers before
+	%% the "in" keyword. But we should actually support any term type as
+	%% long as it is also ground.
+	rule "IfTrue"
+		[ (e1, env, sto) ⇓ (v1, sto1) ; b in v1 ; b = true ; (e2, env) ⇓ (sto1, v2, sto2)  ]
+		=>
+		[ (if(e1, e2, e3), env, sto) ⇓ (v2, sto2) ];
+
+	rule "IfFalse"
+		[ (e1, env, sto) ⇓ (v1, sto1) ; b in v1 ; b = false ; (e3, env, sto1) ⇓ (v2, sto2)  ]
+		=> 
+		[ (if(e1, e2, e3), env, sto) ⇓ (v2, sto2) ];
+};
+
+
+

@@ -5,7 +5,7 @@ module Language.CodeGen.Phase(CodeGenPhase, CodeGenProgram) where
 
 import Language.AST
 import Language.CodeGen.HaskellHatch
-import Language.Types (Typ)
+import Language.Types (Typ, isSubtypeOf)
 import Data.Data
 import qualified Data.Set as Set
 import qualified Data.Map as Map
@@ -16,7 +16,7 @@ import Data.Maybe (fromMaybe)
 -- are ground before passing them to the function and tries to unwrap the data
 -- into pure Haskell types wherever possible.
 data CodeGenPhase
-type instance XHaskellExpr CodeGenPhase  = HaskellHatch
+type instance XHaskellExpr CodeGenPhase  = HaskellHatch CodeGenPhase
 type instance XTypeAnnot CodeGenPhase  = Typ
 
 type CodeGenProgram = Program' CodeGenPhase
@@ -35,6 +35,9 @@ instance HaskellExprExecutor CodeGenPhase where
 
 instance AnnotateType CodeGenPhase where
   typeAnnot _ = id
+  isAssignable = isSubtypeOf
+  -- For codegen phase, the XTypeAnnot is just Typ, so return it directly
+  getTermType typ = typ
 
 instance HaskellExprRename CodeGenPhase where
   haskellExprRename mapping hatch = hatch {  renamedVariables = mapping }

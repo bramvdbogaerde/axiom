@@ -1,0 +1,23 @@
+syntax {
+	i in Int;
+	b in Bool;
+	v in Val ::= i | b;
+	Result ::= result(v) | wrong(b) | done(b);
+};
+
+
+rules {
+	rule "Result-Int" [] => [ result(10) ];
+	%% Original bug:
+	%% Expected behavior: unification with result(10) fails because of incompatible types.
+	%% Actual behavior: unification with result(10) succeeds because
+	%% the unification engine does not look at type tags.
+	%% Resulting bug:
+	%% The Haskell expression gives a type error at runtime, which is unexpected because the code successfully type checks.
+	rule "Unsound-typing" [ result(b); b1 = ${ not _'b } ]  => [ done(b1) ];
+};
+
+%% Since there is no possible assignment for 'b' in which 'done(b)' holds
+%% the query should fail.
+%codegen_fail_test: done(b)
+%codegen_fail_test: result(b)

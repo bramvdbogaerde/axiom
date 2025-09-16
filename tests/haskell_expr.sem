@@ -25,7 +25,7 @@ rules {
     %% not be important to the result of the queries,
     %% to solve this a dependency graph should be constructed so that the Haskell expression is always the last goal (cf. design.md). 
     rule "Var-Access"
-    [ a = 5 ; product = ${a * 2} ] =>
+    [ a = 5 ; product = ${_'a * 2} ] =>
     [ t(product) ];
     
     rule "Complex-Arithmetic"

@@ -10,6 +10,12 @@ parseTermHelper input = case parseTerm input of
   Right term -> return term
   Left err -> assertFailure $ "Parse error: " ++ show err
 
+-- | Helper function to parse a term directly, failing the test if parsing fails
+parseGoalHelper :: String -> IO PureTerm
+parseGoalHelper input = case parseGoal input of
+  Right term -> return term
+  Left err -> assertFailure $ "Parse error: " ++ show err
+
 -- | Helper function to parse a rule directly, failing the test if parsing fails
 parseRuleHelper :: String -> IO RuleDecl
 parseRuleHelper input = case parseRule input of

@@ -4,11 +4,15 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeApplications #-}
 
-module SolverDebugger where
+module Language.SolverDebugger where
 
 import Language.Solver
 import Language.AST
+import Language.Types (Subtyping)
+import Language.TypeCheck (runChecker', CheckingContext(..))
 import Language.Parser (parseProgram, parseGoal)
 import qualified Language.Solver.BacktrackingST as ST
 import qualified Language.Solver.Unification as Unification
@@ -58,7 +62,7 @@ defaultContext :: DebugContext
 defaultContext = DebugContext defaultConfig Set.empty
 
 -- | Create debug context from config and query
-createDebugContext :: DebugConfig -> PureTerm -> DebugContext
+createDebugContext :: DebugConfig -> PureTerm' p -> DebugContext
 createDebugContext config query = DebugContext config (atomNames query)
 
 -------------------------------------------------------------
@@ -66,34 +70,41 @@ createDebugContext config query = DebugContext config (atomNames query)
 -------------------------------------------------------------
 
 -- | A single step trace entry
-data TraceEntry = TraceEntry
+data TraceEntry p = TraceEntry
   { traceStep :: Int
   , traceAction :: String
   , traceStateId :: Maybe Int  -- ^ Current search state ID being processed
   , traceGoals :: [String]
   , traceQueueSize :: Int
-  , traceSolution :: Maybe (Map String PureTerm)
-  , tracePartialMapping :: Map String PureTerm  -- ^ Current partial unification results
+  , traceSolution :: Maybe (Map String (PureTerm' p))
+  , tracePartialMapping :: Map String (PureTerm' p)  -- ^ Current partial unification results
   , traceCacheSize :: Int  -- ^ Number of entries in the out-cache
   , traceOutCache :: Map String [String]  -- ^ Out-cache contents: key -> [results]
   , traceInCache :: [String]  -- ^ In-cache (whenSucceeds) contents
-  } deriving (Show)
+  }
+
+-- | Show instance for TraceEntry with proper constraints
+instance (Show (PureTerm' p)) => Show (TraceEntry p) where
+  show (TraceEntry step action stateId goals queueSize solution partialMapping cacheSize outCache inCache) =
+    "TraceEntry " ++ show step ++ " " ++ show action ++ " " ++ show stateId ++ " " ++ show goals ++ " " ++
+    show queueSize ++ " " ++ show solution ++ " " ++ show partialMapping ++ " " ++ show cacheSize ++ " " ++
+    show outCache ++ " " ++ show inCache
 
 -- | The complete trace of a solving session
-type SolverTrace = [TraceEntry]
+type SolverTrace p = [TraceEntry p]
 
 -- | Pretty print a trace entry
-prettyTraceEntry :: TraceEntry -> String
+prettyTraceEntry :: (Show (PureTerm' p)) => TraceEntry p -> String
 prettyTraceEntry entry = unlines $
-  [ "Step " ++ show (traceStep entry) ++ 
-    (case traceStateId entry of 
+  [ "Step " ++ show (traceStep entry) ++
+    (case traceStateId entry of
        Just stateId -> " [State #" ++ show stateId ++ "]"
-       Nothing -> "") ++ 
+       Nothing -> "") ++
     ": " ++ traceAction entry
   , "  Goals: [" ++ intercalate ", " (traceGoals entry) ++ "]"
   , "  Queue size: " ++ show (traceQueueSize entry)
   , "  Cache size: " ++ show (traceCacheSize entry)
-  ] ++ 
+  ] ++
   (if null (traceInCache entry)
     then ["  In-cache (whenSucceeds): []"]
     else ["  In-cache (whenSucceeds):"] ++ map ("    " ++) (traceInCache entry)) ++
@@ -112,10 +123,10 @@ prettyTraceEntry entry = unlines $
 formatCacheTable :: Map String [String] -> [String]
 formatCacheTable cache
   | Map.null cache = ["    (empty)"]
-  | otherwise = 
+  | otherwise =
       let entries = Map.toList cache
           maxKeyWidth = maximum (map (length . fst) entries)
-          formatEntry (key, values) = 
+          formatEntry (key, values) =
             let paddedKey = key ++ replicate (maxKeyWidth - length key) ' '
             in if null values
                 then "    " ++ paddedKey ++ " -> []"
@@ -123,7 +134,7 @@ formatCacheTable cache
       in map formatEntry entries
 
 -- | Pretty print the entire trace
-prettyTrace :: SolverTrace -> String
+prettyTrace :: (Show (PureTerm' p)) => SolverTrace p -> String
 prettyTrace = foldMap prettyTraceEntry
 
 -------------------------------------------------------------
@@ -131,16 +142,16 @@ prettyTrace = foldMap prettyTraceEntry
 -------------------------------------------------------------
 
 -- | Traced solver monad - wraps the solver with tracing capability and context
-newtype TracedSolver q s a = TracedSolver
-  { runTracedSolver :: ReaderT DebugContext (WriterT SolverTrace (Solver ParsePhase q s)) a }
-  deriving (Functor, Applicative, Monad, MonadReader DebugContext, MonadWriter SolverTrace)
+newtype TracedSolver p q s a = TracedSolver
+  { runTracedSolver :: ReaderT DebugContext (WriterT (SolverTrace p) (Solver p q s)) a }
+  deriving (Functor, Applicative, Monad, MonadReader DebugContext, MonadWriter (SolverTrace p))
 
 -- | Lift a solver action into the traced solver
-liftSolver :: Solver ParsePhase q s a -> TracedSolver q s a
+liftSolver :: Solver p q s a -> TracedSolver p q s a
 liftSolver = TracedSolver . lift . lift
 
 -- | Add a trace entry
-trace :: TraceEntry -> TracedSolver q s ()
+trace :: TraceEntry p -> TracedSolver p q s ()
 trace = tell . List.singleton
 
 -------------------------------------------------------------
@@ -148,7 +159,7 @@ trace = tell . List.singleton
 -------------------------------------------------------------
 
 -- | Check step limit and either continue with action or stop with limit message
-withStepLimit :: (Queue q) => Int -> TracedSolver q s a -> TracedSolver q s a -> TracedSolver q s a
+withStepLimit :: (Queue q, Show (PureTerm' p)) => Int -> TracedSolver p q s a -> TracedSolver p q s a -> TracedSolver p q s a
 withStepLimit stepNum continueAction stopAction = do
   context <- ask
   case context ^. debugConfig . configStepLimit of
@@ -162,7 +173,7 @@ withStepLimit stepNum continueAction stopAction = do
     _ -> continueAction
 
 -- | Get current partial mapping for tracing, filtered by configuration
-getCurrentPartialMapping :: TracedSolver q s (Map String PureTerm)
+getCurrentPartialMapping :: TracedSolver p q s (Map String (PureTerm' p))
 getCurrentPartialMapping = return Map.empty
   -- context <- ask
   -- mapping <- liftSolver $ gets (^. searchCtx . currentMapping)
@@ -172,26 +183,26 @@ getCurrentPartialMapping = return Map.empty
   --   else Map.restrictKeys fullMapping (context ^. userVariables)
 
 -- | Get current cache size for tracing
-getCurrentCacheSize :: TracedSolver q s Int
+getCurrentCacheSize :: TracedSolver p q s Int
 getCurrentCacheSize = liftSolver $ gets (Map.size . (^. Language.Solver.outCache))
 
 -- | Get current out-cache contents for tracing
-getCurrentOutCache :: TracedSolver q s (Map String [String])
+getCurrentOutCache :: (Show (PureTerm' p)) => TracedSolver p q s (Map String [String])
 getCurrentOutCache = do
   cache <- liftSolver $ gets (^. Language.Solver.outCache)
   return $ Map.fromList $ map (\(key, values) -> (show key, map show (Set.toList values))) (Map.toList cache)
 
 -- | Get current in-cache (whenSucceeds) contents for a search state
-getInCacheContents :: [InOut ParsePhase s] -> TracedSolver q s [String]
+getInCacheContents :: (Show (PureTerm' p)) => [InOut p s] -> TracedSolver p q s [String]
 getInCacheContents whenSucceeds = return $ map show whenSucceeds
 
 -- | Convert goal terms to string representation for tracing
-goalToString :: Unification.VariableMapping ParsePhase s -> SearchGoal ParsePhase s -> TracedSolver q s String
+goalToString :: (ForAllPhases Ord p, Show (PureTerm' p), AnnotateType p) => Unification.VariableMapping p s -> SearchGoal p s -> TracedSolver p q s String
 goalToString mapping (SearchGoal ruleName goal) =
    flip (Printf.printf "%s via %s") ruleName . show <$> liftSolver (liftST $ Unification.pureTerm goal mapping)
 
 -- | Traced version of solveSingle with debugging information
-tracedSolveSingle :: (Queue q) => Int -> TracedSolver q s (Maybe (Either (Map String PureTerm) ()))
+tracedSolveSingle :: (Queue q, ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => Int -> TracedSolver p q s (Maybe (Either (Map String (PureTerm' p)) ()))
 tracedSolveSingle stepNum = do
   queueSize <- liftSolver getQueueSize
 
@@ -208,7 +219,7 @@ tracedSolveSingle stepNum = do
   result <- liftSolver solveSingle
 
   -- Get partial mapping, cache info for trace
-  partialMapping <- getCurrentPartialMapping
+  partialMapping <- return Map.empty
   cacheSize <- getCurrentCacheSize
   outCache <- getCurrentOutCache
   inCache <- getInCacheContents currentWhenSucceeds
@@ -226,7 +237,7 @@ tracedSolveSingle stepNum = do
       return $ Just (Right ())
 
 -- | Traced version of solveAll with step limit from config
-tracedSolveAll :: (Queue q) => TracedSolver q s [Map String PureTerm]
+tracedSolveAll :: (Queue q, ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => TracedSolver p q s [Map String (PureTerm' p)]
 tracedSolveAll = go 1 []
   where
     go stepNum solutions = withStepLimit stepNum continueStep (return $ reverse solutions)
@@ -239,7 +250,7 @@ tracedSolveAll = go 1 []
             Just (Right ()) -> go (stepNum + 1) solutions
 
 -- | Main traced solve function with step limit from config and caching loop
-tracedSolve :: (Queue q) => PureTerm -> TracedSolver q s [Map String PureTerm]
+tracedSolve :: (Queue q, ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => PureTerm' p -> TracedSolver p q s [Map String (PureTerm' p)]
 tracedSolve query = do
   partialMapping <- getCurrentPartialMapping
   cacheSize <- getCurrentCacheSize
@@ -248,22 +259,22 @@ tracedSolve query = do
   trace $ TraceEntry 0 ("Starting to solve: " ++ show query) Nothing [] 0 Nothing partialMapping cacheSize outCache inCache
   _ <- tracedSolveUntilStable query 1
   liftSolver (cachedSolutions query)
-  
+
 
 -- | Traced version of solveUntilStable with cache iteration tracking
-tracedSolveUntilStable :: (Queue q) => PureTerm -> Int -> TracedSolver q s [Map String PureTerm]
+tracedSolveUntilStable :: (Queue q, ForAllPhases Ord p, AnnotateType p, ForAllPhases Eq p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => PureTerm' p -> Int -> TracedSolver p q s [Map String (PureTerm' p)]
 tracedSolveUntilStable query iteration = do
   partialMapping <- getCurrentPartialMapping
   cacheSize <- getCurrentCacheSize
   outCache <- getCurrentOutCache
   inCache <- getInCacheContents []
   trace $ TraceEntry 0 ("Cache iteration " ++ show iteration ++ ": solving " ++ show query) Nothing [] 0 Nothing partialMapping cacheSize outCache inCache
-  
+
   initialCache <- liftSolver $ gets (^. Language.Solver.outCache)
   liftSolver $ initialWL query
   solutions <- tracedSolveAll
   finalCache <- liftSolver $ gets (^. Language.Solver.outCache)
-  
+
   if initialCache == finalCache
     then do
       finalCacheSize <- getCurrentCacheSize
@@ -279,15 +290,15 @@ tracedSolveUntilStable query iteration = do
       tracedSolveUntilStable query (iteration + 1)
 
 -- | Run a traced solver computation with context and return results with trace
-runSolverWithTrace :: (Queue q) => DebugContext -> EngineCtx ParsePhase q s -> TracedSolver q s a -> ST.ST s (a, SolverTrace)
+runSolverWithTrace :: (Queue q) => DebugContext -> EngineCtx p q s -> TracedSolver p q s a -> ST.ST s (a, SolverTrace p)
 runSolverWithTrace context ctx tracedComp = do
   runSolver ctx $ runWriterT $ runReaderT (runTracedSolver tracedComp) context
 
 -- | Debug solve a query with config and return solutions with trace  
-debugSolve :: DebugConfig -> [RuleDecl] -> PureTerm -> IO ([Map String PureTerm], SolverTrace)
-debugSolve config rules query = do
+debugSolve :: (ForAllPhases Ord p, AnnotateType p, ForAllPhases Eq p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => DebugConfig -> Subtyping -> [RuleDecl' p] -> PureTerm' p -> IO ([Map String (PureTerm' p)], SolverTrace p)
+debugSolve config subtyping rules query = do
   return $ ST.runST $ do
-    let ctx = fromRules rules :: EngineCtx ParsePhase [] s
+    let ctx = fromRules @[] subtyping rules
     let debugCtx = createDebugContext config query
     runSolverWithTrace debugCtx ctx (tracedSolve query)
 
@@ -303,33 +314,38 @@ debugSession semFile = do
   case parseProgram content of
     Left err -> putStrLn $ "Parse error: " ++ show err
     Right (Program decls _) -> do
-      let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
+      -- Type check the program to get the subtyping graph
+      case runChecker' (Program decls []) of
+        Left typeError -> putStrLn $ "Type error: " ++ show typeError
+        Right (checkingCtx, _) -> do
+          let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
+          let subtyping = _subtypingGraph checkingCtx
 
-      putStrLn "Loaded rules successfully. Enter queries to debug (or 'quit' to exit):"
-      putStrLn "Use ':set steps N' to limit solver steps, ':show config' to view settings."
-      mapM_ print rules
+          putStrLn "Loaded and type checked rules successfully. Enter queries to debug (or 'quit' to exit):"
+          putStrLn "Use ':set steps N' to limit solver steps, ':show config' to view settings."
+          mapM_ print rules
 
-      debugLoop defaultConfig rules
+          debugLoop defaultConfig subtyping rules
   where
-    debugLoop config rules = do
+    debugLoop config subtyping rules = do
       putStr "debug> " >> hFlushAll stdout
       input <- getLine
       if | input == "quit" -> putStrLn "Goodbye!"
-         | not (null input) && head input == ':' -> handleCommand input config rules
-         | otherwise -> handleQuery input config rules
+         | not (null input) && head input == ':' -> handleCommand input config subtyping rules
+         | otherwise -> handleQuery input config subtyping rules
 
-    handleCommand input config rules =
+    handleCommand input config subtyping rules =
       case parseCommand' input config of
-        Left err -> putStrLn err >> debugLoop config rules
+        Left err -> putStrLn err >> debugLoop config subtyping rules
         Right newConfig -> do
           putStrLn $ "Configuration updated: " ++ show newConfig
-          debugLoop newConfig rules
+          debugLoop newConfig subtyping rules
 
-    handleQuery input config rules = do
+    handleQuery input config subtyping rules = do
       case parseGoal input of
         Left err -> putStrLn $ "Parse error: " ++ show err
         Right term -> do
-          (solutions, trace) <- debugSolve config rules term
+          (solutions, trace) <- debugSolve config subtyping rules term
           putStrLn "\n=== TRACE ==="
           putStrLn $ prettyTrace trace
           putStrLn "=== RESULTS ==="
@@ -340,8 +356,8 @@ debugSession semFile = do
               mapM_ (putStrLn . ("  " ++) . show) (if config ^. configShowInternalVars
                                                       then solutions
                                                       else map (`Map.restrictKeys` atomNames term) solutions)
-          
-      debugLoop config rules
+
+      debugLoop config subtyping rules
 
 -- | Parse a command and update the given config
 parseCommand' :: String -> DebugConfig -> Either String DebugConfig

@@ -8,6 +8,7 @@ data Token = EOF
            | Implies     -- ^ '=>'
            | Equal       -- ^ '='
            | NotEqual    -- ^ '/='
+           | BigStep     -- ^ '⇓'
            | Rules       -- ^ 'rules'
            | Rule        -- ^ 'rule'
            | Lpar        -- ^ '('

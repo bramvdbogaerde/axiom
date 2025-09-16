@@ -1,11 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 -- | Module for extracting and providing symbol information from the type checker context
 module LanguageServer.Symbols
   ( extractDocumentSymbols
   , findDefinition
   ) where
 
-import Language.TypeCheck (CheckingContext(..), getGamma)
+import Language.TypeCheck (CheckingContext(..))
 import Language.Types (Typ(..), toSortName)
 import qualified Language.AST as AST
 import Language.LSP.Protocol.Types
@@ -35,13 +36,13 @@ extractDocumentSymbols ctx =
 
 -- | Extract sort definitions as document symbols
 extractSortSymbols :: CheckingContext -> [DocumentSymbol]
-extractSortSymbols ctx = mapMaybe sortToSymbol (Set.toList (_definedSorts ctx))
+extractSortSymbols ctx = mapMaybe sortToSymbol (Set.toList $ Map.keysSet $ _definedSorts ctx)
   where
     sortToSymbol :: Typ -> Maybe DocumentSymbol
     sortToSymbol sortName = do
       -- Get the definition range from sortToDefSite
       let sortNameStr = toSortName sortName
-      range <- Map.lookup sortNameStr (_sortToDefSite ctx)
+      range <- Map.lookup sortNameStr undefined
       return DocumentSymbol
         { _name = T.pack sortNameStr
         , _detail = Just $ T.pack $ "Sort " ++ sortNameStr
@@ -56,7 +57,7 @@ extractSortSymbols ctx = mapMaybe sortToSymbol (Set.toList (_definedSorts ctx))
 -- | Extract variable definitions as document symbols
 extractVariableSymbols :: CheckingContext -> [DocumentSymbol]
 extractVariableSymbols ctx =
-  map variableToSymbol (Map.toList (getGamma (_typingContext ctx)))
+  map variableToSymbol (Map.toList (_typingContext ctx))
   where
     variableToSymbol :: (String, Typ) -> DocumentSymbol
     variableToSymbol (varName, sortName) = DocumentSymbol
@@ -87,16 +88,16 @@ findDefinition ctx _pos symbolName =
 
 -- | Find definition of a sort by name
 findSortDefinition :: CheckingContext -> String -> Maybe Location
-findSortDefinition ctx sortName = do
-  range <- Map.lookup sortName (_sortToDefSite ctx)
-  let startPos = AST.rangeStart range
-  let uri = case AST.filename startPos of
-        Just fname -> "file://" <> T.pack fname
-        Nothing -> "file:///unknown"
-  return $ Location (Uri uri) (rangeToDiagnosticRange range)
+findSortDefinition _ctx _sortName = undefined
+  -- range <- Map.lookup sortName (_sortToDefSite ctx)
+  -- let startPos = AST.rangeStart range
+  -- let uri = case AST.filename startPos of
+  --       Just fname -> "file://" <> T.pack fname
+  --       Nothing -> "file:///unknown"
+  -- return $ Location (Uri uri) (rangeToDiagnosticRange range)
 
 -- | Find definition of a variable by name (returns sort definition)
 findVariableDefinition :: CheckingContext -> String -> Maybe Location
 findVariableDefinition ctx varName = do
-  sortName <- Map.lookup varName (getGamma (_typingContext ctx))
+  sortName <- Map.lookup varName (_typingContext ctx)
   findSortDefinition ctx (toSortName sortName)

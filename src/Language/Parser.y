@@ -35,6 +35,7 @@ import qualified Data.Set as Set
   '=>'        { TokenWithRange Implies _ }
   '='         { TokenWithRange Equal _ }
   '/='        { TokenWithRange NotEqual _ }
+  '⇓'         { TokenWithRange BigStep _ }
   'rules'     { TokenWithRange Rules _ }
   'rule'      { TokenWithRange Rule _ }
   BOOL        { TokenWithRange (Boo _) _ }
@@ -59,7 +60,7 @@ import qualified Data.Set as Set
   HASKBLOCK   { TokenWithRange (Token.Hask _) _ }
 
 %right '~>'
-%left '=' '/='
+%left '=' '/=' '⇓'
 
 %%
 
@@ -90,13 +91,15 @@ SyntaxDecls : {- empty -}                    { [] }
             | SyntaxDecl ';' SyntaxDecls     { $1 : $3 }
 
 SyntaxDecl :: { SyntaxDecl }
-SyntaxDecl : IdentList 'in' TypeRef MaybeProductions { SyntaxDecl $1 $3 (fromMaybe [] $4) (rangeOf $3) }
+SyntaxDecl : TypeRef MaybeProductions { SyntaxDecl [] $1 (fromMaybe [] $2) (rangeOf $1) }
+           | IdentList 'in' TypeRef MaybeProductions { SyntaxDecl $1 $3 (fromMaybe [] $4) (rangeOf $3) }
 
-TypeRef :: { TypeCtor }
-TypeRef : IDENT { TypeCtor (getIdent $1) [] (rangeOf $1) }
-        | IDENT '(' TypeRefs ')' { TypeCtor (getIdent $1) $3 (rangeOf $1) }
+TypeRef :: { TypeCon }
+TypeRef : IDENT { TypeApp (TypeTyp (getIdent $1) (rangeOf $1)) [] (rangeOf $1) }
+        | IDENT '(' TypeRefs ')' { TypeApp (TypeTyp (getIdent $1) (rangeOf $1)) $3 (rangeOf $1) }
+        | HASKEXPR { TypeHas (getHaskellExpr $1) (rangeOf $1) }
       
-TypeRefs :: { [TypeCtor] }
+TypeRefs :: { [TypeCon] }
 TypeRefs : {- empty -} { [] }
          | TypeRef { [$1] }
          | TypeRef ',' TypeRefs { $1 : $3 }
@@ -156,7 +159,7 @@ TermArgs : {- empty -}                       { [] }
 
 TermArgList :: { [PureTerm] }
 TermArgList : Term                           { [$1] }
-            | Term ',' TermArgList           { $1 : $3 }
+            | Term ','  TermArgList           { $1 : $3 }
 
 -- Haskell block
 HaskellBlock :: { Decl }
@@ -165,10 +168,13 @@ HaskellBlock : HASKBLOCK                     { HaskellDecl (getHaskellBlock $1) 
 -- Terms with precedence handling
 Term :: { PureTerm }
 Term : BasicTerm                             { $1 }
-     | Term '=' Term                         { Eqq $1 $3 () (mkRange $1 $3) }
-     | Term '/=' Term                        { Neq $1 $3 () (mkRange $1 $3) }
      | Term '~>' Term                        { Transition "~>" $1 $3 () (mkRange $1 $3) }
+     | BigStepExpr                           { $1 }
      | '{' Elements '}'                      { SetOfTerms (Set.fromList $2) () (mkRange $1 $3) }
+
+-- Big step evaluation relation with comma-separated terms on both sides
+BigStepExpr :: { PureTerm }
+BigStepExpr : '(' Elements ')' '⇓' '(' Elements ')' { Functor "⇓" ($2 ++ $6) () (mkRange $1 $7) }
 
 -- Sequence of terms seperated by a ","
 Elements :: { [PureTerm] }
@@ -182,11 +188,13 @@ BasicTerm : IDENT                            { Atom (Identity (getIdent $1)) () 
           | HASKEXPR                         { AST.HaskellExpr (getHaskellExpr $1) () (rangeOf $1) }
           | INTLIT                           { TermValue (IntValue (getIntLit $1)) () (rangeOf $1) }
           | BOOL                             { TermValue (BooValue (getBooLit $1))  () (rangeOf $1) }
-          | '(' Term ')'                     { $2 }
 
 Goal :: { PureTerm }
 Goal : Term { $1 }
      | IDENT 'in' Term { IncludedIn (getIdent $1) $3 (mkRange $1 $3) }
+     | Term '=' Term                         { Eqq $1 $3 () (mkRange $1 $3) }
+     | Term '/=' Term                        { Neq $1 $3 () (mkRange $1 $3) }
+
 
 {
 

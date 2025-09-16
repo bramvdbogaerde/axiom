@@ -9,19 +9,21 @@ import Language.Solver.Unification hiding (runUnification)
 import qualified Language.Solver.Unification as Unification
 import Language.Solver.BacktrackingST
 import qualified Data.Map as Map
-import Control.Monad
-import Control.Monad.Except
-import Control.Monad.Trans
+import Language.Types (emptySubtyping, Typ(AnyType))
+import Control.Monad.Trans.Except (runExceptT)
+import Control.Monad.Trans (lift)
+import Control.Monad (when)
+import Control.Monad.Except (throwError)
 import TestInfrastructure
 import Data.Map (Map)
 
 runUnification :: PureTerm -> PureTerm -> Either String (Map String PureTerm)
-runUnification = Unification.runUnification @ParsePhase
+runUnification = Unification.runUnification @ParsePhase emptySubtyping
 
 -- Test that refTerm and pureTerm are inverses for a given term
 testInverse :: String -> Expectation
 testInverse termStr = do
-  original <- parseTermHelper termStr
+  original <- parseGoalHelper termStr
   let result = runST $ refTerm original Map.empty >>= uncurry pureTerm
   result `shouldBe` original
 
@@ -33,9 +35,9 @@ testInverseFor termStr = it ("refTerm and pureTerm are inverses for '" ++ termSt
 testUnificationSuccess :: String -> String -> String -> [(String, String)] -> Spec
 testUnificationSuccess desc term1Str term2Str expectedMappings =
   it (desc ++ ": " ++ term1Str ++ " = " ++ term2Str) $ do
-    term1 <- parseTermHelper term1Str
-    term2 <- parseTermHelper term2Str
-    expectedPairs <- mapM (\(var, termStr) -> (var,) <$> parseTermHelper termStr) expectedMappings
+    term1 <- parseGoalHelper term1Str
+    term2 <- parseGoalHelper term2Str
+    expectedPairs <- mapM (\(var, termStr) -> (var,) <$> parseGoalHelper termStr) expectedMappings
     case runUnification term1 term2 of
       Right mapping ->
         mapM_ (\(var, expectedTerm) ->
@@ -48,8 +50,8 @@ testUnificationSuccess desc term1Str term2Str expectedMappings =
 testUnificationFailure :: String -> String -> String -> Spec
 testUnificationFailure desc term1Str term2Str =
   it (desc ++ ": " ++ term1Str ++ " = " ++ term2Str) $ do
-    term1 <- parseTermHelper term1Str
-    term2 <- parseTermHelper term2Str
+    term1 <- parseGoalHelper term1Str
+    term2 <- parseGoalHelper term2Str
     case runUnification term1 term2 of
       Left _ -> return () -- Expected failure
       Right _ -> assertFailure "Expected unification to fail"
@@ -58,8 +60,8 @@ testUnificationFailure desc term1Str term2Str =
 testPartialUnification :: String -> String -> String -> [String] -> Spec
 testPartialUnification desc term1Str term2Str varNames =
   it (desc ++ ": " ++ term1Str ++ " = " ++ term2Str) $ do
-    term1 <- parseTermHelper term1Str
-    term2 <- parseTermHelper term2Str
+    term1 <- parseGoalHelper term1Str
+    term2 <- parseGoalHelper term2Str
     case runUnification term1 term2 of
       Right mapping -> do
         let hasMapping = any (`Map.member` mapping) varNames
@@ -103,9 +105,9 @@ spec = do
         -- Then we call setOf on cell1, which should preserve the pointer to cell2
         let testResult = runST $ runExceptT $ do
               -- Create three cells: cell1 points to cell2, cell2 is uninitialized
-              ref1 <- lift $ newSTRef (Uninitialized "x")
-              ref2 <- lift $ newSTRef (Uninitialized "y")
-              ref3 <- lift $ newSTRef (Uninitialized "z")
+              ref1 <- lift $ newSTRef (Uninitialized "x" AnyType)
+              ref2 <- lift $ newSTRef (Uninitialized "y" AnyType)  
+              ref3 <- lift $ newSTRef (Uninitialized "z" AnyType)
 
               let cell1 = Ref ref1
               let cell2 = Ref ref2
@@ -123,7 +125,7 @@ spec = do
                 throwError "Expected paths to be compressed"
 
               -- Now modify cell3 to have a value
-              lift $ writeSTRef ref3 (Value @ParsePhase (Functor "atom" [] () dummyRange))
+              lift $ writeSTRef ref3 (Value (Functor "atom" [] () dummyRange :: RefTerm ParsePhase s))
 
               -- Try to retrieve through cell1 - this should still work if path compression preserved pointers correctly
               finalCell2 <- lift $ setOf cell1

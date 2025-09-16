@@ -1,4 +1,3 @@
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TupleSections #-}
 module CodeGenTestsSpec (spec) where
 
@@ -14,7 +13,7 @@ import System.IO.Temp
 import System.Process
 import System.Exit
 import Data.List (isPrefixOf, stripPrefix)
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (listToMaybe, mapMaybe)
 import Control.Monad.Extra (ifM)
 import Control.Monad (filterM)
 import Control.Applicative ((<|>))
@@ -43,13 +42,13 @@ shouldSkipFile path = "_fail_" `isPrefixOf` takeBaseName path
 
 -- | Extract codegen test queries from comments that start with "codegen_test:" or "codegen_fail_test:"
 extractCodegenTestQueries :: [Comment] -> [(String, Bool)]  -- (query, shouldPass)
-extractCodegenTestQueries comments = catMaybes $ map extractQuery comments
+extractCodegenTestQueries = mapMaybe extractQuery
   where
-    extractQuery (Comment content _) = 
-      let prefixes = [(" codegen_test: ", True), ("codegen_test: ", True), 
+    extractQuery (Comment content _) =
+      let prefixes = [(" codegen_test: ", True), ("codegen_test: ", True),
                       (" codegen_fail_test: ", False), ("codegen_fail_test: ", False)]
-          tryPrefix (prefix, shouldPass) = fmap (,shouldPass) $ stripPrefix prefix content
-      in foldr (<|>) Nothing $ map tryPrefix prefixes
+          tryPrefix (prefix, shouldPass) = ((,shouldPass) <$> stripPrefix prefix content)
+      in foldr ((<|>) . tryPrefix) Nothing prefixes
 
 -- | Parse the output from generated code execution
 parseTestOutput :: String -> Either String (Int, Int, Int)  -- (passed, total, failed)
@@ -61,16 +60,16 @@ parseTestOutput output = do
   where
     nonEmpty [] = Nothing
     nonEmpty xs = Just xs
-    
+
     parseResultLine line =
       let parts = words line
       in case parts of
-        ["Results:", passedStr, "passed"] -> 
+        ["Results:", passedStr, "passed"] ->
           maybe (Left $ "Could not parse passed/total: " ++ passedStr)
                 (\(passed, total) -> Right (passed, total, total - passed))
                 (readPassedTotal passedStr)
         _ -> Left $ "Unexpected results format: " ++ line
-    
+
     readPassedTotal str =
       case break (== '/') str of
         (passedStr, '/':totalStr) -> (,) <$> readMaybe passedStr <*> readMaybe totalStr
@@ -78,26 +77,25 @@ parseTestOutput output = do
 
 -- | Execute generated Haskell code and check results
 executeGeneratedCode :: String -> IO (Either String (Int, Int, Int))
-executeGeneratedCode generatedCode = do
-  withSystemTempFile "codegen_test.hs" $ \tempFilePath tempHandle -> do
-    -- Write generated code to temp file
-    hPutStr tempHandle generatedCode
-    hFlush tempHandle
-    hClose tempHandle
-    
-    -- Execute with timeout (30 seconds)
-    let cmd = "cabal"
-    let args = ["exec", "--", "runghc", "--ghc-arg=-package", "--ghc-arg=analysislang", tempFilePath]
-    
-    timeoutResult <- timeout defaultTimeout $ readProcessWithExitCode cmd args "" 
-    case timeoutResult of
-      Nothing -> return $ Left "Execution timeout: Generated code did not complete within 30 seconds"
-      Just (exitCode, stdout, stderr) -> 
-        case exitCode of
-          ExitSuccess -> return $ parseTestOutput stdout
-          ExitFailure code -> return $ Left $ "Execution failed with code " ++ show code ++ 
-                                             "\nStdout: " ++ stdout ++ 
-                                             "\nStderr: " ++ stderr
+executeGeneratedCode generatedCode = withSystemTempFile "codegen_test.hs" $ \tempFilePath tempHandle -> do
+  -- Write generated code to temp file
+  hPutStr tempHandle generatedCode
+  hFlush tempHandle
+  hClose tempHandle
+
+  -- Execute with timeout (30 seconds)
+  let cmd = "cabal"
+  let args = ["exec", "--", "runghc", "--ghc-arg=-package", "--ghc-arg=analysislang", tempFilePath]
+
+  timeoutResult <- timeout defaultTimeout $ readProcessWithExitCode cmd args ""
+  case timeoutResult of
+    Nothing -> return $ Left "Execution timeout: Generated code did not complete within 30 seconds"
+    Just (exitCode, stdout, stderr) ->
+      case exitCode of
+        ExitSuccess -> return $ parseTestOutput stdout
+        ExitFailure code -> return $ Left $ "Execution failed with code " ++ show code ++
+                                           "\nStdout: " ++ stdout ++
+                                           "\nStderr: " ++ stderr
 
 -- | Load and parse a test file, returning either an error or (program, queries)
 loadCodegenTestFile :: FilePath -> ExceptT String IO (Program, [(String, Bool)])
@@ -111,48 +109,43 @@ loadCodegenTestFile filePath = do
 testCodegenFile :: FilePath -> IO (Either String (Int, Int, Int))
 testCodegenFile filePath = runExceptT $ do
   (program, queries) <- loadCodegenTestFile filePath
-  
+
   if null queries
     then return (0, 0, 0) -- No tests to run
     else do
       -- Type check the program
       (context, typedProgram) <- ExceptT $ return $ first show $ runChecker' program
-      
+
       -- Generate code and execute
-      ExceptT $ codegen context typedProgram >>= executeGeneratedCode
+      ExceptT $ codegen False context typedProgram >>= executeGeneratedCode
 
 -- | Create a test for a single file
 createCodegenTest :: FilePath -> Spec
 createCodegenTest filePath =
-  describe ("Testing " ++ takeFileName filePath) $ do
-    it "should generate and execute code successfully" $ do
-      result <- testCodegenFile filePath
-      case result of
-        Left err -> expectationFailure $ "Error: " ++ err
-        Right (passed, total, failed) -> do
-          if failed == 0
-            then passed `shouldBe` total
-            else expectationFailure $ 
-                   "Code generation tests failed: " ++ show failed ++ "/" ++ show total ++ 
-                   " tests failed (passed: " ++ show passed ++ ")"
+  describe ("Testing " ++ takeFileName filePath) $ it "should generate and execute code successfully" $ do
+  result <- testCodegenFile filePath
+  case result of
+    Left err -> expectationFailure $ "Error: " ++ err
+    Right (passed, total, failed) -> do
+      if failed == 0
+        then passed `shouldBe` total
+        else expectationFailure $
+               "Code generation tests failed: " ++ show failed ++ "/" ++ show total ++
+               " tests failed (passed: " ++ show passed ++ ")"
 
 spec :: Spec
 spec = describe "Code generation tests" $ do
   semFiles <- runIO findSemFiles
   let validFiles = filter (not . shouldSkipFile) semFiles
-  
+
   -- Filter to only files that have codegen tests
   filesWithCodegenTests <- runIO $ do
-    filesWithTests <- filterM hasCodegenTests validFiles
-    return filesWithTests
-  
+    filterM hasCodegenTests validFiles
+
   if null filesWithCodegenTests
-    then it "should find .sem files with codegen tests" $ do
-      expectationFailure "No .sem files with %codegen_test: comments found in tests directory"
-    else describe "Code generation from .sem files" $ do
-      mapM_ createCodegenTest filesWithCodegenTests
+    then it "should find .sem files with codegen tests" $ expectationFailure "No .sem files with %codegen_test: comments found in tests directory"
+    else describe "Code generation from .sem files" $ mapM_ createCodegenTest filesWithCodegenTests
 
 -- | Check if a file has codegen test queries
 hasCodegenTests :: FilePath -> IO Bool
-hasCodegenTests filePath = do
-  either (const False) (not . null) <$> (runExceptT $ loadCodegenTestFile filePath)
+hasCodegenTests filePath = either (const False) (not . null) <$> runExceptT (loadCodegenTestFile filePath)

@@ -3,9 +3,11 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TupleSections #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Functor law" #-}
 module Language.CodeGen (
     astToCode,
-    codegen
+    codegen,
   ) where
 
 import Language.Haskell.TH hiding (Range)
@@ -26,30 +28,38 @@ import qualified Control.Monad.Reader as Reader
 import qualified Data.Text as T
 import qualified Data.Set as Set
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import Data.List (stripPrefix)
-import Data.Bifunctor (first)
+import qualified Data.List as List
+import Data.Bifunctor (first, Bifunctor (second))
+import Data.Void (absurd)
 import NeatInterpolation
 import qualified Control.Monad.Trans as Trans
 import Control.Monad.Except (liftEither)
+import Data.Either (fromRight)
+import Language.Haskell.Meta (parseType)
 
 ------------------------------------------------------------
 -- Prelude & module creation
 ------------------------------------------------------------
 
-makeModule :: String -> String -> String -> String
-makeModule prelude ast testQueries = T.unpack
+makeModule :: Bool -> String -> String -> String -> String -> String -> String  
+makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
   [text|
   {-# LANGUAGE ScopedTypeVariables #-}
   {-# LANGUAGE TypeApplications #-}
   {-# LANGUAGE LambdaCase #-}
+  {-# LANGUAGE TypeFamilies #-}
   -- AnalysisLang related imports
   import Language.CodeGen.Prelude
+  import Language.CodeGen.Phase (CodeGenPhase)
   import qualified Language.AST
+  import Language.AST (XEmbeddedValue)
   import qualified Language.Range
   import qualified Language.Types
   import Language.Solver
   import qualified Language.Solver.BacktrackingST as ST
+  $debuggerImports'
 
   -- Haskell imports
   import Data.Functor.Identity
@@ -61,16 +71,36 @@ makeModule prelude ast testQueries = T.unpack
   import System.Exit
   import Data.List (stripPrefix)
   import Data.Maybe (catMaybes)
+  import qualified Data.Set.Internal
   import qualified Data.Map.Internal
-
-  
+  -- GHC imports
+  import GHC.Show  
   import GHC.Maybe
+  import qualified GHC.Show  
+  import qualified GHC.Err  
+
+  -- User prelude
 
   $prelude'
 
+  -- Type family instance for embedded values
+  type instance XEmbeddedValue CodeGenPhase = HaskellValue
+
+  -- Term declarations
+
+  $termDecls'
+
+  -- Parsed AST
 
   ast :: CodeGenProgram
   ast = $ast'
+
+  -- Subtyping graph
+
+  subtyping :: Language.Types.Subtyping
+  subtyping = $subtyping'
+
+  -- Queries
 
   -- Test queries parsed and type checked during code generation
   testQueries :: [(PureTerm' CodeGenPhase, Bool)]  -- (query, shouldPass)
@@ -78,21 +108,9 @@ makeModule prelude ast testQueries = T.unpack
 
   main :: IO ()
   main = do
-    putStrLn $ "Running " ++ show (length testQueries) ++ " test queries..."
-    results <- mapM runTestQuery (zip [1..] testQueries)
-    let passed = length $ filter id results
-        total = length results
-        failed = total - passed
-    
-    putStrLn $ "Results: " ++ show passed ++ "/" ++ show total ++ " passed"
-    
-    if failed == 0
-      then do
-        putStrLn "All tests passed!"
-        exitWith ExitSuccess
-      else do
-        putStrLn $ show failed ++ " tests failed"
-        exitWith (ExitFailure 1)
+    $debuggerMain'
+
+  $debuggerREPL'
 
   runTestQuery :: (Int, (PureTerm' CodeGenPhase, Bool)) -> IO Bool
   runTestQuery (idx, (query, shouldPass)) = do
@@ -100,7 +118,8 @@ makeModule prelude ast testQueries = T.unpack
              " (expected: " ++ (if shouldPass then "PASS" else "FAIL") ++ ") ... "
     let Program decls _ = ast
     let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
-    let engineCtx = fromRules @[] rules
+    -- subtyping is already available as a top-level variable
+    let engineCtx = fromRules Main.subtyping rules
     let solverComputation = ST.runST $ runSolver engineCtx (solve @CodeGenPhase @[] query)
     
     let hasSolution = not $ null solverComputation
@@ -118,6 +137,94 @@ makeModule prelude ast testQueries = T.unpack
     ast' = T.pack ast
     testQueries' = T.pack testQueries
     prelude' = T.pack prelude
+    termDecls' = T.pack termDecls
+    subtyping' = T.pack subtyping
+    debuggerImports' = T.pack $ if enableDebugger 
+                                then unlines
+                                  [ "import qualified Language.SolverDebugger"
+                                  , "import qualified System.IO" 
+                                  , "import qualified Text.Read"
+                                  ]
+                                else ""
+    debuggerMain' = T.pack $ if enableDebugger
+                            then debuggerMainCode
+                            else testRunnerMainCode
+    
+    testRunnerMainCode = unlines
+      [ "putStrLn $ \"Running \" ++ show (length testQueries) ++ \" test queries...\""
+      , "results <- mapM runTestQuery (zip [1..] testQueries)"
+      , "let passed = length $ filter id results"
+      , "    total = length results"
+      , "    failed = total - passed"
+      , ""
+      , "putStrLn $ \"Results: \" ++ show passed ++ \"/\" ++ show total ++ \" passed\""
+      , ""
+      , "if failed == 0"
+      , "  then do"
+      , "    putStrLn \"All tests passed!\""
+      , "    exitWith ExitSuccess"  
+      , "  else do"
+      , "    putStrLn $ show failed ++ \" tests failed\""
+      , "    exitWith (ExitFailure 1)"
+      ]
+    
+    debuggerMainCode = unlines
+      [ "putStrLn \"Generated code debugger\""
+      , "putStrLn \"Available test queries:\""
+      , "mapM_ (\\(i, (query, _)) -> putStrLn $ show i ++ \": \" ++ show query) (zip [1..] testQueries)"
+      , "debuggerREPL"
+      ]
+    
+    debuggerREPL' = T.pack $ if enableDebugger then debuggerREPLCode else ""
+    
+    debuggerREPLCode = unlines
+      [ "debuggerREPL :: IO ()"
+      , "debuggerREPL = do"
+      , "  putStr \"debug> \""
+      , "  System.IO.hFlush System.IO.stdout"
+      , "  input <- getLine"
+      , "  case input of"
+      , "    \"quit\" -> putStrLn \"Goodbye!\""
+      , "    \"help\" -> do"
+      , "      putStrLn \"Commands:\""
+      , "      putStrLn \"  help    - Show this help\""
+      , "      putStrLn \"  list    - List available queries\""
+      , "      putStrLn \"  run N   - Debug query number N\""
+      , "      putStrLn \"  quit    - Exit debugger\""
+      , "      debuggerREPL"
+      , "    \"list\" -> do"
+      , "      putStrLn \"Available test queries:\""
+      , "      mapM_ (\\(i, (query, _)) -> putStrLn $ show i ++ \": \" ++ show query) (zip [1..] testQueries)"
+      , "      debuggerREPL"
+      , "    _ | Just queryNumStr <- Data.List.stripPrefix \"run \" input -> do"
+      , "        case Text.Read.readMaybe queryNumStr of"
+      , "          Just queryNum | queryNum >= 1 && queryNum <= length testQueries -> do"
+      , "            let (query, _) = testQueries !! (queryNum - 1)"
+      , "            debugQuery query"
+      , "            debuggerREPL"
+      , "          _ -> do"
+      , "            putStrLn $ \"Invalid query number. Use 1-\" ++ show (length testQueries)"
+      , "            debuggerREPL"
+      , "    _ -> do"
+      , "      putStrLn \"Unknown command. Type 'help' for available commands.\""
+      , "      debuggerREPL"
+      , ""
+      , "debugQuery :: PureTerm' CodeGenPhase -> IO ()"
+      , "debugQuery query = do"
+      , "  putStrLn $ \"Debugging query: \" ++ show query"
+      , "  let Program decls _ = ast"
+      , "  let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]"
+      , "  let config = Language.SolverDebugger.defaultConfig"
+      , "  (solutions, trace) <- Language.SolverDebugger.debugSolve config rules query"
+      , "  putStrLn \"\\n=== TRACE ===\""
+      , "  putStrLn $ Language.SolverDebugger.prettyTrace trace"
+      , "  putStrLn \"=== RESULTS ===\""
+      , "  if null solutions"
+      , "    then putStrLn \"No solutions found.\""
+      , "    else do"
+      , "      putStrLn $ \"Found \" ++ show (length solutions) ++ \" solution(s):\""
+      , "      mapM_ (putStrLn . (\"  \" ++) . show) solutions"
+      ]
 
 
 ------------------------------------------------------------
@@ -130,6 +237,15 @@ type CodeGenM = ReaderT CheckingContext Q
 -- Haskell expression embedding
 ------------------------------------------------------------
 
+-- | Checks whether the given variable is a term variable
+isTermVariable :: String -> Bool
+isTermVariable = List.isPrefixOf "_'"
+
+-- | Extract the term variable name from the term variable 
+-- e.g.,extractTermVariable "_'a" = "a"
+extractTermVariable :: String -> String
+extractTermVariable v = fromMaybe (error $ "could not extract term variable from " ++ show v) (stripPrefix "_'" v)
+
 embedExpression :: String -> Typ -> CodeGenM Exp
 embedExpression haskellCode expectedType = do
   ctx <- ask
@@ -138,15 +254,15 @@ embedExpression haskellCode expectedType = do
     haskellExp <- either fail return (parseExp haskellCode)
 
     -- Extract free variables from the parsed expression
-    let freeVarSet = freeVars haskellExp
+    let freeVarSet = Set.filter isTermVariable $ freeVars haskellExp
         freeVarList = Set.toList freeVarSet
         typingCtx = _typingContext ctx
 
     -- Generate the HaskellHatch data structure
-    [| HaskellHatch $(lift haskellCode) $(lift freeVarList) Map.empty $(generateExecuteFunction haskellExp freeVarList typingCtx expectedType) |]
+    [| HaskellHatch $(lift haskellCode) $(lift (map extractTermVariable freeVarList)) Map.empty $(generateExecuteFunction haskellExp freeVarList typingCtx expectedType) |]
 
 -- | Generate the execute function for a Haskell expression  
-generateExecuteFunction :: Exp -> [String] -> Gamma -> Typ -> Q Exp
+generateExecuteFunction :: Exp -> [String] -> TypingContext -> Typ -> Q Exp
 generateExecuteFunction haskellExp freeVarList typingCtx expectedType = do
   -- Generate unique variable names
   proxName <- newName "prox"
@@ -171,31 +287,90 @@ generateExecuteFunction haskellExp freeVarList typingCtx expectedType = do
 
 
 -- | Generate extraction code for a single variable
-generateExtraction :: Gamma -> Name -> String -> Q (Maybe Exp)
+generateExtraction :: TypingContext -> Name -> String -> Q (Maybe Exp)
 generateExtraction typingCtx mappingName varName = do
   runMaybeT $ do
       baseVarName <- MaybeT $ return $ safeVariableName varName
-      sortName <- MaybeT $ return $ lookupGamma baseVarName typingCtx
+      sortName <- MaybeT $ return $ Map.lookup baseVarName typingCtx
       let typ = sortName
 
-      Trans.lift [|
-           maybe (Left $ UserError $ "Variable " ++ $(lift varName) ++ " not found")
-                 (\case
-                   TermValue value _ _ -> maybe (Left $ InvalidTypePassed $(lift typ) (typeOf value))
-                                               Right
-                                               (asType $(typHaskEx typ) value)
-                   _ -> Left $ UserError $ "Expected TermValue for variable " ++ $(lift varName))
-                 (Map.lookup $(lift varName) $(varE mappingName))
-       |]
+      case typ of
+        -- Handle Haskell-defined types via TermHask
+        HaskType haskType -> do
+          let constructorName = mkName (getTermConstructorName haskType)
+          Trans.lift [|
+               maybe (Left $ UserError $ "Variable " ++ $(lift varName) ++ " not found")
+                     (\case
+                       TermValue {} -> error $ "Expected TermHask for Haskell type " ++ $(lift haskType) ++ " but got TermValue for variable " ++ $(lift varName)
+                       TermHask haskellValue _ _ -> 
+                         case haskellValue of
+                           $(conP constructorName [varP (mkName "v")]) -> Right v
+                           _ -> Left $ UserError $ "Expected " ++ $(lift (getTermConstructorName haskType)) ++ " constructor for variable " ++ $(lift varName) ++ " of type " ++ $(lift haskType) ++ ", but got different HaskellValue constructor"
+                       t -> Left $ UserError $ "Expected TermHask for Haskell type variable " ++ $(lift varName) ++ " but got " ++ show t)
+                     (Map.lookup $(lift (extractTermVariable varName)) $(varE mappingName))
+           |]
+        -- Handle built-in types via existing TermValue/asType mechanism  
+        _ -> Trans.lift [|
+               maybe (Left $ UserError $ "Variable " ++ $(lift varName) ++ " not found")
+                     (\case
+                       -- Since the code is type checked, an invalid type
+                       -- should not have been passed here.
+                       TermValue value _ _ -> maybe (error $ show $ InvalidTypePassed $(lift typ) (typeOf value))
+                                                   Right
+                                                   (asType $(typHaskEx typ) value)
+                       _ -> Left $ UserError $ "Expected TermValue for variable " ++ $(lift varName))
+                     (Map.lookup $(lift (extractTermVariable varName)) $(varE mappingName))
+         |]
+
+
+------------------------------------------------------------
+-- Shared helper functions for Haskell type handling
+------------------------------------------------------------
+
+-- | Extract all Haskell types defined in the context via ${Type} syntax
+-- For example: if context contains HaskType "CP Bool" and HaskType "Map String Int", 
+-- this returns ["CP Bool", "Map String Int"]
+getHaskellTypes :: CheckingContext -> [String]
+getHaskellTypes ctx = mapMaybe (\case HaskType h -> Just h ; _ -> Nothing) $ Set.toList $ Map.keysSet $ _definedSorts ctx
+
+-- | Sanitize Haskell type names for use as constructor names
+-- To do so, it converts spaces to underscores.
+-- Example: "CP Bool" -> "CP_Bool", "Map String Int" -> "Map_String_Int"
+sanitizeHaskellTypeName :: String -> String  
+sanitizeHaskellTypeName = map (\case ' ' -> '_' ; c -> c)
+
+-- | Generate the constructor name for a Haskell type in the HaskellValue sum type
+-- Example: "CP Bool" -> "Term_CP_Bool", "Map String Int" -> "Term_Map_String_Int"  
+getTermConstructorName :: String -> String
+getTermConstructorName haskType = "Term_" ++ sanitizeHaskellTypeName haskType
+
+-- | Generate a data type for the defined Haskell expression types so that they can be used as term values
+-- Creates a sum type like: data HaskellValue = Term_CP_Bool (CP Bool) | Term_Map_String_Int (Map String Int) | ... deriving (Show, Ord, Eq)
+generateTermTypes :: CheckingContext -> Q Dec
+generateTermTypes ctx = return $ DataD [] (mkName "HaskellValue") [] Nothing termConts [DerivClause Nothing [ConT (mkName "Show"), ConT (mkName "Ord"), ConT (mkName "Eq")]]
+  where haskellTermTypes = getHaskellTypes ctx
+        termTypes  = map (fromRight (error "could not parse type") . parseType) haskellTermTypes
+        termNames  = map (mkName . getTermConstructorName) haskellTermTypes
+        termConts  = zipWith (curry (uncurry NormalC . second (fmap (Bang NoSourceUnpackedness NoSourceStrictness,) . List.singleton))) termNames termTypes
+
 
 -- | Generate code to wrap the result of a Haskell expression into a PureTerm
+-- For built-in types (IntType, StrType, etc.), wraps in TermValue
+-- For Haskell-defined types (HaskType), wraps in TermHask with appropriate constructor
 wrapResult :: Exp -> Typ -> Name -> Q Exp
 wrapResult haskellExp IntType proxName =
   [| TermValue (IntValue $(return haskellExp)) (typeAnnot $(varE proxName) IntType) dummyRange |]
 wrapResult haskellExp StrType proxName =
   [| TermValue (StrValue $(return haskellExp)) (typeAnnot $(varE proxName) StrType) dummyRange |]
-wrapResult _ typ _ =
-  fail $ "Unsupported result type: " ++ show typ
+wrapResult haskellExp BooType proxName =
+  [| TermValue (BooValue $(return haskellExp)) (typeAnnot $(varE proxName) BooType) dummyRange |]
+wrapResult haskellExp (HaskType haskType) proxName = do
+  let constructorName = mkName (getTermConstructorName haskType)
+  [| TermHask ($(conE constructorName) $(return haskellExp)) 
+             (typeAnnot $(varE proxName) (HaskType $(lift haskType))) 
+             dummyRange |]
+wrapResult e typ _ =
+  fail $ "Unsupported result type: " ++ show typ ++ " for " ++ show e 
 
 ------------------------------------------------------------
 -- AST lifting
@@ -237,9 +412,12 @@ declToExp ctx = \case
     [| Import $(lift filename) $(rangeToExp range) |]
 
 -- | Convert TypeCtor to Template Haskell expression
-typeCtorToExp :: TypeCtor -> Q Exp
-typeCtorToExp (TypeCtor name args range) =
-  [| TypeCtor $(lift name) $(listE (map typeCtorToExp args)) $(rangeToExp range) |]
+typeCtorToExp :: TypeCon -> Q Exp
+typeCtorToExp = \case
+  TypeApp t1 ts r -> [| TypeApp $(typeCtorToExp t1) $(listE $ map typeCtorToExp ts) $(rangeToExp r) |]
+  TypeTyp nam r -> [| TypeTyp $(lift nam) $(rangeToExp r) |]
+  TypeVar nam r -> [| TypeVar $(lift nam) $(rangeToExp r) |]
+  TypeHas contents r -> [| TypeVar $(lift contents) $(rangeToExp r) |]
 
 syntaxDeclToExp :: CheckingContext -> TypedSyntaxDecl -> Q Exp
 syntaxDeclToExp ctx (SyntaxDecl vars tpy prods range) =
@@ -283,6 +461,8 @@ pureTermToExp ctx = \case
   SetOfTerms terms tpy range ->
     [| SetOfTerms (Set.fromList $(listE (map (pureTermToExp ctx) (Set.toList terms)))) $(lift tpy) $(rangeToExp range) |]
 
+  TermHask v _ _ -> absurd v
+
 rangeToExp :: Range -> Q Exp
 rangeToExp (Range (Position line1 col1 fname1) (Position line2 col2 fname2)) =
   [| Range (Position $(lift line1) $(lift col1) $(lift fname1)) (Position $(lift line2) $(lift col2) $(lift fname2)) |]
@@ -314,10 +494,20 @@ processTestQueries ctx = mapM (fmap (either error id) . runExceptT . processQuer
         queryExp <- pureTermToExp ctx typedQuery
         [| ($(return queryExp), $( if shouldPass then [| True |] else [| False |] )) |]
 
+-- | Generate Template Haskell expression for subtyping graph
+generateSubtyping :: CheckingContext -> Q Exp
+generateSubtyping context = 
+  [| Language.Types.fromAdjacencyList $(lift . toAdjacencyList . _subtypingGraph $ context) |]
+
 -- | Generate a Haskell program representing the Typed program with executable Haskell functions in it.
-codegen :: CheckingContext -> TypedProgram -> IO String
-codegen context prog@(Program _ comments) = runQ $ do
+codegen :: Bool -> CheckingContext -> TypedProgram -> IO String
+codegen enableDebugger context prog@(Program _ comments) = runQ $ do
   let testQueryStrings = extractTestQueries comments
-  (makeModule (concat (haskellBlocks prog)) . pprint <$> astToCode context prog)
+  makeModule
+        enableDebugger
+        (concat (haskellBlocks prog))
+    <$> (pprint <$> astToCode context prog)
     <*> (pprint <$> (processTestQueries context testQueryStrings >>= listE . map return))
+    <*> (pprint <$> generateTermTypes context)
+    <*> (pprint <$> generateSubtyping context)
 

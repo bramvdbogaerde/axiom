@@ -1,10 +1,10 @@
-{-# LANGUAGE LambdaCase, RecordWildCards, TypeApplications #-}
+{-# LANGUAGE RecordWildCards, TypeApplications #-}
 module Main where
 
 import Prelude hiding (lex)
 import Language.AST
 import Language.Parser
-import Language.TypeCheck
+import Language.TypeCheck (runChecker', CheckingContext(..))
 import Language.CodeGen
 import Language.ImportResolver
 import Control.Monad
@@ -17,10 +17,11 @@ import System.FilePath
 import Reporting
 import Options.Applicative
 import qualified LanguageServer
-import qualified SolverDebugger
+import qualified Language.SolverDebugger as SolverDebugger
 import Language.Solver
 import qualified Language.Solver.BacktrackingST as ST
 import System.Timeout (timeout)
+import Text.Pretty.Simple (pPrint)
 
 -------------------------------------------------------------
 -- Data types
@@ -36,16 +37,29 @@ newtype GlobalOptions = GlobalOptions
   { runAction :: IO ()   -- ^ The IO action to run based on the parsed command
   }
 
+-- | Options for the "codegen" command
+data CodeGenOptions = CodeGenOptions {
+                        verbose :: Bool, -- ^ whether the code generation should output the typing context
+                        enableDebugger :: Bool -- ^ whether to include debugger support in generated code
+                      }
+                    deriving (Ord, Eq, Show)
+
 -------------------------------------------------------------
 -- Command line parsers
 -------------------------------------------------------------
 
--- | Parser for input file options (reusable across commands)
+-- | Parser for input file options
 inputOptionsParser :: Parser InputOptions
 inputOptionsParser = InputOptions
   <$> strArgument
       ( metavar "FILE"
      <> help "Input file to process" )
+
+-- | Parser for the code generation options
+codegenOptionsParser :: Parser CodeGenOptions
+codegenOptionsParser = CodeGenOptions 
+  <$> switch ( short 'v' <> help "Enable verbose output (i.e., typing context is printed to stderr)" )
+  <*> switch ( short 'd' <> long "debug" <> help "Include debugger support in generated code" )
 
 -- | Parser for the 'check' subcommand
 checkCommand :: Parser (IO ())
@@ -63,7 +77,7 @@ lspCommand = pure $ do
 
 -- | Parser for the 'codegen' subcommand
 codegenCommand :: Parser (IO ())
-codegenCommand = runCodegenCommand <$> inputOptionsParser
+codegenCommand = runCodegenCommand <$> inputOptionsParser <*> codegenOptionsParser
 
 -- | Parser for the 'runcodegen' subcommand
 runcodegenCommand :: Parser (IO ())
@@ -95,7 +109,7 @@ globalOptions :: Parser GlobalOptions
 globalOptions = GlobalOptions <$> commandParser
 
 -- | Parser info for the entire program
-opts :: ParserInfo GlobalOptions  
+opts :: ParserInfo GlobalOptions
 opts = info (globalOptions <**> helper)
   ( fullDesc
  <> progDesc "Analysis language tools"
@@ -139,20 +153,28 @@ runTestQuery (Program decls _) queryStr = do
       putStrLn $ "PARSE ERROR: " ++ show parseError
       return False
     Right query -> do
-      let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
-      let engineCtx = fromRules rules :: EngineCtx ParsePhase [] s
-      let solverComputation = ST.runST $ runSolver engineCtx (solve @ParsePhase query)
-      
-      -- Run with 5 second timeout to catch non-termination
-      timeoutResult <- timeout 5000000 (return $! solverComputation) -- 5 seconds in microseconds
-      case timeoutResult of
-        Nothing -> do
-          putStrLn "TIMEOUT (non-termination detected)"
+      -- First type check the program to get the subtyping graph
+      case runChecker' (Program decls []) of
+        Left typeError -> do
+          putStrLn $ "TYPE ERROR: " ++ show typeError
           return False
-        Just solutions -> do
-          let hasSolution = not $ null solutions
-          putStrLn $ if hasSolution then "PASS" else "FAIL"
-          return hasSolution
+        Right (checkingCtx, typedProgram) -> do
+          let rules = [rule | RulesDecl rules _ <- getDecls typedProgram, rule <- rules]
+          let subtyping = _subtypingGraph checkingCtx
+          let engineCtx = fromRules subtyping rules :: EngineCtx TypingPhase [] s
+          let typedQuery = anyTyped query
+          let solverComputation = ST.runST $ runSolver engineCtx (solve @TypingPhase typedQuery)
+          
+          -- Run with 5 second timeout to catch non-termination
+          timeoutResult <- timeout 5000000 (return $! solverComputation) -- 5 seconds in microseconds
+          case timeoutResult of
+            Nothing -> do
+              putStrLn "TIMEOUT (non-termination detected)"
+              return False
+            Just solutions -> do
+              let hasSolution = not $ null solutions
+              putStrLn $ if hasSolution then "PASS" else "FAIL"
+              return hasSolution
 
 -------------------------------------------------------------
 -- Command implementations
@@ -163,17 +185,21 @@ runCheckCommand :: InputOptions -> IO ()
 runCheckCommand (InputOptions filename) = do
   putStrLn $ "Checking " ++ filename
   (contents, ast) <- loadAndParseFile filename
-  either (printError contents) (const printSuccess) $ runChecker ast
+  result <- traverse (\(ctx, ast') -> pPrint ctx >> return (ctx, ast')) $ runChecker' ast
+  either (printError contents) (const printSuccess) result
 
 -- | Execute the solver debugging command
 runDebugCommand :: InputOptions -> IO ()
 runDebugCommand (InputOptions filename) = SolverDebugger.debugSession filename
 
 -- | Execute the code generation command
-runCodegenCommand :: InputOptions -> IO ()
-runCodegenCommand (InputOptions filename) = do
+runCodegenCommand :: InputOptions -> CodeGenOptions -> IO ()
+runCodegenCommand (InputOptions filename) (CodeGenOptions verbose enableDebug) = do
   (contents, ast) <- loadAndParseFile filename
-  either (printError contents) (uncurry codegen >=> putStrLn) $ runChecker' ast
+  r@(ctx, _) <- either (printError contents >=> const exitFailure) return $ runChecker' ast
+  when verbose $ do
+    pPrint ctx
+  (uncurry (codegen enableDebug) >=> putStrLn) r
 
 -- | Execute the code generation and run command
 runRuncodegenCommand :: InputOptions -> IO ()
@@ -182,12 +208,12 @@ runRuncodegenCommand (InputOptions filename) = do
   either (printError contents) runGenerated $ runChecker' ast
   where
     runGenerated (context, typedProgram) = do
-      generatedCode <- codegen context typedProgram
+      generatedCode <- codegen False context typedProgram
       let outName = replaceExtension filename "out.hs"
       writeFile outName generatedCode
       putStrLn $ "Generated code written to: " ++ outName
       -- TODO: ensure that this command can be executed without using cabal (dependending on the environment: prod/dev?).
-      exitCode <- system $ "cabal exec -- runghc --ghc-arg=\"-package analysislang\" " ++ outName
+      exitCode <- system $ "cabal exec -- runghc --ghc-arg=\"-package analysislang\" --ghc-arg=\"-package maf2-domains\" " ++ outName
       exitWith exitCode
 
 -- | Execute the solver test command
@@ -203,13 +229,13 @@ runRunsolverCommand (InputOptions filename) = do
       let passed = length $ filter id results
           total = length results
           failed = total - passed
-      
+
       putStrLn $ "Results: " ++ show passed ++ "/" ++ show total ++ " passed"
-      
+
       if failed == 0
         then do
           printGreen "All tests passed!"
-          exitWith ExitSuccess
+          exitSuccess
         else do
           putStrLn $ show failed ++ " tests failed"
           exitWith (ExitFailure 1)
@@ -223,5 +249,5 @@ main :: IO ()
 main = do
   GlobalOptions{..} <- execParser opts
   runAction
-  
+
 
