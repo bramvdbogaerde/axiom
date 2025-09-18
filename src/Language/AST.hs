@@ -18,6 +18,7 @@ module Language.AST(
     Decl,
     SyntaxDecl,
     RewriteDecl,
+    PureRewriteDecl,
     RuleDecl,
     Term,
 
@@ -202,7 +203,7 @@ typeSubst var typ =
 -- | A declaration is either a syntax section, rules section, transition
 -- declaration or or a rewrite rule.
 data Decl' p = Syntax [SyntaxDecl' p] Range
-             | Rewrite (RewriteDecl' p) Range
+             | Rewrite (PureRewriteDecl p) Range
              | RulesDecl [RuleDecl' p] Range
              | TransitionDecl String (Typ, Range) (Typ, Range) Range
              | HaskellDecl String Range
@@ -229,14 +230,15 @@ type TypedSyntaxDecl = SyntaxDecl' TypingPhase
 
 
 -- | head(term0, term1, ...) = term;
-data RewriteDecl' p = RewriteDecl String -- ^ name
-                                  [PureTerm' p] -- ^ argument
-                                  (PureTerm' p) -- ^ body
-                                  Range
-deriving instance (ForAllPhases Ord p) => Ord (RewriteDecl' p)
-deriving instance (ForAllPhases Eq p) => Eq (RewriteDecl' p)
-deriving instance (ForAllPhases Show p) => Show (RewriteDecl' p)
-type RewriteDecl = RewriteDecl' ParsePhase
+data RewriteDecl' p s = RewriteDecl String -- ^ name
+                                    [Term' p s] -- ^ argument
+                                    (Term' p s) -- ^ body
+                                    Range
+deriving instance (ForAllPhases Ord p) => Ord (PureRewriteDecl p)
+deriving instance (ForAllPhases Eq p) => Eq (PureRewriteDecl p)
+deriving instance (ForAllPhases Show p) => Show (PureRewriteDecl p)
+type RewriteDecl = PureRewriteDecl ParsePhase
+type PureRewriteDecl p = RewriteDecl' p Identity
 type TypedRewriteDecl = RewriteDecl' TypingPhase
 
 
@@ -338,7 +340,7 @@ data Term' p f  = Atom (f String) (XTypeAnnot p)  Range
                 | Transition String (Term' p f) (Term' p f) (XTypeAnnot p)  Range
                 | HaskellExpr (XHaskellExpr p) (XTypeAnnot p) Range
                 | TermValue Value (XTypeAnnot p) Range
-                | TermMap (Map (Term' p f) (Term' p f)) (XTypeAnnot p) Range
+                | TermMap (Map (PureTerm' p) (PureTerm' p)) (XTypeAnnot p) Range
                 | IncludedIn String (Term' p f) Range
                 | SetOfTerms (Set (Term' p f)) (XTypeAnnot p) Range
                 | TermHask (XEmbeddedValue p) (XTypeAnnot p) Range

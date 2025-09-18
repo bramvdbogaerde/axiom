@@ -1,0 +1,16 @@
+% This file tests whether rewrite rules are correctly applied.
+syntax {
+	n in Int;
+	Conclusion ::= conclusion(n);
+};
+
+meaningoflife(n) = 42;
+
+rules {
+	rule "MeaningOfLife"
+	[ n = meaningoflife(4) ]
+	=>
+	[ conclusion(n) ];
+};
+
+%test: conclusion(42)
