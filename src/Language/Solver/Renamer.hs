@@ -1,6 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE LambdaCase #-}
 module Language.Solver.Renamer(renameRule, renameRule', renameTerm, unrenameTerm, runRenamer, renameRuleState, baseName) where
 
 import Control.Lens
@@ -76,6 +77,21 @@ renameTerm (SetOfTerms terms tpy range) = do
   renamedTermsList <- mapM renameTerm (Set.toList terms)
   return $ SetOfTerms (Set.fromList renamedTermsList) tpy range
 renameTerm (TermHask value tpy range) = pure $ TermHask value tpy range
+renameTerm (TermExpr expr range) = flip TermExpr range <$> renameExpr expr
+renameTerm (TermMap mapping tpy range) = 
+    TermMap . Map.fromList <$> mapM (bimapM renameTerm renameTerm) (Map.toList mapping) <*> pure tpy <*> pure range
+  where bimapM f g (x,y) = liftA2 (,) (f x) (g y)
+
+renameExpr :: forall p m . (HaskellExprRename p, ForAllPhases Ord p, MonadRename m) => Expr p Identity -> m (Expr p Identity)
+renameExpr = \case
+    LookupMap t1 t2 tpy range ->
+        LookupMap <$> renameTerm t1 <*> renameTerm t2 <*> pure tpy <*> pure range
+    UpdateMap t1 t2 t3 tpy range ->
+        UpdateMap <$> renameExpr t1 <*> renameTerm t2 <*> renameTerm t3 <*> pure tpy <*> pure range
+    RewriteApp nam ags tpy range ->
+        RewriteApp nam <$> mapM renameTerm ags <*> pure tpy <*> pure range
+    e@(EmptyMap {}) -> return e
+    GroundTerm t tpy range -> GroundTerm <$> renameTerm t <*> pure tpy <*> pure range
 
 -- | Rename all variables in a list of terms
 renameTerms :: (HaskellExprRename p, ForAllPhases Ord p, MonadRename m) => [PureTerm' p] -> m [PureTerm' p]
@@ -112,13 +128,27 @@ unrenameTerm (Atom (Identity varName) tpy range) = Atom (Identity (baseName varN
 unrenameTerm (Functor name subterms tpy range) = Functor name (map unrenameTerm subterms) tpy range
 unrenameTerm (Neq left right tpy range) = Neq (unrenameTerm left) (unrenameTerm right) tpy range
 unrenameTerm (Eqq left right tpy range) = Eqq (unrenameTerm left) (unrenameTerm right) tpy range
-unrenameTerm (Transition transName left right tpy range) = 
+unrenameTerm (Transition transName left right tpy range) =
     Transition transName (unrenameTerm left) (unrenameTerm right) tpy range
 unrenameTerm (HaskellExpr expr tpy range) = HaskellExpr expr tpy range
 unrenameTerm (TermValue value tpy range) = TermValue value tpy range
 unrenameTerm (IncludedIn var term range) = IncludedIn (baseName var) (unrenameTerm term) range
 unrenameTerm (SetOfTerms terms tpy range) = SetOfTerms (Set.fromList $ map unrenameTerm $ Set.toList terms) tpy range
 unrenameTerm (TermHask value tpy range) = TermHask value tpy range
+unrenameTerm (TermExpr expr range) = TermExpr (unrenameExpr expr) range
+unrenameTerm (TermMap mapping tpy range) = 
+    TermMap (Map.fromList $ map (bimap unrenameTerm unrenameTerm) $ Map.toList mapping) tpy range
+
+unrenameExpr :: (ForAllPhases Ord p) => Expr p Identity -> Expr p Identity
+unrenameExpr = \case
+    LookupMap t1 t2 tpy range ->
+        LookupMap (unrenameTerm t1) (unrenameTerm t2) tpy range
+    UpdateMap t1 t2 t3 tpy range ->
+        UpdateMap (unrenameExpr t1) (unrenameTerm t2) (unrenameTerm t3) tpy range
+    RewriteApp nam ags tpy range ->
+        RewriteApp nam (map unrenameTerm ags) tpy range
+    e@(EmptyMap {}) -> e
+    GroundTerm t tpy range -> GroundTerm (unrenameTerm t) tpy range
 
 -- | Removes the part of the variable name that makes it unique
 baseName :: String -> String

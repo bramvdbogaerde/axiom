@@ -3,7 +3,7 @@ module Language.Lexer.Token where
 import Language.Range
 
 data Token = EOF
-           |  IsDefinedAs -- ^ '::='
+           | IsDefinedAs -- ^ '::='
            | LeadsTo     -- ^ '~>'
            | Implies     -- ^ '=>'
            | Equal       -- ^ '='
@@ -28,6 +28,7 @@ data Token = EOF
            | IntLit { tokInt :: Int  }         -- ^ integer literal
            | Hask { tokVal ::  String }        -- ^ multiple lines of Haskell declarations
            | HaskellExpr { tokVal :: String }  -- ^ '{ HASKELL_EXP }'
+           | MapsTo
            deriving (Ord, Eq, Show)
 
 data TokenWithRange = TokenWithRange {

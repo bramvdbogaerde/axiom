@@ -4,6 +4,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE KindSignatures #-}
 module Language.Solver.Unification where
 
 import Data.Map (Map)
@@ -20,6 +21,8 @@ import Control.Monad.Extra (ifM)
 import Control.Monad ((>=>), zipWithM_)
 import GHC.Exts (sortWith)
 import qualified Data.Set as Set
+import Data.Kind
+import Control.Monad (unless)
 
 -------------------------------------------------------------
 -- Core data types
@@ -33,11 +36,11 @@ type UnificationM p s = ReaderT (VariableMapping p s, Subtyping) (ExceptT String
 
 -- | Get the current variable mapping
 getVariableMapping :: UnificationM p s (VariableMapping p s)
-getVariableMapping = fst <$> ask
+getVariableMapping = asks fst
 
 -- | Get the current subtyping graph
 getSubtyping :: UnificationM p s Subtyping
-getSubtyping = snd <$> ask
+getSubtyping = asks snd
 
 -- | The value within the cell of variables
 data CellValue p s a = Value (RefTerm p s)
@@ -49,6 +52,7 @@ newtype Cell p s a = Ref (BST.STRef s (CellValue p s a))
                  deriving (Eq, Ord)
 
 type RefTerm p s = Term' p (Cell p s)
+type RefExpr p s = Expr p (Cell p s)
 
 readCellRef :: Cell p s a -> BST.ST s (CellValue p s a)
 readCellRef (Ref ref) = BST.readSTRef ref
@@ -135,7 +139,23 @@ refTerm term = runStateT (transformTerm term)
     transformTerm (TermHask value tpy range) =
       return $ TermHask value tpy range
 
--- | Visited list abstraction for cycle detection
+    transformTerm (TermExpr expr range) = flip TermExpr range <$> transformExpr expr
+
+    transformTerm (TermMap mapping tpy range) =
+      TermMap . Map.fromList <$> mapM (bimapM transformTerm transformTerm) (Map.toList mapping) <*> pure tpy <*> pure range
+      where bimapM f g (x,y) = liftA2 (,) (f x) (g y)
+
+    transformExpr = \case
+            LookupMap t1 t2 tpy range ->
+                LookupMap <$> transformTerm t1 <*> transformTerm t2 <*> pure tpy <*> pure range
+            UpdateMap t1 t2 t3 tpy range ->
+                UpdateMap <$> transformExpr t1 <*> transformTerm t2 <*> transformTerm t3 <*> pure tpy <*> pure range
+            RewriteApp nam ags tpy range ->
+                RewriteApp nam <$> mapM transformTerm ags <*> pure tpy <*> pure range
+            EmptyMap tpy r -> return $ EmptyMap tpy r
+            GroundTerm t tpy range -> GroundTerm <$> transformTerm t <*> pure tpy <*> pure range
+
+    -- | Visited list abstraction for cycle detection
 type VisitedList p s = [BST.STRef s (CellValue p s String)]
 
 -- | Check if a reference is in the visited list
@@ -191,19 +211,73 @@ pureTerm' term _mapping = do
     convertTerm (TermHask value tpy range) =
       return $ TermHask value tpy range
 
+    convertTerm (TermExpr expr range) = flip TermExpr range <$> convertExpr expr
+
+    convertTerm (TermMap mapping tpy range) =
+      TermMap . Map.fromList <$> mapM (bimapM convertTerm convertTerm) (Map.toList mapping) <*> pure tpy <*> pure range
+      where bimapM f g (x,y) = liftA2 (,) (f x) (g y)
+
+
+    convertExpr :: forall p (s :: Type) .  (ForAllPhases Ord p, AnnotateType p) => RefExpr p s -> StateT (VisitedList p s) (ExceptT String (BST.ST s)) (Expr p Identity)
+    convertExpr = \case
+        LookupMap t1 t2 tpy range ->
+            LookupMap <$> convertTerm t1 <*> convertTerm t2 <*> pure tpy <*> pure range
+        UpdateMap t1 t2 t3 tpy range ->
+            UpdateMap <$> convertExpr t1 <*> convertTerm t2 <*> convertTerm t3 <*> pure tpy <*> pure range
+        RewriteApp nam ags tpy range ->
+            RewriteApp nam <$> mapM convertTerm ags <*> pure tpy <*> pure range
+        EmptyMap tpy r -> return $ EmptyMap tpy r
+        GroundTerm t tpy r -> GroundTerm <$> convertTerm t <*> pure tpy <*> pure r
+
+
 -- | Same as pureTerm' but raises an error if the term could not be converted
 pureTerm :: (ForAllPhases Ord p, AnnotateType p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
 pureTerm term = pureTerm' term >=> either error return
 
 
 -- | Same as pureTerm but ensures that all elements of the term are ground
-pureTermGround :: (ForAllPhases Ord p, Show (PureTerm' p), AnnotateType p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
+pureTermGround :: (ForAllPhases Ord p, AnnotateType p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
 pureTermGround term mapping = do
   term' <- pureTerm term mapping
   if isTermGround term'
     then return term'
     else error $ "Term is not ground " ++ show term'
 
+-------------------------------------------------------------
+-- Expression evaluation
+-------------------------------------------------------------
+
+-- | Normalize a term, meaning that nested terms of "TermExpr" and "GroundTerm" are collapsed into the inner "Term".
+normalizeTerm :: (ForAllPhases Ord p, AnnotateType p) => PureTerm' p -> UnificationM p s (PureTerm' p)
+normalizeTerm (TermExpr expr _) = do
+  evaluateExpr expr >>= normalizeTerm
+normalizeTerm t = return t
+
+-- | Evaluate an element of the expression language
+evaluateExpr :: (ForAllPhases Ord p, AnnotateType p) => Expr p Identity -> UnificationM p s (PureTerm' p)
+evaluateExpr (EmptyMap tpy r) =
+  return (TermMap Map.empty tpy r)
+evaluateExpr (LookupMap mapping key _ _) = do
+  mapping' <- normalizeTerm mapping
+  key' <- normalizeTerm key
+  case mapping' of
+    TermMap mapping'' _ _ ->
+      -- TODO: add show isntance for the key
+      maybe (error $ "Key " ++ show key' ++ " not found" ++ " in " ++ show mapping'') return $ Map.lookup (removeRange key') mapping''
+    -- The term not being a 'TermMap' would be an error in the type checker, so we can just crash here
+    _ -> error $ "LookupMap: expected a map, got " -- TODO: add show instance
+evaluateExpr (UpdateMap mapping key value _ range) = do
+  mapping' <- evaluateExpr mapping
+  key' <- normalizeTerm key
+  value' <- normalizeTerm value
+  let mappingTpy = termTypeAnnot mapping'
+  case mapping' of
+    TermMap mapping'' _ _ ->
+      return $ TermMap (Map.insert (removeRange key') value' mapping'') mappingTpy range
+    -- The term not being a 'TermMap' would be an error in the type checker, so we can just crash here
+    _ -> error $ "UpdateMap: expected a map, got " -- TODO: add show instance of mapping
+evaluateExpr (GroundTerm t _ _) = normalizeTerm t
+evaluateExpr _ = error "Unsupported expression " -- TODO: show the unsupported expression
 
 -------------------------------------------------------------
 -- Unification 
@@ -214,9 +288,9 @@ pureTermGround term mapping = do
 -- engine. The order is as follows:
 --
 -- Atom < Eqq < Neq < Transition < HaskellExpr < Value
-data TermType = AtomTp | EqqTp | NeqTp | TransitionTp | ValueTp | FunctorTp | HaskellExprTp | IncludedInTp | SetOfTermsTp | TermHaskTp
+data TermType = AtomTp | EqqTp | NeqTp | TransitionTp | ValueTp | FunctorTp | HaskellExprTp | IncludedInTp | TermHaskTp | TermExprTp | MapTermTp | SetOfTermsTp
               deriving (Ord, Eq, Enum)
-termTypeOf ::Term' p x -> TermType
+termTypeOf :: Term' p x -> TermType
 termTypeOf Atom{} = AtomTp
 termTypeOf Eqq{}  = EqqTp
 termTypeOf Neq{}  = NeqTp
@@ -227,6 +301,8 @@ termTypeOf Functor{} = FunctorTp
 termTypeOf IncludedIn{} = IncludedInTp
 termTypeOf SetOfTerms{} = SetOfTermsTp
 termTypeOf TermHask{} = TermHaskTp
+termTypeOf TermExpr{} = TermExprTp
+termTypeOf TermMap {} = MapTermTp
 
 -- | Puts two terms into a predictable order, therefore elliminating some symmetric cases in the unification algorithm.
 termOrder :: Term' p x -> Term' p x -> (Term' p x, Term' p x)
@@ -236,7 +312,7 @@ termOrder a b = case sortWith (fromEnum . termTypeOf) [a, b] of
 
 -- | Unify two reference-based terms
 unifyTerms :: forall p s . (ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p) => RefTerm p s -> RefTerm p s -> UnificationM p s ()
-unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
+unifyTerms = unifyTermsImpl 
   where
     unifyTermsImpl :: (AnnotateType p, HaskellExprExecutor p) => RefTerm p s  -> RefTerm p s -> UnificationM p s ()
     --
@@ -259,6 +335,31 @@ unifyTerms t1 = uncurry unifyTermsImpl . termOrder t1
     unifyTermsImpl (TermHask v1 _ _) (TermHask v2 _ _) =
       if v1 == v2 then return ()
       else throwError "Embedded Haskell values don't match"
+
+    -- 
+    -- AnalysisLang expressions
+    -- 
+
+    unifyTermsImpl otherTerm t@(TermExpr {}) = do
+      varMapping <- getVariableMapping
+      t'  <- lift $ lift $ pureTerm t varMapping
+      case t' of
+        TermExpr pureExpr _ -> do
+          unless (isGround pureExpr) $
+            throwError "The expression is not ground"
+          pureResult <- evaluateExpr pureExpr
+          -- the result should be ground so that refTerm does not have to update its variable
+          -- mapping. We might want to change this in the future?
+          if isGround pureResult
+            then lift (lift (refTerm pureResult varMapping)) >>= (unifyTermsImpl otherTerm . fst)
+            else error "The result should be ground" -- TODO: should this be a throwError?
+        -- INVARIANT: pureTerm t always returns the same type of term, but with a different
+        -- cell representation.
+        _ -> error "expected a TermExpr term but got "
+
+    unifyTermsImpl t@(TermExpr {}) otherTerm =
+      unifyTermsImpl otherTerm t
+
     -- 
     -- Haskell expressions
     -- 

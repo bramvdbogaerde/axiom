@@ -14,6 +14,7 @@ module Language.TypeCheck(
   runChecker,
   runChecker',
   runCheckTerm,
+  runCheckerWithContext,
 
   -- * Contexts
   CheckingContext(..),
@@ -39,7 +40,7 @@ import Control.Monad
 import Control.Monad.Extra
 import Language.Types
 import Data.Tuple
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, fromJust)
 
 
 -----------------------------------------
@@ -140,8 +141,7 @@ isDefinedSort tpy = gets (Map.member tpy . _definedSorts)
 
 -- | Add a sort to the set of defined sorts
 defineSort :: MonadCheck m => Typ -> Range -> m ()
-defineSort sortName range = do
-  modify (over definedSorts (Map.insertWith Set.union sortName (Set.singleton range)))
+defineSort sortName range = modify (over definedSorts (Map.insertWith Set.union sortName (Set.singleton range)))
 
 -----------------------------------------
 -- Typing infrastructure
@@ -205,6 +205,12 @@ applyTpy r (FunType t1 ts) (mt1':ts') = do
        (do (vs, tr) <- applyTpy r ts ts'
            return (v:vs, tr))
        (throwErrorMaybe r (IncompatibleTypes [t1] [t1']))
+-- TODO: also support partial functions consisting of more than one argument
+applyTpy r (MapOf t1 t2) [mt1'] = do
+  (v, t1') <- local (const $ Just t1) mt1'
+  ifM (subtypeOf t1' t1)
+       (return ([v], t2))
+       (throwErrorMaybe r (IncompatibleTypes [t1] [t1']))
 applyTpy _ t [] = return ([], t)
 applyTpy r t ts = throwErrorMaybe r (ArityMismatch (show t) 0 (length ts))
 
@@ -254,7 +260,7 @@ pass0 (Program decls _) = do
 -- Pass 1: associate functors in the syntax declarations with sorts, register subtyping for variables
 -----------------------------------------
 
--- Here we just have to look for the data constructors are convert the atoms occuring in the terms
+-- Here we just have to look for the data constructors and convert the atoms occuring in the terms
 -- to their correct type, and then type the data constructor itself in the typing context.
 -- | Process and associate the data constructors in the given sort
 pass1VisitCtor :: MonadCheck m => Typ -> PureTerm -> m ()
@@ -273,6 +279,8 @@ pass1VisitCtor sortName = \case
   (TermValue _ _ range) -> throwErrorAt range $ InvalidConstructor "Values cannot be used as constructors in syntax declarations"
   (IncludedIn _ _ range) -> throwErrorAt range $ InvalidConstructor "Inclusion terms cannot be used as constructors in syntax declarations"
   (SetOfTerms _ _ range) -> throwErrorAt range $ InvalidConstructor "Set literals cannot be used as constructors in syntax declarations"
+  (TermExpr _ range) -> throwErrorAt range $ InvalidConstructor "Expression cannot be used as constructors in the syntax declarations"
+  (TermMap _ _ range)    -> throwErrorAt range $ InvalidConstructor "Map literals cannot be used as constructors in the syntax declarations"
   (TermHask v _ _) -> absurd v
   where
     ensureAtom (Atom nam _ _) = return (runIdentity nam)
@@ -281,10 +289,9 @@ pass1VisitCtor sortName = \case
 pass1VisitDecl :: MonadCheck m => Decl -> m ()
 pass1VisitDecl (Syntax decls _) = mapM_ pass1VisitSyntaxDecl decls
   where
-    pass1VisitSyntaxDecl (SyntaxDecl _vars tpy ctors range) = do
-      case fromTypeCon tpy of
-        Left err -> throwErrorAt range (SortNotDefined err)
-        Right sortTyp -> mapM_ (pass1VisitCtor sortTyp) ctors
+    pass1VisitSyntaxDecl (SyntaxDecl _vars tpy ctors range) = case fromTypeCon tpy of
+      Left err -> throwErrorAt range (SortNotDefined err)
+      Right sortTyp -> mapM_ (pass1VisitCtor sortTyp) ctors
 pass1VisitDecl (TransitionDecl nam (Sort from, _) (Sort to, _) range) = do
   -- transition State ~> State is equivalent to the syntax rule:
   -- ~> ::= ~>(state, state) from a typing perspective
@@ -378,19 +385,58 @@ checkTerm (SetOfTerms terms _ range) = do
   generalType <- foldM (widenType range) VoidType types
   let resultSet = Set.fromList typedTerms
   return (SetOfTerms resultSet (SetOf generalType) range, SetOf generalType)
+checkTerm (TermExpr expr r) = do
+  (exprTyped, tpy) <- checkExpr expr
+  return (TermExpr exprTyped r, tpy)
+checkTerm (TermMap mapping _ range) =
+    liftA2 (,) (TermMap <$> checkMapping mapping <*> asks fromJust <*> pure range) (asks fromJust)
+  where checkMapping =
+          -- Ensure that all key and values match the expected parent type
+          fmap Map.fromList . mapM (\(k, v) -> do
+              (kt, ktpy) <- checkTerm k
+              (vt, vtpy) <- checkTerm v
+              parentType <- asks fromJust
+              ifM (subtypeOf (MapOf ktpy vtpy) parentType)
+                  (return (kt, vt))
+                  (throwErrorAt range (IncompatibleTypes [MapOf vtpy ktpy] [parentType]))
+            ) . Map.toList
 checkTerm (TermHask v _ _) = absurd v
 
 checkTerm_ :: MonadCheck m => PureTerm -> m Typ
 checkTerm_ = fmap snd . checkTerm
 
+checkExpr :: MonadCheck m => PureExpr -> m (Expr TypingPhase Identity, Typ)
+checkExpr (LookupMap mapTerm keyTerm _ range) = do
+  (mapTerm', mapType) <- checkTerm mapTerm
+  (keyTerm', keyType) <- checkTerm keyTerm
+  case mapType of
+    MapOf kType vType -> do
+      -- Ensure the key type is compatible with the map's key type
+      ifM (subtypeOf keyType kType)
+          (return (LookupMap mapTerm' keyTerm' vType range, vType))
+          (throwErrorAt range (IncompatibleTypes [keyType] [kType]))
+    _ -> throwErrorAt range (IncompatibleTypes [MapOf keyType AnyType] [mapType]) -- Expected a map type
+checkExpr (UpdateMap mapTerm keyTerm valueTerm _ range) = do
+  (mapTerm', mapType) <- checkExpr mapTerm
+  (keyTerm', keyType) <- checkTerm keyTerm
+  (valueTerm', valueType) <- checkTerm valueTerm
+  ifM (subtypeOf (MapOf keyType valueType) mapType)
+      (return (UpdateMap mapTerm' keyTerm' valueTerm' mapType range, mapType))
+      (throwErrorAt range (IncompatibleTypes [MapOf keyType valueType] [mapType]))
+checkExpr (GroundTerm term _ range) = do
+  (typedTerm, tpy) <- checkTerm term
+  return (GroundTerm typedTerm tpy range, tpy)
+checkExpr (EmptyMap _ range) =
+  liftA2 (,) (asks (flip EmptyMap range . fromJust)) (asks fromJust)
+checkExpr _ = error "checkExpr: only LookupMap, UpdateMap and GroundTerm are supported in expressions"
+
 -- | Update or widen the sort name for a rewrite rule
 updateOrWidenSort :: MonadCheck m => String -> Typ -> Range -> m ()
-updateOrWidenSort nam newSort range = do
-  ifM (hasType nam)
-      (do existingSort <- lookupType (Just range) nam
-          widenedSort  <- widenType range existingSort newSort
-          typedAsUpdated nam widenedSort)
-      (typedAs (Just range) nam newSort)
+updateOrWidenSort nam newSort range = ifM (hasType nam)
+    (do existingSort <- lookupType (Just range) nam
+        widenedSort  <- widenType range existingSort newSort
+        typedAsUpdated nam widenedSort)
+    (typedAs (Just range) nam newSort)
 
 pass2VisitDecl :: MonadCheck m => Decl -> m ()
 pass2VisitDecl (Rewrite (RewriteDecl nam args bdy range) _) = do
@@ -410,8 +456,7 @@ pass2 (Program decls _) = mapM_ pass2VisitDecl decls
 
 -- | Check a rule in the given context
 checkRule :: MonadCheck m => RuleDecl -> m TypedRuleDecl
-checkRule (RuleDecl nam precedent consequent range) = do
-  RuleDecl nam <$> mapM (fmap fst . checkTerm) precedent <*> mapM (fmap fst . checkTerm) consequent <*> pure range
+checkRule (RuleDecl nam precedent consequent range) = RuleDecl nam <$> mapM (fmap fst . checkTerm) precedent <*> mapM (fmap fst . checkTerm) consequent <*> pure range
 
 -- | Type a rewrite rule
 typeRewrite :: MonadCheck m => RewriteDecl -> m TypedRewriteDecl
@@ -428,8 +473,7 @@ typeSyntax (SyntaxDecl vars tpy prods range) = do
 pass3VisitDecl :: MonadCheck m => Decl -> m TypedDecl
 pass3VisitDecl (RulesDecl rules range) =
   RulesDecl <$> mapM checkRule rules <*> pure range
-pass3VisitDecl (TransitionDecl nam s1@(Sort {}, _) s2@(Sort {}, _) range) = do
-  return (TransitionDecl nam s1 s2 range)
+pass3VisitDecl (TransitionDecl nam s1@(Sort {}, _) s2@(Sort {}, _) range) = return (TransitionDecl nam s1 s2 range)
 pass3VisitDecl (TransitionDecl _ (_, r1) _ _) =
   throwErrorAt r1 $ NameNotDefined "Only Sort types are supported in transition declarations"
 pass3VisitDecl (Rewrite rewrite range) =
@@ -445,6 +489,87 @@ pass3 :: MonadCheck m => Program -> m TypedProgram
 pass3 (Program decls comments) = Program <$> mapM pass3VisitDecl decls <*> pure (map typeComment comments)
 
 -----------------------------------------
+-- Pass 4: type specialisations
+-----------------------------------------
+
+pass4VisitDecl :: MonadCheck m => TypedDecl -> m TypedDecl
+pass4VisitDecl (RulesDecl rules range) =
+  RulesDecl <$> mapM pass4VisitRule rules <*> pure range
+pass4VisitDecl (TransitionDecl nam s1 s2 range) =
+  return (TransitionDecl nam s1 s2 range)
+pass4VisitDecl (Rewrite rewrite range) =
+  Rewrite <$> pass4VisitRewrite rewrite <*> pure range
+pass4VisitDecl (Syntax syntax range) =
+  -- NOTE: syntax definitions never contain any MapOf expressions
+  -- as they are not allowed by the previous passes.
+  return $ Syntax syntax range
+pass4VisitDecl (HaskellDecl s range) =
+  return $ HaskellDecl s range
+pass4VisitDecl (Import filename range) =
+  return $ Import filename range
+
+pass4VisitRule :: MonadCheck m => TypedRuleDecl -> m TypedRuleDecl
+pass4VisitRule (RuleDecl nam precedent consequent range) =
+  RuleDecl nam <$> mapM pass4VisitTerm precedent <*> mapM pass4VisitTerm consequent <*> pure range
+
+pass4VisitRewrite :: MonadCheck m => TypedRewriteDecl -> m TypedRewriteDecl
+pass4VisitRewrite (RewriteDecl name args body range) =
+  RewriteDecl name <$> mapM pass4VisitTerm args <*> pass4VisitTerm body <*> pure range
+
+pass4VisitTerm :: MonadCheck m => TypedTerm -> m TypedTerm
+pass4VisitTerm term@(Atom {}) = return term
+pass4VisitTerm (Functor nam terms functorTpy range) = do
+  typedTerms <- mapM pass4VisitTerm terms
+  tpy <- lookupType (Just range) nam
+  -- Check if this functor represents a map lookup or rewrite rule application
+  case tpy of
+    MapOf _ resultType -> do
+      -- Transform to map lookup expression
+      case typedTerms of
+        [keyTerm] -> return $ TermExpr (LookupMap (Atom (Identity nam) tpy range) keyTerm resultType range) range
+        _ -> error $ "MapOf type should always have exactly 1 argument, got " ++ show (length typedTerms)
+    _ -> do
+      -- TODO: Check if this is a rewrite rule application by tracking rewrite rules in the context
+      -- For now, keep as regular functor
+      return (Functor nam typedTerms functorTpy range)
+pass4VisitTerm (Eqq term1 term2 tpy range) =
+  Eqq <$> pass4VisitTerm term1 <*> pass4VisitTerm term2 <*> pure tpy <*> pure range
+pass4VisitTerm (Neq term1 term2 tpy range) =
+  Neq <$> pass4VisitTerm term1 <*> pass4VisitTerm term2 <*> pure tpy <*> pure range
+pass4VisitTerm (Transition nam term1 term2 tpy range) =
+  Transition nam <$> pass4VisitTerm term1 <*> pass4VisitTerm term2 <*> pure tpy <*> pure range
+pass4VisitTerm term@(HaskellExpr {}) = return term
+pass4VisitTerm term@(TermValue {}) = return term
+pass4VisitTerm (IncludedIn var term range) =
+  IncludedIn var <$> pass4VisitTerm term <*> pure range
+pass4VisitTerm (SetOfTerms terms tpy range) =
+  (SetOfTerms . Set.fromList <$> mapM pass4VisitTerm (Set.toList terms)) <*> pure tpy <*> pure range
+pass4VisitTerm (TermHask v _ _) = absurd v
+pass4VisitTerm (TermExpr expr range) =
+  TermExpr <$> pass4VisitExpr expr <*> pure range
+pass4VisitTerm (TermMap mapping tpy r) =
+  (TermMap . Map.fromList <$> mapM (\(k, v) -> (,) <$> pass4VisitTerm k <*> pass4VisitTerm v) (Map.toList mapping)) <*> pure tpy <*> pure r
+
+pass4VisitExpr :: MonadCheck m => Expr TypingPhase Identity -> m (Expr TypingPhase Identity)
+pass4VisitExpr (LookupMap mapTerm keyTerm tpy range) =
+  LookupMap <$> pass4VisitTerm mapTerm <*> pass4VisitTerm keyTerm <*> pure tpy <*> pure range
+pass4VisitExpr (UpdateMap mapTerm keyTerm valTerm tpy range) =
+  UpdateMap <$> pass4VisitExpr mapTerm <*> pass4VisitTerm keyTerm <*> pass4VisitTerm valTerm <*> pure tpy <*> pure range
+pass4VisitExpr (RewriteApp nam args tpy range) =
+  RewriteApp nam <$> mapM pass4VisitTerm args <*> pure tpy <*> pure range
+pass4VisitExpr e@(EmptyMap {}) = return e
+pass4VisitExpr (GroundTerm t tpy range) =
+  GroundTerm <$> pass4VisitTerm t <*> pure tpy <*> pure range
+
+-- Some terms have to be rewritten based on their types.
+-- For instance, a lookup 'mapping(key)' looks like a functor term but based on its
+-- type it actually is a lookup into a mapping.
+--
+-- A functor could similarly also represent an application of a rewrite rule.
+pass4 :: MonadCheck m => TypedProgram -> m TypedProgram
+pass4 (Program decls comments) = Program <$>  mapM pass4VisitDecl decls <*> pure comments
+
+-----------------------------------------
 -- Entrypoint
 -----------------------------------------
 
@@ -453,12 +578,13 @@ runChecker = fmap fst . runChecker'
 
 -- | Run the type checker in its entirety
 runChecker' :: Program -> Either Error (CheckingContext, TypedProgram)
-runChecker' program = do
-  let initialContext = emptyCheckingContext
-  swap <$> runStateT (runReaderT (pass0 program >> pass1 program >> pass2 program >> pass3 program) Nothing) initialContext
+runChecker' = runCheckerWithContext emptyCheckingContext
+
+runCheckerWithContext :: CheckingContext -> Program -> Either Error (CheckingContext, TypedProgram)
+runCheckerWithContext initialCtx program = 
+    swap <$> runStateT (runReaderT (pass0 program >> pass1 program >> pass2 program >> pass3 program >>= pass4) Nothing) initialCtx
 
 -- | Type check a single term in the given context
 runCheckTerm :: CheckingContext -> PureTerm -> Either Error TypedTerm
 runCheckTerm ctx term =
   fst <$> evalStateT (runReaderT (checkTerm term) Nothing) ctx
-

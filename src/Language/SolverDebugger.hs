@@ -6,13 +6,13 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE MonoLocalBinds #-}
 
 module Language.SolverDebugger where
 
 import Language.Solver
 import Language.AST
-import Language.Types (Subtyping)
-import Language.TypeCheck (runChecker', CheckingContext(..))
+import Language.TypeCheck (runChecker', CheckingContext(..), runCheckTerm)
 import Language.Parser (parseProgram, parseGoal)
 import qualified Language.Solver.BacktrackingST as ST
 import qualified Language.Solver.Unification as Unification
@@ -32,6 +32,8 @@ import qualified Data.Set as Set
 import Data.Set (Set)
 import Text.Read (readMaybe)
 import Control.Lens.Setter ((?~))
+import Control.Monad.Error.Class
+import Control.Monad.Except (runExceptT)
 
 
 -------------------------------------------------------------
@@ -295,10 +297,10 @@ runSolverWithTrace context ctx tracedComp = do
   runSolver ctx $ runWriterT $ runReaderT (runTracedSolver tracedComp) context
 
 -- | Debug solve a query with config and return solutions with trace  
-debugSolve :: (ForAllPhases Ord p, AnnotateType p, ForAllPhases Eq p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => DebugConfig -> Subtyping -> [RuleDecl' p] -> PureTerm' p -> IO ([Map String (PureTerm' p)], SolverTrace p)
-debugSolve config subtyping rules query = do
+debugSolve :: (ForAllPhases Ord p, AnnotateType p, ForAllPhases Eq p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => DebugConfig -> CheckingContext -> [RuleDecl' p] -> PureTerm' p -> IO ([Map String (PureTerm' p)], SolverTrace p)
+debugSolve config checkingContext rules query = do
   return $ ST.runST $ do
-    let ctx = fromRules @[] subtyping rules
+    let ctx = fromRules @[] (_subtypingGraph checkingContext) rules
     let debugCtx = createDebugContext config query
     runSolverWithTrace debugCtx ctx (tracedSolve query)
 
@@ -317,47 +319,45 @@ debugSession semFile = do
       -- Type check the program to get the subtyping graph
       case runChecker' (Program decls []) of
         Left typeError -> putStrLn $ "Type error: " ++ show typeError
-        Right (checkingCtx, _) -> do
-          let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
-          let subtyping = _subtypingGraph checkingCtx
+        Right (checkingCtx, Program decls' _) -> do
+          let rules = [rule | RulesDecl rules _ <- decls', rule <- rules]
 
           putStrLn "Loaded and type checked rules successfully. Enter queries to debug (or 'quit' to exit):"
           putStrLn "Use ':set steps N' to limit solver steps, ':show config' to view settings."
           mapM_ print rules
 
-          debugLoop defaultConfig subtyping rules
+          debugLoop defaultConfig checkingCtx rules
   where
-    debugLoop config subtyping rules = do
+    debugLoop :: DebugConfig -> CheckingContext -> [RuleDecl' TypingPhase] -> IO ()
+    debugLoop config ctx rules = do
       putStr "debug> " >> hFlushAll stdout
       input <- getLine
       if | input == "quit" -> putStrLn "Goodbye!"
-         | not (null input) && head input == ':' -> handleCommand input config subtyping rules
-         | otherwise -> handleQuery input config subtyping rules
+         | not (null input) && head input == ':' -> handleCommand input config ctx rules
+         | otherwise -> handleQuery input config ctx rules >> debugLoop config ctx rules
 
-    handleCommand input config subtyping rules =
+    handleCommand input config ctx rules =
       case parseCommand' input config of
-        Left err -> putStrLn err >> debugLoop config subtyping rules
+        Left err -> putStrLn err >> debugLoop config ctx rules
         Right newConfig -> do
           putStrLn $ "Configuration updated: " ++ show newConfig
-          debugLoop newConfig subtyping rules
+          debugLoop newConfig ctx rules
 
-    handleQuery input config subtyping rules = do
-      case parseGoal input of
-        Left err -> putStrLn $ "Parse error: " ++ show err
-        Right term -> do
-          (solutions, trace) <- debugSolve config subtyping rules term
-          putStrLn "\n=== TRACE ==="
-          putStrLn $ prettyTrace trace
-          putStrLn "=== RESULTS ==="
-          if null solutions
-            then putStrLn "No solutions found."
-            else do
-              putStrLn $ "Found " ++ show (length solutions) ++ " solution(s):"
-              mapM_ (putStrLn . ("  " ++) . show) (if config ^. configShowInternalVars
-                                                      then solutions
-                                                      else map (`Map.restrictKeys` atomNames term) solutions)
+    handleQuery input config ctx rules = fmap (either error id) $ runExceptT $ do
+      goal <- modifyError (("Parse error: " ++) . show) $ liftEither $ parseGoal input
+      checkedGoal <- modifyError (("Type error: " ++) . show) $ liftEither $ runCheckTerm ctx goal
+      (solutions, trace) <- liftIO $ debugSolve config ctx rules checkedGoal
+      liftIO $ putStrLn "\n=== TRACE ==="
+      liftIO $ putStrLn $ prettyTrace trace
+      liftIO $ putStrLn "=== RESULTS ==="
+      if null solutions
+        then liftIO $ putStrLn "No solutions found."
+        else do
+          liftIO $ putStrLn $ "Found " ++ show (length solutions) ++ " solution(s):"
+          mapM_ (liftIO . putStrLn . ("  " ++) . show) (if config ^. configShowInternalVars
+                                                  then solutions
+                                                  else map (`Map.restrictKeys` atomNames checkedGoal) solutions)
 
-      debugLoop config subtyping rules
 
 -- | Parse a command and update the given config
 parseCommand' :: String -> DebugConfig -> Either String DebugConfig

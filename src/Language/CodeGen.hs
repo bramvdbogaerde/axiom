@@ -461,7 +461,29 @@ pureTermToExp ctx = \case
   SetOfTerms terms tpy range ->
     [| SetOfTerms (Set.fromList $(listE (map (pureTermToExp ctx) (Set.toList terms)))) $(lift tpy) $(rangeToExp range) |]
 
+  TermExpr expr range ->  [| TermExpr $(exprToExp ctx expr) $(rangeToExp range) |]
+
+  TermMap mapping tpy range ->
+    [| TermMap (Map.fromList $(listE (map (bimapE (pureTermToExp ctx) (pureTermToExp ctx)) (Map.toList mapping)))) $(lift tpy) $(rangeToExp range) |]
+    where
+      bimapE f g (x,y) = [| ($(f x), $(g y)) |]
+
   TermHask v _ _ -> absurd v
+
+exprToExp :: CheckingContext -> Expr TypingPhase Identity -> Q Exp
+exprToExp ctx expr = 
+  [| $(case expr of 
+      LookupMap t1 t2 tpy r ->
+        [| LookupMap $(pureTermToExp ctx t1) $(pureTermToExp ctx t2) $(lift tpy) $(rangeToExp r) |]
+      UpdateMap t1 t2 t3 tpy r ->
+        [| UpdateMap $(exprToExp ctx t1) $(pureTermToExp ctx t2) $(pureTermToExp ctx t3) $(lift tpy) $(rangeToExp r) |]
+      RewriteApp nam ags tpy r ->
+        [| RewriteApp $(lift nam) $(listE (map (pureTermToExp ctx) ags)) $(lift tpy) $(rangeToExp r) |]
+      EmptyMap tpy r ->
+        [| EmptyMap $(lift tpy) $(rangeToExp r) |]
+      GroundTerm t tpy r ->
+        [| GroundTerm $(pureTermToExp ctx t) $(lift tpy) $(rangeToExp r) |]
+      ) |]
 
 rangeToExp :: Range -> Q Exp
 rangeToExp (Range (Position line1 col1 fname1) (Position line2 col2 fname2)) =

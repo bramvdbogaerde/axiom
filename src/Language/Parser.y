@@ -53,6 +53,7 @@ import qualified Data.Set as Set
   '.'         { TokenWithRange Dot _ }
   ';'         { TokenWithRange Sem _ }
   '|'         { TokenWithRange Bar _ }
+  '|->'       { TokenWithRange MapsTo _ }
   IDENT       { TokenWithRange (Ident _) _ }
   STRING      { TokenWithRange (Quo _) _ }
   INTLIT      { TokenWithRange (IntLit _) _ }
@@ -176,6 +177,18 @@ Term : BasicTerm                             { $1 }
 BigStepExpr :: { PureTerm }
 BigStepExpr : '(' Elements ')' '⇓' '(' Elements ')' { Functor "⇓" ($2 ++ $6) () (mkRange $1 $7) }
 
+-- Expressions
+Expr :: { PureExpr }
+Expr : '[' Bindings ']' { curryUpdateMap (TermExpr (EmptyMap () (mkRange $1 $3)) (mkRange $1 $3)) $2 () (mkRange $1 $3) }
+     | BasicTerm '[' Bindings ']' { curryUpdateMap $1 $3 () (mkRange $1 $4) }
+
+Bindings :: { [(PureTerm, PureTerm)] }
+Bindings : {- empty -} { [] }
+         | Binding { [$1] }
+         | Binding ';' Bindings { $1 : $3 }
+Binding :: { (PureTerm, PureTerm) }
+Binding : Term '|->' Term { ($1, $3) }
+
 -- Sequence of terms seperated by a ","
 Elements :: { [PureTerm] }
 Elements : {- empty -} { [] }
@@ -188,6 +201,7 @@ BasicTerm : IDENT                            { Atom (Identity (getIdent $1)) () 
           | HASKEXPR                         { AST.HaskellExpr (getHaskellExpr $1) () (rangeOf $1) }
           | INTLIT                           { TermValue (IntValue (getIntLit $1)) () (rangeOf $1) }
           | BOOL                             { TermValue (BooValue (getBooLit $1))  () (rangeOf $1) }
+          | Expr { TermExpr $1 (rangeOf $1) }
 
 Goal :: { PureTerm }
 Goal : Term { $1 }
