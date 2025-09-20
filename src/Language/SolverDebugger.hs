@@ -292,7 +292,7 @@ tracedSolveUntilStable query iteration = do
       tracedSolveUntilStable query (iteration + 1)
 
 -- | Run a traced solver computation with context and return results with trace
-runSolverWithTrace :: (Queue q) => DebugContext -> EngineCtx p q s -> TracedSolver p q s a -> ST.ST s (a, SolverTrace p)
+runSolverWithTrace :: (Queue q, HaskellExprExecutor p, AnnotateType p, ForAllPhases Ord p) => DebugContext -> EngineCtx p q s -> TracedSolver p q s a -> ST.ST s (a, SolverTrace p)
 runSolverWithTrace context ctx tracedComp = do
   runSolver ctx $ runWriterT $ runReaderT (runTracedSolver tracedComp) context
 
@@ -300,7 +300,8 @@ runSolverWithTrace context ctx tracedComp = do
 debugSolve :: (ForAllPhases Ord p, AnnotateType p, ForAllPhases Eq p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => DebugConfig -> CheckingContext -> [RuleDecl' p] -> PureTerm' p -> IO ([Map String (PureTerm' p)], SolverTrace p)
 debugSolve config checkingContext rules query = do
   return $ ST.runST $ do
-    let ctx = fromRules @[] (_subtypingGraph checkingContext) rules
+    -- TODO: allow rewrites in the debugger
+    let ctx = fromRules @[] (_subtypingGraph checkingContext) rules []
     let debugCtx = createDebugContext config query
     runSolverWithTrace debugCtx ctx (tracedSolve query)
 

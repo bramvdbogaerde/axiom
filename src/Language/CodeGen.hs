@@ -118,8 +118,9 @@ makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
              " (expected: " ++ (if shouldPass then "PASS" else "FAIL") ++ ") ... "
     let Program decls _ = ast
     let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
+    let rewrites = [rewrite | Rewrite rewrite _ <- decls]
     -- subtyping is already available as a top-level variable
-    let engineCtx = fromRules Main.subtyping rules
+    let engineCtx = fromRules Main.subtyping rules rewrites
     let solverComputation = ST.runST $ runSolver engineCtx (solve @CodeGenPhase @[] query)
     
     let hasSolution = not $ null solverComputation
@@ -423,7 +424,7 @@ syntaxDeclToExp :: CheckingContext -> TypedSyntaxDecl -> Q Exp
 syntaxDeclToExp ctx (SyntaxDecl vars tpy prods range) =
   [| SyntaxDecl $(lift vars) $(typeCtorToExp tpy) $(listE (map (pureTermToExp ctx) prods)) $(rangeToExp range) |]
 
-rewriteDeclToExp :: CheckingContext -> TypedRewriteDecl -> Q Exp
+rewriteDeclToExp :: CheckingContext -> TypedRewriteDecl Identity -> Q Exp
 rewriteDeclToExp ctx (RewriteDecl name args body range) =
   [| RewriteDecl $(lift name) $(listE (map (pureTermToExp ctx) args)) $(pureTermToExp ctx body) $(rangeToExp range) |]
 

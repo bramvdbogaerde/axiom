@@ -25,7 +25,6 @@ import qualified Language.Solver.Unification as Unification
 import Language.Solver.Worklist
 import Language.Solver.Unification (RefTerm)
 import qualified Debug.Trace as Debug
-import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.Extra (ifM, when, unless)
 import Data.Either
 import Data.Maybe (catMaybes, fromMaybe)
@@ -51,8 +50,6 @@ data SearchState p s = SearchState
     _searchGoals :: ![SearchGoal p s],
     -- | Snapshot to restore when resuming this search    
     _searchSnapshot :: ST.Snapshot s,
-    -- | Mapping from variable names to their 'Cell's
-    _searchMapping :: Unification.VariableMapping p s,
     -- | Goals to add to the cache when all the search goals in this state
     -- have been solved.
     _searchWhenSucceeds :: ![InOut p s]
@@ -75,12 +72,12 @@ $(makeLenses ''SearchCtx)
 data EngineCtx p q s = EngineCtx
   { -- | Mapping from functor names to their appropriate rule, used in backwards reasoning
     _conclusionFunctors :: !(Map String (Set (RuleDecl' p))),
-    -- | Unique variables counter
-    _numUniqueVariables :: Int,
     -- | Search context for query resolution
     _searchCtx :: !(SearchCtx p q s),
     -- | Out-caching mechanism as a mapping from terms to ground terms
     _outCache :: !(Map (PureTerm' p) (Set (PureTerm' p))),
+    -- | Information about rewrite rules
+    _rewriteRules :: Unification.Rewrites p,
     -- | Subtyping graph for type-aware unification
     _subtyping :: !Subtyping
   }
@@ -91,7 +88,7 @@ emptySearchCtx = SearchCtx emptyQueue Map.empty
 
 -- | Create an empty solver engine context
 emptyEngineCtx :: (Queue q) => Subtyping -> EngineCtx p q s
-emptyEngineCtx subtyping = EngineCtx Map.empty 0 emptySearchCtx Map.empty subtyping
+emptyEngineCtx = EngineCtx Map.empty emptySearchCtx Map.empty Map.empty
 
 $(makeLenses ''EngineCtx)
 
@@ -101,30 +98,38 @@ addConclusionFunctor nam decl =
   over conclusionFunctors (Map.insertWith Set.union nam (Set.singleton decl))
 
 -- | Construct an initial context from the rules defined the program
-fromRules :: (Queue q, ForAllPhases Ord p) => Subtyping -> [RuleDecl' p] -> EngineCtx p q s
-fromRules subtyping = foldr visit (emptyEngineCtx subtyping)
+fromRules :: forall q s p . (Queue q, ForAllPhases Ord p) => Subtyping -> [RuleDecl' p] -> [PureRewriteDecl p] -> EngineCtx p q s
+fromRules subtyping rules rewrites =
+      flip (foldr visitRewrite) rewrites
+    $ foldr visit (emptyEngineCtx subtyping) rules
   where
     visit rule@(RuleDecl _ _precedent consequent _) =
       flip (foldr (`addConclusionFunctor` rule)) (foldMap functorName consequent)
+    visitRewrite decl@(RewriteDecl nam _ _ _) =
+      over rewriteRules (Map.insertWith (++) nam [decl])
 
 ------------------------------------------------------------
 -- Monad context
 ------------------------------------------------------------
 
 -- | The solver monadic context
-newtype Solver p q s a = Solver {getSolver :: StateT (EngineCtx p q s) (ST.ST s) a}
+newtype Solver p q s a = Solver {getSolver :: StateT (EngineCtx p q s) (Unification.UnificationM p s) a }
   deriving (Applicative, Functor, Monad, MonadState (EngineCtx p q s))
 
 
-runSolver :: EngineCtx p q s -> Solver p q s a -> ST.ST s a
-runSolver ctx (Solver stateT) = evalStateT stateT ctx
+runSolver :: (HaskellExprExecutor p, AnnotateType p, ForAllPhases Ord p) => EngineCtx p q s -> Solver p q s a -> ST.ST s a
+runSolver ctx (Solver unificationM) =
+  either error id <$> Unification.runUnificationM (_subtyping ctx) (_rewriteRules ctx) (evalStateT unificationM ctx)
 
 ------------------------------------------------------------
 -- Solver monad operations
 ------------------------------------------------------------
 
+liftUnification :: Unification.UnificationM p s a -> Solver p q s a
+liftUnification = Solver . lift
+
 liftST :: ST.ST s a -> Solver p q s a
-liftST = Solver . lift
+liftST = liftUnification . Unification.liftST
 
 takeSnapshot :: Solver p q s (ST.Snapshot s)
 takeSnapshot = liftST ST.snapshot
@@ -134,19 +139,12 @@ restoreSnapshot = liftST . ST.restore
 
 -- | Convert a PureTerm to RefTerm and update the solver's current mapping
 refTerm :: (ForAllPhases Ord p, AnnotateType p) => PureTerm' p -> Solver p q s (RefTerm p s)
-refTerm term = do
-  mapping <- gets (^. searchCtx . currentMapping)
-  (refTerm, newMapping) <- liftST $ Unification.refTerm term mapping
-  modify (set (searchCtx . currentMapping) newMapping)
-  return refTerm
+refTerm = liftUnification . Unification.refTerm'
 
 -- | Generate unique variables in a given pure term
 uniqueTerm :: (HaskellExprRename p, ForAllPhases Ord p) => PureTerm' p -> Solver p q s (PureTerm' p)
 uniqueTerm term = do
-  i <- gets (^. numUniqueVariables)
-  let (term', i') = Renamer.runRenamer i (Renamer.renameTerm term)
-  modify (over numUniqueVariables (const i'))
-  return term'
+   Solver $ lift $ zoom Unification.numUniqueVariables $ lift $ Renamer.renameState (Renamer.renameTerm term)
 
 ------------------------------------------------------------
 -- Caching
@@ -248,17 +246,15 @@ inCache t inCache _mapping = or <$> mapM (uniqueTerm >=> refTerm >=> doesUnify t
 
 -- | Unifies two terms together or returns Left if the terms
 -- cannot be unified.
-unify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p)
+unify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
       => RefTerm p s
       -> RefTerm p s
       -> Solver p q s (Either String ())
-unify left right  = do
-  mapping <- gets (^. searchCtx . currentMapping)
-  subtyping <- gets (^. subtyping)
-  liftST $ runExceptT $ flip runReaderT (mapping, subtyping) $ Unification.unifyTerms left right
+unify left right =
+  liftUnification $ fmap Right (Unification.unifyTerms left right) `catchError` (return . Left)
 
 -- | Returns "True" if the given terms can/are unified
-doesUnify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p)
+doesUnify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
           => RefTerm p s
           -> RefTerm p s
           -> Solver p q s Bool
@@ -274,11 +270,8 @@ doesUnify t1 t2 = do
 initialWL :: (ForAllPhases Ord p, Queue q, AnnotateType p) => PureTerm' p -> Solver p q s ()
 initialWL query = do
   refQuery <- refTerm query
-  mapping <- gets (^. searchCtx . currentMapping)
   snapshot <- takeSnapshot
-  stateId <- gets (^. numUniqueVariables)
-  modify (over numUniqueVariables (+1))
-  let initialState = SearchState stateId [SearchGoal "initial" refQuery] snapshot mapping []
+  let initialState = SearchState 0 [SearchGoal "initial" refQuery] snapshot []
   modify (over (searchCtx . searchQueue) (enqueue initialState))
 
 -- | Main entry point for solving a query - returns lazy list of all solutions
@@ -298,7 +291,6 @@ solveSingle = do
     Just (state, restQueue) -> do
       modify (set (searchCtx . searchQueue) restQueue)
       restoreSnapshot (state ^. searchSnapshot)
-      modify (set (searchCtx . currentMapping) (state ^. searchMapping))
 
       case state ^. searchGoals of
         [] -> do
@@ -343,9 +335,7 @@ solveAll = do
 -- | Continue solving with the given remaining goals
 continue :: (Queue q) => [SearchGoal p s] -> [InOut p s] -> Solver p q s ()
 continue remainingGoals whenSucceeds = do
-  stateId <- gets (^. numUniqueVariables)
-  modify (over numUniqueVariables (+1))
-  newState <- SearchState stateId remainingGoals <$> takeSnapshot <*> gets (^. searchCtx . currentMapping) <*> pure whenSucceeds
+  newState <- SearchState 0 remainingGoals <$> takeSnapshot <*> pure whenSucceeds
   modify (over (searchCtx . searchQueue) (enqueue newState))
 
 -- | Expand a goal by trying all matching rules
@@ -419,7 +409,7 @@ processRule :: forall p q s . (AnnotateType p, Queue q, HaskellExprRename p, Has
             -> RuleDecl' p      -- ^ the rule to match with
             -> Solver p q s ()
 processRule goal remainingGoals whenSucceeds isInCache rule = do
-  RuleDecl ruleName precedents consequents _ <- Solver $ zoom numUniqueVariables $ Renamer.renameRuleState rule
+  RuleDecl ruleName precedents consequents _ <- Solver $ lift $ zoom Unification.numUniqueVariables $ lift $ Renamer.renameRuleState rule
 
   -- Assert that there's only one consequent for now
   case consequents of

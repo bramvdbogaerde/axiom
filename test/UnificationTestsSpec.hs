@@ -18,7 +18,7 @@ import TestInfrastructure
 import Data.Map (Map)
 
 runUnification :: PureTerm -> PureTerm -> Either String (Map String PureTerm)
-runUnification = Unification.runUnification @ParsePhase emptySubtyping
+runUnification = Unification.runUnification @ParsePhase emptySubtyping Map.empty
 
 -- Test that refTerm and pureTerm are inverses for a given term
 testInverse :: String -> Expectation

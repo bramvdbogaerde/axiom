@@ -2,7 +2,17 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE LambdaCase #-}
-module Language.Solver.Renamer(renameRule, renameRule', renameTerm, unrenameTerm, runRenamer, renameRuleState, baseName) where
+module Language.Solver.Renamer(
+        renameRule
+      , renameRule'
+      , renameRewrite
+      , renameTerm
+      , unrenameTerm
+      , runRenamer
+      , renameRuleState
+      , renameState
+      , baseName
+    ) where
 
 import Control.Lens
 import Control.Monad.State
@@ -50,6 +60,10 @@ freshName nam =
 runRenamer :: Int -> StateT RenamerCtx Identity a -> (a, Int)
 runRenamer freshCtr' m = runIdentity (second _freshCtr <$> runStateT m (emptyCtx { _freshCtr = freshCtr' }))
 
+-- | Same as "runRenamer" but does not force Identity
+runRenamer' :: Functor m => Int -> StateT RenamerCtx m a -> m (a, Int)
+runRenamer' freshCtr' m = second _freshCtr <$> runStateT m (emptyCtx { _freshCtr = freshCtr' })
+
 -------------------------------------------------------------
 -- Renaming functions
 -------------------------------------------------------------
@@ -78,7 +92,7 @@ renameTerm (SetOfTerms terms tpy range) = do
   return $ SetOfTerms (Set.fromList renamedTermsList) tpy range
 renameTerm (TermHask value tpy range) = pure $ TermHask value tpy range
 renameTerm (TermExpr expr range) = flip TermExpr range <$> renameExpr expr
-renameTerm (TermMap mapping tpy range) = 
+renameTerm (TermMap mapping tpy range) =
     TermMap . Map.fromList <$> mapM (bimapM renameTerm renameTerm) (Map.toList mapping) <*> pure tpy <*> pure range
   where bimapM f g (x,y) = liftA2 (,) (f x) (g y)
 
@@ -97,9 +111,16 @@ renameExpr = \case
 renameTerms :: (HaskellExprRename p, ForAllPhases Ord p, MonadRename m) => [PureTerm' p] -> m [PureTerm' p]
 renameTerms = mapM renameTerm
 
+-- | Rename the variable in the given rwrite rule, ensuring that they are unique
+renameRewrite :: (HaskellExprRename p, ForAllPhases Ord p, MonadRename m) => PureRewriteDecl p -> m (PureRewriteDecl p)
+renameRewrite (RewriteDecl nam prs bdy r) =
+    RewriteDecl nam <$> renameTerms prs <*> renameTerm bdy <*> pure r
+
 -------------------------------------------------------------
 -- Public API
 -------------------------------------------------------------
+
+
 
 -- | Rename the variables in the given rule, ensuring that they are unique
 renameRule' :: (HaskellExprRename p, ForAllPhases Ord p)
@@ -113,6 +134,9 @@ renameRule' freshCtr' (RuleDecl ruleName precedent consequent range) =
 renameRuleState :: (HaskellExprRename p, ForAllPhases Ord p, Monad m) => RuleDecl' p -> StateT Int m (RuleDecl' p)
 renameRuleState rule = StateT $ return . flip renameRule' rule
 
+-- | Transform the renamer monad to a state monad with a unique variable counter
+renameState :: Functor m => StateT RenamerCtx m a -> StateT Int m a
+renameState m = StateT $ flip runRenamer' m
 
 -- | Same as renameRule' but does not return the new unique count
 renameRule :: (HaskellExprRename p, ForAllPhases Ord p) => Int -> RuleDecl' p -> RuleDecl' p
@@ -136,7 +160,7 @@ unrenameTerm (IncludedIn var term range) = IncludedIn (baseName var) (unrenameTe
 unrenameTerm (SetOfTerms terms tpy range) = SetOfTerms (Set.fromList $ map unrenameTerm $ Set.toList terms) tpy range
 unrenameTerm (TermHask value tpy range) = TermHask value tpy range
 unrenameTerm (TermExpr expr range) = TermExpr (unrenameExpr expr) range
-unrenameTerm (TermMap mapping tpy range) = 
+unrenameTerm (TermMap mapping tpy range) =
     TermMap (Map.fromList $ map (bimap unrenameTerm unrenameTerm) $ Map.toList mapping) tpy range
 
 unrenameExpr :: (ForAllPhases Ord p) => Expr p Identity -> Expr p Identity

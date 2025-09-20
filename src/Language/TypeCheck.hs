@@ -104,12 +104,17 @@ throwErrorAt range = throwErrorMaybe (Just range)
 -- The typing context is tracked throughout the type checking, and corresponds to "Γ". The context also includes
 -- the subtyping graph, as well as a set of defined sorts which is used in code generation to generate the appropriate
 -- data types for embedded Haskell expressions.
-data CheckingContext = CheckingContext { _typingContext :: TypingContext, _subtypingGraph :: Subtyping, _definedSorts :: Map Typ (Set Range) }
+data CheckingContext = CheckingContext {
+                         _typingContext :: TypingContext
+                       , _subtypingGraph :: Subtyping
+                       , _definedSorts :: Map Typ (Set Range)
+                       , _rewriteNames :: Set String
+                      }
                      deriving (Ord, Eq, Show)
 
 -- Next, we define some auxilary functions for interacting with the checking and type context data types.
 emptyCheckingContext :: CheckingContext
-emptyCheckingContext = CheckingContext Map.empty Graph.empty builtins
+emptyCheckingContext = CheckingContext Map.empty Graph.empty builtins Set.empty
   where builtins = Map.fromList ((,Set.empty) <$> [IntType, StrType, BooType, AnyType, VoidType])
 
 $(makeLenses ''CheckingContext)
@@ -142,6 +147,14 @@ isDefinedSort tpy = gets (Map.member tpy . _definedSorts)
 -- | Add a sort to the set of defined sorts
 defineSort :: MonadCheck m => Typ -> Range -> m ()
 defineSort sortName range = modify (over definedSorts (Map.insertWith Set.union sortName (Set.singleton range)))
+
+-- | Add the name of a rewrite rule to the set of defined rewrites
+defineRewriteName :: MonadCheck m => String -> m ()
+defineRewriteName = modify . over rewriteNames . Set.insert
+
+-- | Checks whether the given name refers to a rewrite rule
+isRewriteRule :: MonadCheck m => String -> m Bool
+isRewriteRule nam = gets (Set.member nam . _rewriteNames)
 
 -----------------------------------------
 -- Typing infrastructure
@@ -297,6 +310,8 @@ pass1VisitDecl (TransitionDecl nam (Sort from, _) (Sort to, _) range) = do
   -- ~> ::= ~>(state, state) from a typing perspective
   let tpy = curryFunType [Sort from, Sort to, Sort nam]
   typedAs (Just range) nam tpy
+pass1VisitDecl (Rewrite (RewriteDecl nam _ _ _) _) =
+  defineRewriteName nam
 pass1VisitDecl _ = return ()
 
 pass1 :: MonadCheck m => Program -> m ()
@@ -459,7 +474,7 @@ checkRule :: MonadCheck m => RuleDecl -> m TypedRuleDecl
 checkRule (RuleDecl nam precedent consequent range) = RuleDecl nam <$> mapM (fmap fst . checkTerm) precedent <*> mapM (fmap fst . checkTerm) consequent <*> pure range
 
 -- | Type a rewrite rule
-typeRewrite :: MonadCheck m => RewriteDecl -> m TypedRewriteDecl
+typeRewrite :: MonadCheck m => RewriteDecl -> m (TypedRewriteDecl Identity)
 typeRewrite (RewriteDecl name args body range) = do
   typedArgs <- mapM (fmap fst . checkTerm) args
   typedBody <- fmap fst (checkTerm body)
@@ -512,7 +527,7 @@ pass4VisitRule :: MonadCheck m => TypedRuleDecl -> m TypedRuleDecl
 pass4VisitRule (RuleDecl nam precedent consequent range) =
   RuleDecl nam <$> mapM pass4VisitTerm precedent <*> mapM pass4VisitTerm consequent <*> pure range
 
-pass4VisitRewrite :: MonadCheck m => TypedRewriteDecl -> m TypedRewriteDecl
+pass4VisitRewrite :: MonadCheck m => TypedRewriteDecl Identity -> m (TypedRewriteDecl Identity)
 pass4VisitRewrite (RewriteDecl name args body range) =
   RewriteDecl name <$> mapM pass4VisitTerm args <*> pass4VisitTerm body <*> pure range
 
@@ -528,10 +543,10 @@ pass4VisitTerm (Functor nam terms functorTpy range) = do
       case typedTerms of
         [keyTerm] -> return $ TermExpr (LookupMap (Atom (Identity nam) tpy range) keyTerm resultType range) range
         _ -> error $ "MapOf type should always have exactly 1 argument, got " ++ show (length typedTerms)
-    _ -> do
-      -- TODO: Check if this is a rewrite rule application by tracking rewrite rules in the context
-      -- For now, keep as regular functor
-      return (Functor nam typedTerms functorTpy range)
+    _ ->
+      ifM (isRewriteRule nam)
+      (return (TermExpr (RewriteApp nam typedTerms functorTpy range) range))
+      (return (Functor nam typedTerms functorTpy range))
 pass4VisitTerm (Eqq term1 term2 tpy range) =
   Eqq <$> pass4VisitTerm term1 <*> pass4VisitTerm term2 <*> pure tpy <*> pure range
 pass4VisitTerm (Neq term1 term2 tpy range) =
@@ -581,7 +596,7 @@ runChecker' :: Program -> Either Error (CheckingContext, TypedProgram)
 runChecker' = runCheckerWithContext emptyCheckingContext
 
 runCheckerWithContext :: CheckingContext -> Program -> Either Error (CheckingContext, TypedProgram)
-runCheckerWithContext initialCtx program = 
+runCheckerWithContext initialCtx program =
     swap <$> runStateT (runReaderT (pass0 program >> pass1 program >> pass2 program >> pass3 program >>= pass4) Nothing) initialCtx
 
 -- | Type check a single term in the given context
