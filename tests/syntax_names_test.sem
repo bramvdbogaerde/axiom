@@ -1,0 +1,7 @@
+syntax {
+  x, y in Term ::= atom() | functor(x);
+};
+
+syntax expressions {
+  e in Expr ::= var() | app(e, e);
+};

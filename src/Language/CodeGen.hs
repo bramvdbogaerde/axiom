@@ -393,10 +393,14 @@ commentToExp :: Comment' p -> Q Exp
 commentToExp (Comment str range) =
   [| Comment $(lift str) $(rangeToExp range) |]
 
+maybeNameToExp :: Maybe String -> Q Exp
+maybeNameToExp Nothing = [| Nothing |]
+maybeNameToExp (Just name) = [| Just $(lift name) |]
+
 declToExp :: CheckingContext -> TypedDecl -> Q Exp
 declToExp ctx = \case
-  Syntax syntaxDecls range ->
-    [| Syntax $(listE (map (syntaxDeclToExp ctx) syntaxDecls)) $(rangeToExp range) |]
+  Syntax name syntaxDecls range ->
+    [| Syntax $(maybeNameToExp name) $(listE (map (syntaxDeclToExp ctx) syntaxDecls)) $(rangeToExp range) |]
 
   Rewrite rewriteDecl range ->
     [| Rewrite $(rewriteDeclToExp ctx rewriteDecl) $(rangeToExp range) |]

@@ -83,9 +83,10 @@ Declaration : SyntaxBlock                    { $1 }
             | RewriteRule                    { $1 }
             | ImportDecl                     { $1 }
 
--- Syntax block: syntax { ... }
+-- Syntax block: syntax { ... } or syntax name { ... }
 SyntaxBlock :: { Decl }
-SyntaxBlock : 'syntax' '{' SyntaxDecls '}'   { Syntax $3 (mkRange $1 $4) }
+SyntaxBlock : 'syntax' '{' SyntaxDecls '}'   { Syntax Nothing $3 (mkRange $1 $4) }
+            | 'syntax' IDENT '{' SyntaxDecls '}' { Syntax (Just (getIdent $2)) $4 (mkRange $1 $5) }
 
 SyntaxDecls :: { [SyntaxDecl] }
 SyntaxDecls : {- empty -}                    { [] }
