@@ -244,7 +244,7 @@ applyTpy r t ts = throwErrorMaybe r (ArityMismatch (show t) 0 (length ts))
 ----------------------------------
 
 pass0VisitDecl :: MonadCheck m => Decl -> m ()
-pass0VisitDecl (Syntax decls _) = mapM_ pass0VisitSyntaxDecl decls
+pass0VisitDecl (Syntax _ decls _) = mapM_ pass0VisitSyntaxDecl decls
   where
     -- In this phase, we only need to associate the atoms in "vars" with the type denoted by "tpy".
     -- We also check whether the declaration has any data constructors. These are only allowed when
@@ -300,7 +300,7 @@ pass1VisitCtor sortName = \case
     ensureAtom t = throwErrorAt (rangeOf t) $ NoNestingAt sortName
 
 pass1VisitDecl :: MonadCheck m => Decl -> m ()
-pass1VisitDecl (Syntax decls _) = mapM_ pass1VisitSyntaxDecl decls
+pass1VisitDecl (Syntax _ decls _) = mapM_ pass1VisitSyntaxDecl decls
   where
     pass1VisitSyntaxDecl (SyntaxDecl _vars tpy ctors range) = case fromTypeCon tpy of
       Left err -> throwErrorAt range (SortNotDefined err)
@@ -486,15 +486,15 @@ typeSyntax (SyntaxDecl vars tpy prods range) = do
   return $ SyntaxDecl vars tpy typedProds range
 
 pass3VisitDecl :: MonadCheck m => Decl -> m TypedDecl
-pass3VisitDecl (RulesDecl rules range) =
-  RulesDecl <$> mapM checkRule rules <*> pure range
+pass3VisitDecl (RulesDecl name rules range) =
+  RulesDecl name <$> mapM checkRule rules <*> pure range
 pass3VisitDecl (TransitionDecl nam s1@(Sort {}, _) s2@(Sort {}, _) range) = return (TransitionDecl nam s1 s2 range)
 pass3VisitDecl (TransitionDecl _ (_, r1) _ _) =
   throwErrorAt r1 $ NameNotDefined "Only Sort types are supported in transition declarations"
 pass3VisitDecl (Rewrite rewrite range) =
   Rewrite <$> typeRewrite rewrite <*> pure range
-pass3VisitDecl (Syntax syntax range) =
-  Syntax <$> mapM typeSyntax syntax <*> pure range
+pass3VisitDecl (Syntax name syntax range) =
+  Syntax name <$> mapM typeSyntax syntax <*> pure range
 pass3VisitDecl (HaskellDecl s range) =
   return $ HaskellDecl s range
 pass3VisitDecl (Import filename range) =
@@ -508,16 +508,16 @@ pass3 (Program decls comments) = Program <$> mapM pass3VisitDecl decls <*> pure 
 -----------------------------------------
 
 pass4VisitDecl :: MonadCheck m => TypedDecl -> m TypedDecl
-pass4VisitDecl (RulesDecl rules range) =
-  RulesDecl <$> mapM pass4VisitRule rules <*> pure range
+pass4VisitDecl (RulesDecl name rules range) =
+  RulesDecl name <$> mapM pass4VisitRule rules <*> pure range
 pass4VisitDecl (TransitionDecl nam s1 s2 range) =
   return (TransitionDecl nam s1 s2 range)
 pass4VisitDecl (Rewrite rewrite range) =
   Rewrite <$> pass4VisitRewrite rewrite <*> pure range
-pass4VisitDecl (Syntax syntax range) =
+pass4VisitDecl (Syntax name syntax range) =
   -- NOTE: syntax definitions never contain any MapOf expressions
   -- as they are not allowed by the previous passes.
-  return $ Syntax syntax range
+  return $ Syntax name syntax range
 pass4VisitDecl (HaskellDecl s range) =
   return $ HaskellDecl s range
 pass4VisitDecl (Import filename range) =

@@ -202,9 +202,9 @@ typeSubst var typ =
 
 -- | A declaration is either a syntax section, rules section, transition
 -- declaration or or a rewrite rule.
-data Decl' p = Syntax [SyntaxDecl' p] Range
+data Decl' p = Syntax (Maybe String) [SyntaxDecl' p] Range  -- ^ Syntax block with optional name
              | Rewrite (PureRewriteDecl p) Range
-             | RulesDecl [RuleDecl' p] Range
+             | RulesDecl (Maybe String) [RuleDecl' p] Range  -- ^ Rules block with optional name
              | TransitionDecl String (Typ, Range) (Typ, Range) Range
              | HaskellDecl String Range
              | Import String Range  -- ^ Import declaration with filename
