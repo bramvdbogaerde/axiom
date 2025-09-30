@@ -70,6 +70,7 @@ executable analysislang
                , LanguageServer.Diagnostics
                , LanguageServer.Symbols
                , Latex.Generator
+               , Latex.Output
   hs-source-dirs: app
   main-is: Main.hs
   ghc-options: -Werror -Wall -Wno-name-shadowing -Wno-unused-record-wildcards

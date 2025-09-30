@@ -52,7 +52,7 @@ runTestQuery (Program decls _) queryStr = do
       case runChecker' (Program decls []) of
         Left typeError -> return $ Left $ "Type error: " ++ show typeError
         Right (checkingCtx, typedProgram) -> do
-          let rules = [rule | RulesDecl rules _ <- getDecls typedProgram, rule <- rules]
+          let rules = [rule | RulesDecl _ rules _ <- getDecls typedProgram, rule <- rules]
           let rewrites = [rewrite | Rewrite rewrite _ <- getDecls typedProgram]
           let subtyping = _subtypingGraph checkingCtx
           let typedQuery = anyTyped query

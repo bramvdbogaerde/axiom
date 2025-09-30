@@ -117,7 +117,7 @@ makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
     putStr $ "Testing query " ++ show idx ++ ": " ++ show query ++ 
              " (expected: " ++ (if shouldPass then "PASS" else "FAIL") ++ ") ... "
     let Program decls _ = ast
-    let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]
+    let rules = [rule | RulesDecl _ rules _ <- decls, rule <- rules]
     let rewrites = [rewrite | Rewrite rewrite _ <- decls]
     -- subtyping is already available as a top-level variable
     let engineCtx = fromRules Main.subtyping rules rewrites
@@ -214,7 +214,7 @@ makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
       , "debugQuery query = do"
       , "  putStrLn $ \"Debugging query: \" ++ show query"
       , "  let Program decls _ = ast"
-      , "  let rules = [rule | RulesDecl rules _ <- decls, rule <- rules]"
+      , "  let rules = [rule | RulesDecl _ rules _ <- decls, rule <- rules]"
       , "  let config = Language.SolverDebugger.defaultConfig"
       , "  (solutions, trace) <- Language.SolverDebugger.debugSolve config rules query"
       , "  putStrLn \"\\n=== TRACE ===\""
@@ -405,8 +405,8 @@ declToExp ctx = \case
   Rewrite rewriteDecl range ->
     [| Rewrite $(rewriteDeclToExp ctx rewriteDecl) $(rangeToExp range) |]
 
-  RulesDecl ruleDecls range ->
-    [| RulesDecl $(listE (map (ruleDeclToExp ctx) ruleDecls)) $(rangeToExp range) |]
+  RulesDecl name ruleDecls range ->
+    [| RulesDecl $(maybeNameToExp name) $(listE (map (ruleDeclToExp ctx) ruleDecls)) $(rangeToExp range) |]
 
   TransitionDecl name (tpy1, range1) (tpy2, range2) range ->
     [| TransitionDecl $(lift name) ($(lift tpy1), $(rangeToExp range1)) ($(lift tpy2), $(rangeToExp range2)) $(rangeToExp range) |]

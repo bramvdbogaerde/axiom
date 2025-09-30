@@ -1,5 +1,6 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Latex.Generator where
 
 import Language.AST
@@ -8,9 +9,12 @@ import Data.Kind
 import Data.List (intercalate)
 import qualified Data.Set as Set
 import Data.Functor.Identity
+import Control.Monad.State
+import Latex.Output
 
 
-type MonadRender (m :: Type -> Type) = Applicative m
+type MonadRender (m :: Type -> Type) = (MonadState LatexOutput m)
+
 
 -- | Renders an identifier properly for LaTeX math mode
 -- Single letters are rendered as-is, multi-letter identifiers use \mathit
@@ -51,4 +55,9 @@ renderSyntax (SyntaxDecl vrs tpy productions _) =
   where
     varsStr = intercalate ", " (map renderIdentifier vrs)
     productionStrs = intercalate " \\mid " <$> traverse renderTerm productions
+    
+-- | Renders a program to the latex output
+renderProgram :: Program -> m ()
+renderProgram = undefined
+
 

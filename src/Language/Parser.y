@@ -119,9 +119,10 @@ Productions :: { [PureTerm] }
 Productions : Term                           { [$1] }
             | Term '|' Productions           { $1 : $3 }
 
--- Rules block: rules { ... }
+-- Rules block: rules { ... } or rules name { ... }
 RulesBlock :: { Decl }
-RulesBlock : 'rules' '{' Rules '}'           { RulesDecl $3 (mkRange $1 $4) }
+RulesBlock : 'rules' '{' Rules '}'           { RulesDecl Nothing $3 (mkRange $1 $4) }
+           | 'rules' IDENT '{' Rules '}'     { RulesDecl (Just (getIdent $2)) $4 (mkRange $1 $5) }
 
 Rules :: { [RuleDecl] }
 Rules : {- empty -}                          { [] }

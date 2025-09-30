@@ -160,7 +160,7 @@ runTestQuery (Program decls _) queryStr = do
           return False
         Right (checkingCtx, typedProgram) -> do
           let rewrites = [rewrite | Rewrite rewrite _ <- getDecls typedProgram]
-          let rules = [rule | RulesDecl rules _ <- getDecls typedProgram, rule <- rules]
+          let rules = [rule | RulesDecl _ rules _ <- getDecls typedProgram, rule <- rules]
           let subtyping = _subtypingGraph checkingCtx
           let engineCtx = fromRules subtyping rules rewrites :: EngineCtx TypingPhase [] s
           let typedQuery = anyTyped query

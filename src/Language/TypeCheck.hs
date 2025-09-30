@@ -486,8 +486,8 @@ typeSyntax (SyntaxDecl vars tpy prods range) = do
   return $ SyntaxDecl vars tpy typedProds range
 
 pass3VisitDecl :: MonadCheck m => Decl -> m TypedDecl
-pass3VisitDecl (RulesDecl rules range) =
-  RulesDecl <$> mapM checkRule rules <*> pure range
+pass3VisitDecl (RulesDecl name rules range) =
+  RulesDecl name <$> mapM checkRule rules <*> pure range
 pass3VisitDecl (TransitionDecl nam s1@(Sort {}, _) s2@(Sort {}, _) range) = return (TransitionDecl nam s1 s2 range)
 pass3VisitDecl (TransitionDecl _ (_, r1) _ _) =
   throwErrorAt r1 $ NameNotDefined "Only Sort types are supported in transition declarations"
@@ -508,8 +508,8 @@ pass3 (Program decls comments) = Program <$> mapM pass3VisitDecl decls <*> pure 
 -----------------------------------------
 
 pass4VisitDecl :: MonadCheck m => TypedDecl -> m TypedDecl
-pass4VisitDecl (RulesDecl rules range) =
-  RulesDecl <$> mapM pass4VisitRule rules <*> pure range
+pass4VisitDecl (RulesDecl name rules range) =
+  RulesDecl name <$> mapM pass4VisitRule rules <*> pure range
 pass4VisitDecl (TransitionDecl nam s1 s2 range) =
   return (TransitionDecl nam s1 s2 range)
 pass4VisitDecl (Rewrite rewrite range) =
