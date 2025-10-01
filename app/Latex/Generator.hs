@@ -1,5 +1,9 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Functor law" #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Latex.Generator where
 
 import Language.AST
@@ -8,9 +12,34 @@ import Data.Kind
 import Data.List (intercalate)
 import qualified Data.Set as Set
 import Data.Functor.Identity
+import Control.Monad.State
+import Control.Lens
+import qualified Latex.Output 
+import Latex.Output hiding (Syntax)
 
 
-type MonadRender (m :: Type -> Type) = Applicative m
+-- | State for rendering with a counter for generating unique names
+data RenderState = RenderState
+  { _output :: LatexOutput
+  , _counter :: Int
+  }
+
+$(makeLenses ''RenderState)
+
+type MonadRender (m :: Type -> Type) = (MonadState RenderState m)
+
+-- | Get a fresh unique name for an unnamed block
+freshName :: MonadRender m => LatexType -> m String
+freshName latexType = do
+  n <- use counter
+  counter += 1
+  pure $ prefix ++ show n
+  where
+    prefix = case latexType of
+      Latex.Output.Syntax -> "syntax"
+      Rules -> "rules"
+      Rewrites -> "rewrites"
+
 
 -- | Renders an identifier properly for LaTeX math mode
 -- Single letters are rendered as-is, multi-letter identifiers use \mathit
@@ -51,4 +80,38 @@ renderSyntax (SyntaxDecl vrs tpy productions _) =
   where
     varsStr = intercalate ", " (map renderIdentifier vrs)
     productionStrs = intercalate " \\mid " <$> traverse renderTerm productions
+    
+-- | Render a single rule using mathpartir
+renderRule :: MonadRender m => RuleDecl -> m String
+renderRule (RuleDecl name precedents consequents _) =
+  printf "\\inferrule{%s}{%s}%s"
+    <$> (intercalate " \\\\ " <$> traverse renderTerm precedents)
+    <*> (intercalate " \\\\ " <$> traverse renderTerm consequents)
+    <*> pure ruleName
+  where
+    ruleName = if null name then "" else printf "{\\scriptsize \\textsc{%s}}" name
+
+
+-- | Renders a program to the latex output
+renderProgram :: MonadRender m => Program -> m ()
+renderProgram (Program decls _) = mapM_ renderDecl decls
+
+-- | Renders a single declaration
+renderDecl :: MonadRender m => Decl -> m ()
+renderDecl (Syntax name syntaxDecls _) = do
+  rendered <- intercalate "\n\n" <$> traverse renderSyntax syntaxDecls
+  blockName <- maybe (freshName Latex.Output.Syntax) pure name
+  output %= addBlock blockName Latex.Output.Syntax rendered
+renderDecl (RulesDecl name ruleDecls _) = do
+  rendered <- intercalate "\n\n" <$> traverse renderRule ruleDecls
+  blockName <- maybe (freshName Rules) pure name
+  output %= addBlock blockName Rules rendered
+renderDecl _ = pure ()
+
+-- | Run the generator on a program to produce LaTeX output
+runGenerator :: Program -> LatexOutput
+runGenerator prog = _output $ execState (renderProgram prog) initialState
+  where
+    initialState = RenderState (LatexOutput mempty) 0
+
 

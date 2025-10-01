@@ -18,6 +18,7 @@ import Reporting
 import Options.Applicative
 import qualified LanguageServer
 import qualified Language.SolverDebugger as SolverDebugger
+import qualified Latex.Entrypoint as Latex
 import Language.Solver
 import qualified Language.Solver.BacktrackingST as ST
 import System.Timeout (timeout)
@@ -87,6 +88,10 @@ runcodegenCommand = runRuncodegenCommand <$> inputOptionsParser
 runsolverCommand :: Parser (IO ())
 runsolverCommand = runRunsolverCommand <$> inputOptionsParser
 
+-- | Parser for the 'latex' subcommand
+latexCommand :: Parser (IO ())
+latexCommand = Latex.runLatexCommand <$> Latex.latexOptionsParser
+
 -- | Parser for all available subcommands
 commandParser :: Parser (IO ())
 commandParser = subparser
@@ -102,6 +107,8 @@ commandParser = subparser
     (info runcodegenCommand (progDesc "Generate and execute code from a typechecked program"))
  <> command "runsolver"
     (info runsolverCommand (progDesc "Run solver on test queries from a program"))
+ <> command "latex"
+    (info latexCommand (progDesc "Generate LaTeX files from a program"))
   )
 
 -- | Top-level parser for global options
@@ -160,7 +167,7 @@ runTestQuery (Program decls _) queryStr = do
           return False
         Right (checkingCtx, typedProgram) -> do
           let rewrites = [rewrite | Rewrite rewrite _ <- getDecls typedProgram]
-          let rules = [rule | RulesDecl rules _ <- getDecls typedProgram, rule <- rules]
+          let rules = [rule | RulesDecl _ rules _ <- getDecls typedProgram, rule <- rules]
           let subtyping = _subtypingGraph checkingCtx
           let engineCtx = fromRules subtyping rules rewrites :: EngineCtx TypingPhase [] s
           let typedQuery = anyTyped query

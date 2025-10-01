@@ -65,11 +65,14 @@ executable analysislang
               , mtl
               , process
               , filepath
+              , directory
   other-modules: Reporting
                , LanguageServer
                , LanguageServer.Diagnostics
                , LanguageServer.Symbols
                , Latex.Generator
+               , Latex.Entrypoint
+               , Latex.Output
   hs-source-dirs: app
   main-is: Main.hs
   ghc-options: -Werror -Wall -Wno-name-shadowing -Wno-unused-record-wildcards

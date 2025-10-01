@@ -1,0 +1,11 @@
+syntax {
+  x in Term ::= atom();
+};
+
+rules {
+  rule "test1" [] => [x];
+};
+
+rules validation {
+  rule "test2" [] => [atom()];
+};

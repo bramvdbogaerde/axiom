@@ -321,7 +321,7 @@ debugSession semFile = do
       case runChecker' (Program decls []) of
         Left typeError -> putStrLn $ "Type error: " ++ show typeError
         Right (checkingCtx, Program decls' _) -> do
-          let rules = [rule | RulesDecl rules _ <- decls', rule <- rules]
+          let rules = [rule | RulesDecl _ rules _ <- decls', rule <- rules]
 
           putStrLn "Loaded and type checked rules successfully. Enter queries to debug (or 'quit' to exit):"
           putStrLn "Use ':set steps N' to limit solver steps, ':show config' to view settings."
