@@ -56,15 +56,20 @@ inputOptionsParser = InputOptions
       ( metavar "FILE"
      <> help "Input file to process" )
 
+-- | Verbosity flag
+verbosityFlag :: Parser Bool
+verbosityFlag =
+    switch ( short 'v' <> help "Enable verbose output (i.e., typing context is printed to stderr)" )
+
 -- | Parser for the code generation options
 codegenOptionsParser :: Parser CodeGenOptions
 codegenOptionsParser = CodeGenOptions 
-  <$> switch ( short 'v' <> help "Enable verbose output (i.e., typing context is printed to stderr)" )
+  <$> verbosityFlag
   <*> switch ( short 'd' <> long "debug" <> help "Include debugger support in generated code" )
 
 -- | Parser for the 'check' subcommand
 checkCommand :: Parser (IO ())
-checkCommand = runCheckCommand <$> inputOptionsParser
+checkCommand = runCheckCommand <$> inputOptionsParser <*> verbosityFlag
 
 -- | Parser for the 'debug' subcommand
 debugCommand :: Parser (IO ())
@@ -94,8 +99,7 @@ latexCommand = Latex.runLatexCommand <$> Latex.latexOptionsParser
 
 -- | Parser for all available subcommands
 commandParser :: Parser (IO ())
-commandParser = subparser
-  ( command "check"
+commandParser = subparser  ( command "check"
     (info checkCommand (progDesc "Type check a program"))
  <> command "debug"
     (info debugCommand (progDesc "Start interactive solver debugger"))
@@ -191,14 +195,14 @@ runTestQuery (Program decls _) queryStr = do
 -------------------------------------------------------------
 
 -- | Execute the type checking command
-runCheckCommand :: InputOptions -> IO ()
-runCheckCommand (InputOptions filename) = do
+runCheckCommand :: InputOptions -> Bool -> IO ()
+runCheckCommand (InputOptions filename) verbose = do
   putStrLn $ "Checking " ++ filename
   loadResult <- loadAndParseFile filename
   case loadResult of
     Left (contents, err) -> printImportError contents err
     Right (contents, ast) -> do
-      result <- traverse (\(ctx, ast') -> pPrint ctx >> pPrint ast' >> return (ctx, ast')) $ runChecker' ast
+      result <- traverse (\(ctx, ast') -> when verbose (pPrint ctx >> pPrint ast') >> return (ctx, ast')) $ runChecker' ast
       either (printError contents) (const printSuccess) result
 
 -- | Execute the solver debugging command
