@@ -50,6 +50,7 @@ makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
   {-# LANGUAGE TypeApplications #-}
   {-# LANGUAGE LambdaCase #-}
   {-# LANGUAGE TypeFamilies #-}
+  {-# LANGUAGE EmptyDataDeriving #-}
   -- AnalysisLang related imports
   import Language.CodeGen.Prelude
   import Language.CodeGen.Phase (CodeGenPhase)
@@ -66,7 +67,7 @@ makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
   import qualified Data.Either
   import qualified Data.Maybe
   import qualified GHC.Base
-  import qualified GHC.Types  
+  import qualified GHC.Base as GHC.Types
   import qualified Data.Map as Map
   import System.Exit
   import Data.List (stripPrefix)
