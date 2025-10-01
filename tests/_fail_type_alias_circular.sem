@@ -1,0 +1,10 @@
+syntax {
+    alias B as A;
+    alias A as B;
+
+    x in A;
+};
+
+rules {
+    rule "test" [] => [ x ];
+};

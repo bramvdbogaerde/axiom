@@ -75,13 +75,15 @@ renderTerm _ = pure "\\text{complex term}"
 
 -- | Renders a single syntax definition
 renderSyntax :: MonadRender m => SyntaxDecl -> m String
-renderSyntax (SyntaxDecl vrs tpy productions _) = 
+renderSyntax (SyntaxDecl vrs tpy productions _) =
   if null productions
     then printf "%s \\in %s" varsStr <$> renderTpy tpy
     else printf "%s \\in %s ::= %s" varsStr <$> renderTpy tpy <*> productionStrs
   where
     varsStr = intercalate ", " (map renderIdentifier vrs)
     productionStrs = intercalate " \\mid " <$> traverse renderTerm productions
+renderSyntax (TypeAliasDecl name tpy _) =
+  printf "\\textbf{alias } %s = %s" (renderIdentifier name) <$> renderTpy tpy
     
 -- | Render a single rule using mathpartir
 renderRule :: MonadRender m => RuleDecl -> m String

@@ -1,0 +1,11 @@
+syntax {
+    alias Set(Int) as IntSet;
+
+    nums in IntSet;
+
+    val in Result ::= integers(nums);
+};
+
+rules {
+    rule "integers" [] => [ integers({1, 2, 3}) ];
+};

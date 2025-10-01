@@ -1,0 +1,14 @@
+syntax {
+    alias Int as Number;
+    alias String as Text;
+
+    x in Number;
+    s in Text;
+
+    v in Value ::= num(x) | str(s);
+};
+
+rules {
+    rule "number" [] => [ num(x) ];
+    rule "string" [] => [ str(s) ];
+};

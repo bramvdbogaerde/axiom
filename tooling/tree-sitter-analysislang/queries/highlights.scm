@@ -4,6 +4,8 @@
 "rule" @keyword
 "transition" @keyword
 "in" @keyword
+"alias" @keyword
+"as" @keyword
 
 ; Operators
 "::=" @operator
@@ -43,11 +45,19 @@
 ; Function calls (functors) - highlight the function name first
 (functor (identifier) @function)
 
-; Sort names in syntax declarations - the identifier after "in" 
+; Type alias declarations
+(type_alias
+  original_type: (type_ref (type_name) @type)
+  alias_name: (type_name) @type)
+
+; Type references in parameterized types
+(type_ref (type_name) @type)
+
+; Sort names in syntax declarations - the type_ref after "in"
 (syntax_rule
   (variable_list)
   "in"
-  (identifier) @type)
+  (type_ref (type_name) @type))
 
 ; Sort names in transition declarations
 (transition_declaration 

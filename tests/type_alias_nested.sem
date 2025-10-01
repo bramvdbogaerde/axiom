@@ -1,0 +1,17 @@
+syntax {
+    alias Int as Number;
+    alias Set(Number) as NumberSet;
+    alias Set(NumberSet) as NumberSetSet;
+
+    n in Number;
+    ns in NumberSet;
+    nss in NumberSetSet;
+
+    val in Value ::= single(n) | many(ns) | nested(nss);
+};
+
+rules {
+    rule "single" [] => [ single(42) ];
+    rule "many" [] => [ many({1, 2, 3}) ];
+    rule "nested" [] => [ nested({{1, 2}, {3, 4}}) ];
+};

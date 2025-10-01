@@ -40,7 +40,7 @@ import Control.Monad
 import Control.Monad.Extra
 import Language.Types
 import Data.Tuple
-import Data.Maybe (isJust, fromJust)
+import Data.Maybe (isJust, fromJust, catMaybes)
 
 
 -----------------------------------------
@@ -109,12 +109,13 @@ data CheckingContext = CheckingContext {
                        , _subtypingGraph :: Subtyping
                        , _definedSorts :: Map Typ (Set Range)
                        , _rewriteNames :: Set String
+                       , _typeAliases :: Map String TypeCon
                       }
                      deriving (Ord, Eq, Show)
 
 -- Next, we define some auxilary functions for interacting with the checking and type context data types.
 emptyCheckingContext :: CheckingContext
-emptyCheckingContext = CheckingContext Map.empty Graph.empty builtins Set.empty
+emptyCheckingContext = CheckingContext Map.empty Graph.empty builtins Set.empty Map.empty
   where builtins = Map.fromList ((,Set.empty) <$> [IntType, StrType, BooType, AnyType, VoidType])
 
 $(makeLenses ''CheckingContext)
@@ -155,6 +156,39 @@ defineRewriteName = modify . over rewriteNames . Set.insert
 -- | Checks whether the given name refers to a rewrite rule
 isRewriteRule :: MonadCheck m => String -> m Bool
 isRewriteRule nam = gets (Set.member nam . _rewriteNames)
+
+-- | Add a type alias to the context
+defineTypeAlias :: MonadCheck m => String -> TypeCon -> m ()
+defineTypeAlias name typeCon = modify (over typeAliases (Map.insert name typeCon))
+
+-- | Resolve type aliases to their fully expanded form, detecting circularity
+resolveTypeAlias :: MonadCheck m => Maybe Range -> TypeCon -> m TypeCon
+resolveTypeAlias r typeCon = resolveTypeAlias' Set.empty typeCon
+  where
+    resolveTypeAlias' :: MonadCheck m => Set String -> TypeCon -> m TypeCon
+    resolveTypeAlias' visited (TypeTyp name range) = do
+      aliases <- gets _typeAliases
+      case Map.lookup name aliases of
+        Nothing -> return (TypeTyp name range)
+        Just aliasDef ->
+          if Set.member name visited
+          then throwErrorMaybe r (SortNotDefined $ "Circular type alias detected: " ++ name)
+          else resolveTypeAlias' (Set.insert name visited) aliasDef
+    -- Handle TypeApp-wrapped simple type references (from parser: IDENT becomes TypeApp (TypeTyp name) [])
+    resolveTypeAlias' visited (TypeApp (TypeTyp name range) [] _) = do
+      aliases <- gets _typeAliases
+      case Map.lookup name aliases of
+        Nothing -> return (TypeApp (TypeTyp name range) [] range)
+        Just aliasDef ->
+          if Set.member name visited
+          then throwErrorMaybe r (SortNotDefined $ "Circular type alias detected: " ++ name)
+          else resolveTypeAlias' (Set.insert name visited) aliasDef
+    resolveTypeAlias' visited (TypeApp con args range) = do
+      resolvedCon <- resolveTypeAlias' visited con
+      resolvedArgs <- mapM (resolveTypeAlias' visited) args
+      return (TypeApp resolvedCon resolvedArgs range)
+    resolveTypeAlias' _ tc@(TypeVar _ _) = return tc
+    resolveTypeAlias' _ tc@(TypeHas _ _) = return tc
 
 -----------------------------------------
 -- Typing infrastructure
@@ -240,17 +274,38 @@ applyTpy r t ts = throwErrorMaybe r (ArityMismatch (show t) 0 (length ts))
 --
 
 ----------------------------------
+-- Type Alias Pass: collect type aliases (without resolution)
+----------------------------------
+
+-- This pass collects all type alias definitions before any resolution occurs.
+-- This allows type aliases to reference types that are defined later in the program.
+typeAliasPassVisitDecl :: MonadCheck m => Decl -> m ()
+typeAliasPassVisitDecl (Syntax _ decls _) = mapM_ typeAliasPassVisitSyntaxDecl decls
+  where
+    typeAliasPassVisitSyntaxDecl (TypeAliasDecl name typeCon _) =
+      defineTypeAlias name typeCon
+    typeAliasPassVisitSyntaxDecl (SyntaxDecl {}) = return ()
+typeAliasPassVisitDecl _ = return ()
+
+typeAliasPass :: MonadCheck m => Program -> m ()
+typeAliasPass (Program decls _) = mapM_ typeAliasPassVisitDecl decls
+
+----------------------------------
 -- Pass 0: declare all sorts and variable names
 ----------------------------------
 
 pass0VisitDecl :: MonadCheck m => Decl -> m ()
 pass0VisitDecl (Syntax _ decls _) = mapM_ pass0VisitSyntaxDecl decls
   where
-    -- In this phase, we only need to associate the atoms in "vars" with the type denoted by "tpy".
+    -- Type aliases are skipped in this pass (they were already collected in typeAliasPass)
+    pass0VisitSyntaxDecl (TypeAliasDecl {}) = return ()
+    -- In this phase, we associate the atoms in "vars" with the type denoted by "tpy".
     -- We also check whether the declaration has any data constructors. These are only allowed when
     -- the type denotes a user-defined sort (i.e., none of the builtin ones).
     pass0VisitSyntaxDecl (SyntaxDecl vars tpy ctors range) = do
-      tpy' <- either (const $ throwErrorAt range (SortNotDefined (show tpy))) return $ fromTypeCon tpy
+      -- Resolve type aliases in the type constructor
+      resolvedTpy <- resolveTypeAlias (Just range) tpy
+      tpy' <- either (const $ throwErrorAt range (SortNotDefined (show resolvedTpy))) return $ fromTypeCon resolvedTpy
       defineSort tpy' range
       when (not (isUserDefined tpy') && not (null ctors)) $
         throwErrorAt range (InvalidConstructor (toSortName tpy'))
@@ -302,9 +357,14 @@ pass1VisitCtor sortName = \case
 pass1VisitDecl :: MonadCheck m => Decl -> m ()
 pass1VisitDecl (Syntax _ decls _) = mapM_ pass1VisitSyntaxDecl decls
   where
-    pass1VisitSyntaxDecl (SyntaxDecl _vars tpy ctors range) = case fromTypeCon tpy of
-      Left err -> throwErrorAt range (SortNotDefined err)
-      Right sortTyp -> mapM_ (pass1VisitCtor sortTyp) ctors
+    -- Type aliases are skipped - they don't have constructors
+    pass1VisitSyntaxDecl (TypeAliasDecl {}) = return ()
+    pass1VisitSyntaxDecl (SyntaxDecl _vars tpy ctors range) = do
+      -- Resolve type aliases before processing constructors
+      resolvedTpy <- resolveTypeAlias (Just range) tpy
+      case fromTypeCon resolvedTpy of
+        Left err -> throwErrorAt range (SortNotDefined err)
+        Right sortTyp -> mapM_ (pass1VisitCtor sortTyp) ctors
 pass1VisitDecl (TransitionDecl nam (Sort from, _) (Sort to, _) range) = do
   -- transition State ~> State is equivalent to the syntax rule:
   -- ~> ::= ~>(state, state) from a typing perspective
@@ -480,10 +540,13 @@ typeRewrite (RewriteDecl name args body range) = do
   typedBody <- fmap fst (checkTerm body)
   return $ RewriteDecl name typedArgs typedBody range
 
-typeSyntax :: MonadCheck m => SyntaxDecl -> m TypedSyntaxDecl
+typeSyntax :: MonadCheck m => SyntaxDecl -> m (Maybe TypedSyntaxDecl)
+typeSyntax (TypeAliasDecl {}) = return Nothing  -- Type aliases are eliminated from typed AST
 typeSyntax (SyntaxDecl vars tpy prods range) = do
+  -- Resolve type aliases in the type constructor
+  resolvedTpy <- resolveTypeAlias (Just range) tpy
   typedProds <- mapM (fmap fst . checkTerm) prods
-  return $ SyntaxDecl vars tpy typedProds range
+  return $ Just $ SyntaxDecl vars resolvedTpy typedProds range
 
 pass3VisitDecl :: MonadCheck m => Decl -> m TypedDecl
 pass3VisitDecl (RulesDecl name rules range) =
@@ -494,7 +557,7 @@ pass3VisitDecl (TransitionDecl _ (_, r1) _ _) =
 pass3VisitDecl (Rewrite rewrite range) =
   Rewrite <$> typeRewrite rewrite <*> pure range
 pass3VisitDecl (Syntax name syntax range) =
-  Syntax name <$> mapM typeSyntax syntax <*> pure range
+  Syntax name <$> (catMaybes <$> mapM typeSyntax syntax) <*> pure range
 pass3VisitDecl (HaskellDecl s range) =
   return $ HaskellDecl s range
 pass3VisitDecl (Import filename range) =
@@ -597,7 +660,7 @@ runChecker' = runCheckerWithContext emptyCheckingContext
 
 runCheckerWithContext :: CheckingContext -> Program -> Either Error (CheckingContext, TypedProgram)
 runCheckerWithContext initialCtx program =
-    swap <$> runStateT (runReaderT (pass0 program >> pass1 program >> pass2 program >> pass3 program >>= pass4) Nothing) initialCtx
+    swap <$> runStateT (runReaderT (typeAliasPass program >> pass0 program >> pass1 program >> pass2 program >> pass3 program >>= pass4) Nothing) initialCtx
 
 -- | Type check a single term in the given context
 runCheckTerm :: CheckingContext -> PureTerm -> Either Error TypedTerm

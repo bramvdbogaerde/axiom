@@ -427,6 +427,8 @@ typeCtorToExp = \case
 syntaxDeclToExp :: CheckingContext -> TypedSyntaxDecl -> Q Exp
 syntaxDeclToExp ctx (SyntaxDecl vars tpy prods range) =
   [| SyntaxDecl $(lift vars) $(typeCtorToExp tpy) $(listE (map (pureTermToExp ctx) prods)) $(rangeToExp range) |]
+syntaxDeclToExp _ (TypeAliasDecl {}) =
+  error "TypeAliasDecl should not appear in typed AST - they are eliminated in pass3"
 
 rewriteDeclToExp :: CheckingContext -> TypedRewriteDecl Identity -> Q Exp
 rewriteDeclToExp ctx (RewriteDecl name args body range) =

@@ -38,15 +38,41 @@ module.exports = grammar({
     ),
 
     // Syntax rule: vars in Type ::= production | production
-    syntax_rule: $ => seq(
-      $.variable_list,
-      'in',
-      $.identifier,
-      optional(seq(
-        '::=',
-        $.production_list
-      ))
+    // OR: alias TypeRef as AliasName
+    syntax_rule: $ => choice(
+      $.type_alias,
+      seq(
+        $.variable_list,
+        'in',
+        $.type_ref,
+        optional(seq(
+          '::=',
+          $.production_list
+        ))
+      )
     ),
+
+    // Type alias: alias TypeRef as AliasName
+    type_alias: $ => seq(
+      'alias',
+      field('original_type', $.type_ref),
+      'as',
+      field('alias_name', $.type_name)
+    ),
+
+    // Type reference (can be simple or parameterized)
+    type_ref: $ => choice(
+      $.type_name,
+      seq(
+        $.type_name,
+        '(',
+        sep1($.type_ref, ','),
+        ')'
+      )
+    ),
+
+    // Type name
+    type_name: $ => $.identifier,
 
     variable_list: $ => sep1($.identifier, ','),
 

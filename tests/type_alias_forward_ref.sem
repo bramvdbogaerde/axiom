@@ -1,0 +1,11 @@
+syntax {
+    alias MyType as MyAlias;
+
+    x in MyAlias;
+
+    y in MyType;
+};
+
+rules {
+    rule "test" [] => [ x ];
+};

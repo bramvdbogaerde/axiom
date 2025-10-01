@@ -43,6 +43,8 @@ import qualified Data.Set as Set
   'in'        { TokenWithRange (Ident "in") _ }
   'transition' { TokenWithRange (Ident "transition") _ }
   'import'    { TokenWithRange (Ident "import") _ }
+  'alias'     { TokenWithRange (Ident "alias") _ }
+  'as'        { TokenWithRange (Ident "as") _ }
   '('         { TokenWithRange Lpar _ }
   ')'         { TokenWithRange Rpar _ }
   '{'         { TokenWithRange LCBa _ }
@@ -93,7 +95,8 @@ SyntaxDecls : {- empty -}                    { [] }
             | SyntaxDecl ';' SyntaxDecls     { $1 : $3 }
 
 SyntaxDecl :: { SyntaxDecl }
-SyntaxDecl : TypeRef MaybeProductions { SyntaxDecl [] $1 (fromMaybe [] $2) (rangeOf $1) }
+SyntaxDecl : 'alias' TypeRef 'as' IDENT { TypeAliasDecl (getIdent $4) $2 (mkRange $1 $4) }
+           | TypeRef MaybeProductions { SyntaxDecl [] $1 (fromMaybe [] $2) (rangeOf $1) }
            | IdentList 'in' TypeRef MaybeProductions { SyntaxDecl $1 $3 (fromMaybe [] $4) (rangeOf $3) }
 
 TypeRef :: { TypeCon }

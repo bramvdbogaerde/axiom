@@ -221,6 +221,11 @@ data SyntaxDecl' p = SyntaxDecl {
     syntaxProductions :: [PureTerm' p],
     syntaxRange :: Range
   }
+  | TypeAliasDecl {
+    aliasName :: String,
+    aliasType :: TypeCon,
+    aliasRange :: Range
+  }
 
 deriving instance (ForAllPhases Ord p) => Ord (SyntaxDecl' p)
 deriving instance (ForAllPhases Eq p) => Eq (SyntaxDecl' p)
