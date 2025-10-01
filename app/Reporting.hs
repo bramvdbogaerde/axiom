@@ -1,8 +1,11 @@
 module Reporting where
 
-import Language.TypeCheck (ModelError(..), Error(..))
+import Language.TypeCheck (ModelError(..))
+import qualified Language.TypeCheck as TypeCheck
+import qualified Language.Parser as Parser
 import Language.Types (Typ(..), toSortName)
 import Language.AST (Range(..), Position(..))
+import Language.ImportResolver (ImportError(..))
 import System.Console.ANSI
 import Data.List (intercalate)
 
@@ -10,11 +13,36 @@ import Data.List (intercalate)
 -- Auxiliary functions
 -------------------------------------------------------------
 
-printError :: String -> Error -> IO ()
-printError sourceCode (Error modelErr maybeRange _ctx) = do
+printError :: String -> TypeCheck.Error -> IO ()
+printError sourceCode (TypeCheck.Error modelErr maybeRange _ctx) = do
   printColoredLn [SetColor Foreground Vivid Red, SetConsoleIntensity BoldIntensity] "Error:"
   putStrLn $ "  " ++ formatModelError modelErr
   maybe (return ()) ((putStrLn "" >>) . printLocationInfo sourceCode) maybeRange
+  setSGR [Reset]
+
+printParseError :: String -> Parser.Error -> IO ()
+printParseError sourceCode (Parser.ParsingError pos msg) = do
+  printColoredLn [SetColor Foreground Vivid Red, SetConsoleIntensity BoldIntensity] "Parse Error:"
+  putStrLn $ "  " ++ msg
+  putStrLn ""
+  let range = Range pos pos
+  printLocationInfo sourceCode range
+  setSGR [Reset]
+
+printImportError :: String -> ImportError -> IO ()
+printImportError contents (ParseError _filepath err) =
+  printParseError contents err
+printImportError _contents (FileNotFound filepath) = do
+  printColoredLn [SetColor Foreground Vivid Red, SetConsoleIntensity BoldIntensity] "File Not Found:"
+  putStrLn $ "  " ++ filepath
+  setSGR [Reset]
+printImportError _contents (CyclicImport files) = do
+  printColoredLn [SetColor Foreground Vivid Red, SetConsoleIntensity BoldIntensity] "Cyclic Import:"
+  putStrLn $ "  " ++ show files
+  setSGR [Reset]
+printImportError _contents (InvalidImportPath path) = do
+  printColoredLn [SetColor Foreground Vivid Red, SetConsoleIntensity BoldIntensity] "Invalid Import Path:"
+  putStrLn $ "  " ++ path
   setSGR [Reset]
 
 printColoredLn :: [SGR] -> String -> IO ()

@@ -13,7 +13,7 @@ module Language.ImportResolver (
   ) where
 
 import Language.AST
-import Language.Parser (parseProgram)
+import Language.Parser (parseProgram, Error(..))
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Graph (Graph, empty, addEdge, addNode, topSort)
@@ -40,7 +40,7 @@ data ModuleInfo = ModuleInfo
 data ImportError
   = CyclicImport [FilePath]
   | FileNotFound FilePath
-  | ParseError FilePath String
+  | ParseError FilePath Error
   | InvalidImportPath FilePath
   deriving (Show, Eq)
 
@@ -87,7 +87,7 @@ resolveImports rootModule@ModuleInfo{..} = do
 resolveImportsFromFile :: FilePath -> IO (Either ImportError Program)
 resolveImportsFromFile filePath = do
   either (const $ return $ Left (FileNotFound filePath))
-         (either (return . Left . ParseError filePath . show)
+         (either (return . Left . ParseError filePath)
                             (createModuleAndResolve filePath) . parseProgram)
     =<< try @SomeException (readFile filePath)
   where
@@ -162,7 +162,7 @@ loadAndParseFile :: FilePath -> ImportM Program
 loadAndParseFile filePath = do
   result <- liftIO $ try @SomeException (readFile filePath)
   content <- either (const $ throwError (FileNotFound filePath)) return result
-  either (throwError . ParseError filePath . show) return (parseProgram content)
+  either (throwError . ParseError filePath) return (parseProgram content)
 
 -- | Perform topological sort using the incrementally built graph
 topologicalSortWithGraph :: Graph FilePath () -> Map.Map FilePath ModuleInfo -> ImportM [ModuleInfo]

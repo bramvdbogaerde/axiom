@@ -6,7 +6,7 @@ import Language.AST
 import Language.Parser
 import Language.TypeCheck (runChecker', CheckingContext(..))
 import Language.CodeGen
-import Language.ImportResolver
+import Language.ImportResolver (resolveImportsFromFile, ImportError(..))
 import Control.Monad
 import Data.Maybe (catMaybes)
 import Data.List (stripPrefix)
@@ -14,7 +14,7 @@ import System.Console.ANSI
 import System.Exit
 import System.Process
 import System.FilePath
-import Reporting
+import Reporting (printError, printImportError)
 import Options.Applicative
 import qualified LanguageServer
 import qualified Language.SolverDebugger as SolverDebugger
@@ -127,13 +127,15 @@ opts = info (globalOptions <**> helper)
 -------------------------------------------------------------
 
 -- | Load a file and parse it into an AST, returning both the source and parsed program
-loadAndParseFile :: String -> IO (String, Program)
+-- Returns Left with error info if parsing fails
+loadAndParseFile :: String -> IO (Either (String, ImportError) (String, Program))
 loadAndParseFile filename = do
   -- TODO: the imports should also be considered, thus we should return a Map, mapping filenames to their programs, this is already constructed in the ImportResolver but never exposed.
   contents <- readFile filename
   program <- resolveImportsFromFile filename
-  let ast = either (error . ("could not parse program" ++) . show) id program
-  return (contents, ast)
+  return $ case program of
+    Left err -> Left (contents, err)
+    Right ast -> Right (contents, ast)
 
 -- | Print text in green color for success messages
 printGreen :: String -> IO ()
@@ -192,9 +194,12 @@ runTestQuery (Program decls _) queryStr = do
 runCheckCommand :: InputOptions -> IO ()
 runCheckCommand (InputOptions filename) = do
   putStrLn $ "Checking " ++ filename
-  (contents, ast) <- loadAndParseFile filename
-  result <- traverse (\(ctx, ast') -> pPrint ctx >> pPrint ast' >> return (ctx, ast')) $ runChecker' ast
-  either (printError contents) (const printSuccess) result
+  loadResult <- loadAndParseFile filename
+  case loadResult of
+    Left (contents, err) -> printImportError contents err
+    Right (contents, ast) -> do
+      result <- traverse (\(ctx, ast') -> pPrint ctx >> pPrint ast' >> return (ctx, ast')) $ runChecker' ast
+      either (printError contents) (const printSuccess) result
 
 -- | Execute the solver debugging command
 runDebugCommand :: InputOptions -> IO ()
@@ -203,17 +208,23 @@ runDebugCommand (InputOptions filename) = SolverDebugger.debugSession filename
 -- | Execute the code generation command
 runCodegenCommand :: InputOptions -> CodeGenOptions -> IO ()
 runCodegenCommand (InputOptions filename) (CodeGenOptions verbose enableDebug) = do
-  (contents, ast) <- loadAndParseFile filename
-  r@(ctx, _) <- either (printError contents >=> const exitFailure) return $ runChecker' ast
-  when verbose $ do
-    pPrint ctx
-  (uncurry (codegen enableDebug) >=> putStrLn) r
+  loadResult <- loadAndParseFile filename
+  case loadResult of
+    Left (contents, err) -> printImportError contents err >> exitFailure
+    Right (contents, ast) -> do
+      r@(ctx, _) <- either (printError contents >=> const exitFailure) return $ runChecker' ast
+      when verbose $ do
+        pPrint ctx
+      (uncurry (codegen enableDebug) >=> putStrLn) r
 
 -- | Execute the code generation and run command
 runRuncodegenCommand :: InputOptions -> IO ()
 runRuncodegenCommand (InputOptions filename) = do
-  (contents, ast) <- loadAndParseFile filename
-  either (printError contents) runGenerated $ runChecker' ast
+  loadResult <- loadAndParseFile filename
+  case loadResult of
+    Left (contents, err) -> printImportError contents err >> exitFailure
+    Right (contents, ast) ->
+      either (printError contents) runGenerated $ runChecker' ast
   where
     runGenerated (context, typedProgram) = do
       generatedCode <- codegen False context typedProgram
@@ -227,26 +238,29 @@ runRuncodegenCommand (InputOptions filename) = do
 -- | Execute the solver test command
 runRunsolverCommand :: InputOptions -> IO ()
 runRunsolverCommand (InputOptions filename) = do
-  (_contents, ast@(Program _ comments)) <- loadAndParseFile filename
-  let queries = extractTestQueries comments
-  if null queries
-    then putStrLn "No test queries found in file (looking for %test: comments)"
-    else do
-      putStrLn $ "Running " ++ show (length queries) ++ " test queries..."
-      results <- mapM (runTestQuery ast) queries
-      let passed = length $ filter id results
-          total = length results
-          failed = total - passed
-
-      putStrLn $ "Results: " ++ show passed ++ "/" ++ show total ++ " passed"
-
-      if failed == 0
-        then do
-          printGreen "All tests passed!"
-          exitSuccess
+  loadResult <- loadAndParseFile filename
+  case loadResult of
+    Left (contents, err) -> printImportError contents err >> exitFailure
+    Right (_contents, ast@(Program _ comments)) -> do
+      let queries = extractTestQueries comments
+      if null queries
+        then putStrLn "No test queries found in file (looking for %test: comments)"
         else do
-          putStrLn $ show failed ++ " tests failed"
-          exitWith (ExitFailure 1)
+          putStrLn $ "Running " ++ show (length queries) ++ " test queries..."
+          results <- mapM (runTestQuery ast) queries
+          let passed = length $ filter id results
+              total = length results
+              failed = total - passed
+
+          putStrLn $ "Results: " ++ show passed ++ "/" ++ show total ++ " passed"
+
+          if failed == 0
+            then do
+              printGreen "All tests passed!"
+              exitSuccess
+            else do
+              putStrLn $ show failed ++ " tests failed"
+              exitWith (ExitFailure 1)
 
 -------------------------------------------------------------
 -- Main entry point
