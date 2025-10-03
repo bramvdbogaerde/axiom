@@ -43,14 +43,11 @@ import Language.Haskell.Meta (parseType)
 -- Prelude & module creation
 ------------------------------------------------------------
 
-makeModule :: Bool -> String -> String -> String -> String -> String -> String  
-makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
+
+-- | All required imports
+preludeSystemImports :: T.Text
+preludeSystemImports =
   [text|
-  {-# LANGUAGE ScopedTypeVariables #-}
-  {-# LANGUAGE TypeApplications #-}
-  {-# LANGUAGE LambdaCase #-}
-  {-# LANGUAGE TypeFamilies #-}
-  {-# LANGUAGE EmptyDataDeriving #-}
   -- AnalysisLang related imports
   import Language.CodeGen.Prelude
   import Language.CodeGen.Phase (CodeGenPhase)
@@ -60,7 +57,6 @@ makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
   import qualified Language.Types
   import Language.Solver
   import qualified Language.Solver.BacktrackingST as ST
-  $debuggerImports'
 
   -- Haskell imports
   import Data.Functor.Identity
@@ -79,6 +75,26 @@ makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
   import GHC.Maybe
   import qualified GHC.Show  
   import qualified GHC.Err  
+  |]
+
+
+preludeExtensions :: T.Text
+preludeExtensions =
+  [text|
+  {-# LANGUAGE ScopedTypeVariables #-}
+  {-# LANGUAGE TypeApplications #-}
+  {-# LANGUAGE LambdaCase #-}
+  {-# LANGUAGE TypeFamilies #-}
+  {-# LANGUAGE EmptyDataDeriving #-}
+  |]
+
+
+makeModule :: Bool -> String -> String -> String -> String -> String -> String  
+makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
+  [text|
+  $preludeExtensions
+  $preludeSystemImports
+  $debuggerImports'
 
   -- User prelude
 

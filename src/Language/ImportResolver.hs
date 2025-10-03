@@ -4,12 +4,16 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 module Language.ImportResolver (
     resolveImports,
     resolveImportsFromFile,
+    concatModules,
+    phaseShiftModule,
     ImportError(..),
-    ModuleInfo(..)
+    ModuleInfo'(..),
+    ModuleInfo,
   ) where
 
 import Language.AST
@@ -32,10 +36,19 @@ import System.IO (readFile)
 
 
 -- | Information about a parsed module
-data ModuleInfo = ModuleInfo
+data ModuleInfo' p = ModuleInfo
   { moduleFilePath :: FilePath
-  , moduleProgram :: Program
-  } deriving (Show, Eq)
+  , moduleProgram :: Program' p
+  }
+
+deriving instance (ForAllPhases Show p) => Show (ModuleInfo' p)
+deriving instance (ForAllPhases Eq p) => Eq (ModuleInfo' p)
+
+-- | Changes the module info to a module info from a different phase
+phaseShiftModule :: Program' p -> ModuleInfo' p' -> ModuleInfo' p
+phaseShiftModule prg mod = mod { moduleProgram = prg }
+  
+type ModuleInfo = ModuleInfo' ParsePhase
 
 -- | Import resolution errors
 data ImportError
@@ -73,8 +86,9 @@ resolveImportPath baseDir importPath
       -- Regular relative path resolution
       return $ normalise (baseDir </> importPath)
 
--- | Main function to resolve all imports starting from a root module
-resolveImports :: ModuleInfo -> IO (Either ImportError Program)
+-- | Main function to resolve all imports starting from a root module,
+-- returning all modules in their topological order
+resolveImports :: ModuleInfo -> IO (Either ImportError [ModuleInfo])
 resolveImports rootModule@ModuleInfo{..} = do
   let initialState = ImportState
         Set.empty
@@ -84,20 +98,19 @@ resolveImports rootModule@ModuleInfo{..} = do
   evalStateT (runReaderT (runExceptT (resolveImportsM rootModule)) initialPath) initialState
 
 -- | Entrypoint that loads and resolves imports from a file path
--- Returns Either ImportError Program where the Program is the concatenated result
-resolveImportsFromFile :: FilePath -> IO (Either ImportError Program)
+resolveImportsFromFile :: FilePath -> IO (Either ImportError [ModuleInfo])
 resolveImportsFromFile filePath = do
   either (const $ return $ Left (FileNotFound filePath))
          (either (return . Left . ParseError filePath)
                             (createModuleAndResolve filePath) . parseProgram)
     =<< try @SomeException (readFile filePath)
   where
-    createModuleAndResolve :: FilePath -> Program -> IO (Either ImportError Program)
+    createModuleAndResolve :: FilePath -> Program -> IO (Either ImportError [ModuleInfo])
     createModuleAndResolve path program = do
       resolveImports (ModuleInfo path program)
 
 -- | Resolve imports starting from a root module
-resolveImportsM :: ModuleInfo -> ImportM Program
+resolveImportsM :: ModuleInfo -> ImportM [ModuleInfo] 
 resolveImportsM rootModule = do
   -- Collect all modules recursively
   collectModulesRecursively rootModule
@@ -105,10 +118,7 @@ resolveImportsM rootModule = do
   -- Perform topological sort
   graph <- use dependencyGraph
   modules <- use moduleMap
-  sorted <- topologicalSortWithGraph graph modules
-
-  -- Concatenate all programs in topological order
-  return $ concatenatePrograms (reverse sorted)
+  reverse <$> topologicalSortWithGraph graph modules
 
 -- | Extract import file paths from a program
 extractImports :: Program -> ImportM [FilePath]
@@ -172,9 +182,9 @@ topologicalSortWithGraph graph moduleMap =
         (return . mapMaybe (`Map.lookup` moduleMap))
         (topSort graph)
 
--- | Concatenate programs in dependency order, removing import statements
-concatenatePrograms :: [ModuleInfo] -> Program
-concatenatePrograms modules =
+-- | Concatenate programs in dependency order into a single program
+concatModules :: [ModuleInfo] -> Program
+concatModules modules =
   let allDecls = concatMap (getDecls . moduleProgram) modules
       allComments = concatMap (getComments . moduleProgram) modules
   in Program allDecls allComments

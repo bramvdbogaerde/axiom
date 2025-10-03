@@ -6,7 +6,7 @@ import qualified Data.Map as Map
 import Text.Printf
 import Options.Applicative
 
-import Language.ImportResolver (resolveImportsFromFile)
+import Language.ImportResolver (resolveImportsFromFile, concatModules)
 import Latex.Generator (runGenerator)
 import Latex.Output (getBlocks, LatexType(..))
 
@@ -75,7 +75,7 @@ runLatexCommand (LatexOptions inputFile outputDir) = do
     Right p -> pure p
 
   -- Generate LaTeX output
-  let latexOutput = runGenerator prog
+  let latexOutput = runGenerator (concatModules prog)
 
   -- Create output directory if it doesn't exist
   createDirectoryIfMissing True outputDir

@@ -6,7 +6,7 @@ import Language.AST
 import Language.Parser
 import Language.TypeCheck (runChecker', CheckingContext(..))
 import Language.CodeGen
-import Language.ImportResolver (resolveImportsFromFile, ImportError(..))
+import Language.ImportResolver (resolveImportsFromFile, concatModules, ImportError(..))
 import Control.Monad
 import Data.Maybe (catMaybes)
 import Data.List (stripPrefix)
@@ -136,7 +136,7 @@ loadAndParseFile :: String -> IO (Either (String, ImportError) (String, Program)
 loadAndParseFile filename = do
   -- TODO: the imports should also be considered, thus we should return a Map, mapping filenames to their programs, this is already constructed in the ImportResolver but never exposed.
   contents <- readFile filename
-  program <- resolveImportsFromFile filename
+  program <- fmap concatModules <$> resolveImportsFromFile filename
   return $ case program of
     Left err -> Left (contents, err)
     Right ast -> Right (contents, ast)

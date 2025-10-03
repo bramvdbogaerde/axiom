@@ -27,7 +27,7 @@ shouldFailTypeCheck path = "_fail_" `isPrefixOf` takeBaseName path
 -- | Test type checking a single file
 testTypeCheckFile :: FilePath -> IO (FilePath, Bool, Bool)
 testTypeCheckFile filePath = do
-  importResult <- resolveImportsFromFile filePath
+  importResult <- fmap concatModules <$> resolveImportsFromFile filePath
   case importResult of
     Left importErr -> do
       putStrLn $ "Import error in " ++ filePath ++ ": " ++ show importErr
@@ -64,7 +64,7 @@ spec = describe "Type checking smoke tests" $ do
 createTypeCheckTest :: FilePath -> Spec
 createTypeCheckTest filePath =
   it ("should type check " ++ takeFileName filePath) $ do
-    importResult <- resolveImportsFromFile filePath
+    importResult <- fmap concatModules <$> resolveImportsFromFile filePath
     case importResult of
       Left importErr -> expectationFailure $ "Import error: " ++ show importErr
       Right program -> do
@@ -75,7 +75,7 @@ createTypeCheckTest filePath =
 createFailingTypeCheckTest :: FilePath -> Spec
 createFailingTypeCheckTest filePath =
   it ("should fail to type check " ++ takeFileName filePath) $ do
-    importResult <- resolveImportsFromFile filePath
+    importResult <- fmap concatModules <$> resolveImportsFromFile filePath
     case importResult of
       Left importErr -> expectationFailure $ "Import error (failing test files should import): " ++ show importErr
       Right program -> do
