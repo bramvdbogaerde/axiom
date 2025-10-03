@@ -30,6 +30,7 @@ import Data.List (stripPrefix)
 import Prelude hiding (readFile)
 import System.IO (readFile)
 
+
 -- | Information about a parsed module
 data ModuleInfo = ModuleInfo
   { moduleFilePath :: FilePath
@@ -101,13 +102,13 @@ resolveImportsM rootModule = do
   -- Collect all modules recursively
   collectModulesRecursively rootModule
 
-  -- Perform topological sort using the graph we built incrementally
+  -- Perform topological sort
   graph <- use dependencyGraph
   modules <- use moduleMap
   sorted <- topologicalSortWithGraph graph modules
 
   -- Concatenate all programs in topological order, removing import declarations
-  return $ concatenatePrograms sorted
+  return $ concatenatePrograms (reverse sorted)
 
 -- | Extract import file paths from a program
 extractImports :: Program -> ImportM [FilePath]
