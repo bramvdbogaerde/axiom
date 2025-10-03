@@ -8,6 +8,7 @@
 module Language.CodeGen (
     astToCode,
     codegen,
+    codegenModInfo,
   ) where
 
 import Language.Haskell.TH hiding (Range)
@@ -18,6 +19,8 @@ import Language.TypeCheck
 import Language.Types
 import Language.Parser (parseTerm)
 import Language.TemplateHaskell.SyntaxExtra (freeVars)
+import qualified Language.ImportResolver as IR
+import Language.ImportResolver (concatModules)
 import Data.Functor.Identity
 import Control.Monad
 import Control.Monad.Reader hiding (lift)
@@ -38,6 +41,8 @@ import qualified Control.Monad.Trans as Trans
 import Control.Monad.Except (liftEither)
 import Data.Either (fromRight)
 import Language.Haskell.Meta (parseType)
+import System.FilePath (takeBaseName)
+import Data.Char (toUpper, isAlphaNum)
 
 ------------------------------------------------------------
 -- Prelude & module creation
@@ -88,8 +93,96 @@ preludeExtensions =
   {-# LANGUAGE EmptyDataDeriving #-}
   |]
 
+-- | Debugger imports needed when debugger is enabled
+debuggerImportsCode :: String
+debuggerImportsCode = unlines
+  [ "import qualified Language.SolverDebugger"
+  , "import qualified System.IO"
+  , "import qualified Text.Read"
+  ]
 
-makeModule :: Bool -> String -> String -> String -> String -> String -> String  
+-- | Test runner main code
+testRunnerMainCode :: String
+testRunnerMainCode = unlines
+  [ "putStrLn $ \"Running \" ++ show (length testQueries) ++ \" test queries...\""
+  , "results <- mapM runTestQuery (zip [1..] testQueries)"
+  , "let passed = length $ filter id results"
+  , "    total = length results"
+  , "    failed = total - passed"
+  , ""
+  , "putStrLn $ \"Results: \" ++ show passed ++ \"/\" ++ show total ++ \" passed\""
+  , ""
+  , "if failed == 0"
+  , "  then do"
+  , "    putStrLn \"All tests passed!\""
+  , "    exitWith ExitSuccess"
+  , "  else do"
+  , "    putStrLn $ show failed ++ \" tests failed\""
+  , "    exitWith (ExitFailure 1)"
+  ]
+
+-- | Debugger main code
+debuggerMainCode :: String
+debuggerMainCode = unlines
+  [ "putStrLn \"Generated code debugger\""
+  , "putStrLn \"Available test queries:\""
+  , "mapM_ (\\(i, (query, _)) -> putStrLn $ show i ++ \": \" ++ show query) (zip [1..] testQueries)"
+  , "debuggerREPL"
+  ]
+
+-- | Debugger REPL code
+debuggerREPLCode :: String
+debuggerREPLCode = unlines
+  [ "debuggerREPL :: IO ()"
+  , "debuggerREPL = do"
+  , "  putStr \"debug> \""
+  , "  System.IO.hFlush System.IO.stdout"
+  , "  input <- getLine"
+  , "  case input of"
+  , "    \"quit\" -> putStrLn \"Goodbye!\""
+  , "    \"help\" -> do"
+  , "      putStrLn \"Commands:\""
+  , "      putStrLn \"  help    - Show this help\""
+  , "      putStrLn \"  list    - List available queries\""
+  , "      putStrLn \"  run N   - Debug query number N\""
+  , "      putStrLn \"  quit    - Exit debugger\""
+  , "      debuggerREPL"
+  , "    \"list\" -> do"
+  , "      putStrLn \"Available test queries:\""
+  , "      mapM_ (\\(i, (query, _)) -> putStrLn $ show i ++ \": \" ++ show query) (zip [1..] testQueries)"
+  , "      debuggerREPL"
+  , "    _ | Just queryNumStr <- Data.List.stripPrefix \"run \" input -> do"
+  , "        case Text.Read.readMaybe queryNumStr of"
+  , "          Just queryNum | queryNum >= 1 && queryNum <= length testQueries -> do"
+  , "            let (query, _) = testQueries !! (queryNum - 1)"
+  , "            debugQuery query"
+  , "            debuggerREPL"
+  , "          _ -> do"
+  , "            putStrLn $ \"Invalid query number. Use 1-\" ++ show (length testQueries)"
+  , "            debuggerREPL"
+  , "    _ -> do"
+  , "      putStrLn \"Unknown command. Type 'help' for available commands.\""
+  , "      debuggerREPL"
+  , ""
+  , "debugQuery :: PureTerm' CodeGenPhase -> IO ()"
+  , "debugQuery query = do"
+  , "  putStrLn $ \"Debugging query: \" ++ show query"
+  , "  let Program decls _ = ast"
+  , "  let rules = [rule | RulesDecl _ rules _ <- decls, rule <- rules]"
+  , "  let config = Language.SolverDebugger.defaultConfig"
+  , "  (solutions, trace) <- Language.SolverDebugger.debugSolve config rules query"
+  , "  putStrLn \"\\n=== TRACE ===\""
+  , "  putStrLn $ Language.SolverDebugger.prettyTrace trace"
+  , "  putStrLn \"=== RESULTS ===\""
+  , "  if null solutions"
+  , "    then putStrLn \"No solutions found.\""
+  , "    else do"
+  , "      putStrLn $ \"Found \" ++ show (length solutions) ++ \" solution(s):\""
+  , "      mapM_ (putStrLn . (\"  \" ++) . show) solutions"
+  ]
+
+
+makeModule :: Bool -> String -> String -> String -> String -> String -> String
 makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
   [text|
   $preludeExtensions
@@ -157,93 +250,133 @@ makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
     prelude' = T.pack prelude
     termDecls' = T.pack termDecls
     subtyping' = T.pack subtyping
-    debuggerImports' = T.pack $ if enableDebugger 
-                                then unlines
-                                  [ "import qualified Language.SolverDebugger"
-                                  , "import qualified System.IO" 
-                                  , "import qualified Text.Read"
-                                  ]
-                                else ""
-    debuggerMain' = T.pack $ if enableDebugger
-                            then debuggerMainCode
-                            else testRunnerMainCode
-    
-    testRunnerMainCode = unlines
-      [ "putStrLn $ \"Running \" ++ show (length testQueries) ++ \" test queries...\""
-      , "results <- mapM runTestQuery (zip [1..] testQueries)"
-      , "let passed = length $ filter id results"
-      , "    total = length results"
-      , "    failed = total - passed"
-      , ""
-      , "putStrLn $ \"Results: \" ++ show passed ++ \"/\" ++ show total ++ \" passed\""
-      , ""
-      , "if failed == 0"
-      , "  then do"
-      , "    putStrLn \"All tests passed!\""
-      , "    exitWith ExitSuccess"  
-      , "  else do"
-      , "    putStrLn $ show failed ++ \" tests failed\""
-      , "    exitWith (ExitFailure 1)"
-      ]
-    
-    debuggerMainCode = unlines
-      [ "putStrLn \"Generated code debugger\""
-      , "putStrLn \"Available test queries:\""
-      , "mapM_ (\\(i, (query, _)) -> putStrLn $ show i ++ \": \" ++ show query) (zip [1..] testQueries)"
-      , "debuggerREPL"
-      ]
-    
+    debuggerImports' = T.pack $ if enableDebugger then debuggerImportsCode else ""
+    debuggerMain' = T.pack $ if enableDebugger then debuggerMainCode else testRunnerMainCode
     debuggerREPL' = T.pack $ if enableDebugger then debuggerREPLCode else ""
-    
-    debuggerREPLCode = unlines
-      [ "debuggerREPL :: IO ()"
-      , "debuggerREPL = do"
-      , "  putStr \"debug> \""
-      , "  System.IO.hFlush System.IO.stdout"
-      , "  input <- getLine"
-      , "  case input of"
-      , "    \"quit\" -> putStrLn \"Goodbye!\""
-      , "    \"help\" -> do"
-      , "      putStrLn \"Commands:\""
-      , "      putStrLn \"  help    - Show this help\""
-      , "      putStrLn \"  list    - List available queries\""
-      , "      putStrLn \"  run N   - Debug query number N\""
-      , "      putStrLn \"  quit    - Exit debugger\""
-      , "      debuggerREPL"
-      , "    \"list\" -> do"
-      , "      putStrLn \"Available test queries:\""
-      , "      mapM_ (\\(i, (query, _)) -> putStrLn $ show i ++ \": \" ++ show query) (zip [1..] testQueries)"
-      , "      debuggerREPL"
-      , "    _ | Just queryNumStr <- Data.List.stripPrefix \"run \" input -> do"
-      , "        case Text.Read.readMaybe queryNumStr of"
-      , "          Just queryNum | queryNum >= 1 && queryNum <= length testQueries -> do"
-      , "            let (query, _) = testQueries !! (queryNum - 1)"
-      , "            debugQuery query"
-      , "            debuggerREPL"
-      , "          _ -> do"
-      , "            putStrLn $ \"Invalid query number. Use 1-\" ++ show (length testQueries)"
-      , "            debuggerREPL"
-      , "    _ -> do"
-      , "      putStrLn \"Unknown command. Type 'help' for available commands.\""
-      , "      debuggerREPL"
-      , ""
-      , "debugQuery :: PureTerm' CodeGenPhase -> IO ()"
-      , "debugQuery query = do"
-      , "  putStrLn $ \"Debugging query: \" ++ show query"
-      , "  let Program decls _ = ast"
-      , "  let rules = [rule | RulesDecl _ rules _ <- decls, rule <- rules]"
-      , "  let config = Language.SolverDebugger.defaultConfig"
-      , "  (solutions, trace) <- Language.SolverDebugger.debugSolve config rules query"
-      , "  putStrLn \"\\n=== TRACE ===\""
-      , "  putStrLn $ Language.SolverDebugger.prettyTrace trace"
-      , "  putStrLn \"=== RESULTS ===\""
-      , "  if null solutions"
-      , "    then putStrLn \"No solutions found.\""
-      , "    else do"
-      , "      putStrLn $ \"Found \" ++ show (length solutions) ++ \" solution(s):\""
-      , "      mapM_ (putStrLn . (\"  \" ++) . show) solutions"
-      ]
 
+-- | Generate the subtyping module
+makeSubtypingModule :: String -> String
+makeSubtypingModule subtypingCode = T.unpack
+  [text|
+  $preludeExtensions
+  module AnalysisLangSubtyping (subtyping) where
+
+  import qualified Language.Types
+
+  -- Subtyping graph
+  subtyping :: Language.Types.Subtyping
+  subtyping = $subtyping'
+  |]
+  where
+    subtyping' = T.pack subtypingCode
+
+-- | Generate a sub-module (non-main) that exports moduleInfo
+makeSubModule :: String -> String -> String -> String -> [String] -> String
+makeSubModule moduleName prelude ast termDecls importedModules = T.unpack
+  [text|
+  $preludeExtensions
+  module $moduleName' (moduleInfo) where
+
+  $preludeSystemImports
+
+  -- Import subtyping (unqualified)
+  import AnalysisLangSubtyping (subtyping)
+
+  -- Imports from other AnalysisLang modules
+  $haskellImports'
+
+  -- User prelude
+  $prelude'
+
+  -- Type family instance for embedded values
+  type instance XEmbeddedValue CodeGenPhase = HaskellValue
+
+  -- Term declarations
+  $termDecls'
+
+  -- Module info exported to main
+  moduleInfo :: Language.ImportResolver.ModuleInfo' CodeGenPhase
+  moduleInfo = Language.ImportResolver.ModuleInfo "<filepath>" ast
+    where
+      ast :: CodeGenProgram
+      ast = $ast'
+  |]
+  where
+    moduleName' = T.pack moduleName
+    prelude' = T.pack prelude
+    termDecls' = T.pack termDecls
+    ast' = T.pack ast
+    haskellImports' = T.pack $ unlines $ map (\m -> "import qualified " ++ filePathToModuleName m) importedModules
+
+-- | Generate the main module that combines all sub-modules
+makeMainModule :: Bool -> String -> String -> String -> [String] -> String
+makeMainModule enableDebugger prelude testQueries termDecls allModuleNames = T.unpack
+  [text|
+  $preludeExtensions
+  module Main where
+
+  $preludeSystemImports
+  $debuggerImports'
+
+  -- Import subtyping (unqualified)
+  import AnalysisLangSubtyping (subtyping)
+
+  -- Imports from generated AnalysisLang modules
+  $moduleImports'
+
+  -- User prelude (combined from all modules)
+  $prelude'
+
+  -- Type family instance for embedded values
+  type instance XEmbeddedValue CodeGenPhase = HaskellValue
+
+  -- Term declarations (combined from all modules)
+  $termDecls'
+
+  -- Combined AST from all modules
+  ast :: CodeGenProgram
+  ast = moduleProgram $ Language.ImportResolver.concatModules [$allModuleInfos']
+
+  -- Test queries parsed and type checked during code generation
+  testQueries :: [(PureTerm' CodeGenPhase, Bool)]  -- (query, shouldPass)
+  testQueries = $testQueries'
+
+  main :: IO ()
+  main = do
+    $debuggerMain'
+
+  $debuggerREPL'
+
+  runTestQuery :: (Int, (PureTerm' CodeGenPhase, Bool)) -> IO Bool
+  runTestQuery (idx, (query, shouldPass)) = do
+    putStr $$ "Testing query " ++ show idx ++ ": " ++ show query ++
+             " (expected: " ++ (if shouldPass then "PASS" else "FAIL") ++ ") ... "
+    let Program decls _ = ast
+    let rules = [rule | RulesDecl _ rules _ <- decls, rule <- rules]
+    let rewrites = [rewrite | Rewrite rewrite _ <- decls]
+    let engineCtx = fromRules subtyping rules rewrites
+    let solverComputation = ST.runST $$ runSolver engineCtx (solve @CodeGenPhase @[] query)
+
+    let hasSolution = not $$ null solverComputation
+    let testPassed = hasSolution == shouldPass
+
+    if testPassed
+      then do
+        putStrLn $$ if shouldPass then "PASS" else "FAIL (as expected)"
+        return True
+      else do
+        putStrLn $$ if shouldPass then "FAIL (unexpected)" else "PASS (unexpected)"
+        return False
+  |]
+  where
+    prelude' = T.pack prelude
+    testQueries' = T.pack testQueries
+    termDecls' = T.pack termDecls
+    moduleImports' = T.pack $ unlines $ map ("import qualified " ++) allModuleNames
+    allModuleInfos' = T.pack $ List.intercalate ", " $ map (++ ".moduleInfo") allModuleNames
+    debuggerImports' = T.pack $ if enableDebugger then debuggerImportsCode else ""
+    debuggerMain' = T.pack $ if enableDebugger then debuggerMainCode else testRunnerMainCode
+    debuggerREPL' = T.pack $ if enableDebugger then debuggerREPLCode else ""
 
 ------------------------------------------------------------
 -- Monad
@@ -320,7 +453,7 @@ generateExtraction typingCtx mappingName varName = do
                maybe (Left $ UserError $ "Variable " ++ $(lift varName) ++ " not found")
                      (\case
                        TermValue {} -> error $ "Expected TermHask for Haskell type " ++ $(lift haskType) ++ " but got TermValue for variable " ++ $(lift varName)
-                       TermHask haskellValue _ _ -> 
+                       TermHask haskellValue _ _ ->
                          case haskellValue of
                            $(conP constructorName [varP (mkName "v")]) -> Right v
                            _ -> Left $ UserError $ "Expected " ++ $(lift (getTermConstructorName haskType)) ++ " constructor for variable " ++ $(lift varName) ++ " of type " ++ $(lift haskType) ++ ", but got different HaskellValue constructor"
@@ -354,7 +487,7 @@ getHaskellTypes ctx = mapMaybe (\case HaskType h -> Just h ; _ -> Nothing) $ Set
 -- | Sanitize Haskell type names for use as constructor names
 -- To do so, it converts spaces to underscores.
 -- Example: "CP Bool" -> "CP_Bool", "Map String Int" -> "Map_String_Int"
-sanitizeHaskellTypeName :: String -> String  
+sanitizeHaskellTypeName :: String -> String
 sanitizeHaskellTypeName = map (\case ' ' -> '_' ; c -> c)
 
 -- | Generate the constructor name for a Haskell type in the HaskellValue sum type
@@ -384,11 +517,11 @@ wrapResult haskellExp BooType proxName =
   [| TermValue (BooValue $(return haskellExp)) (typeAnnot $(varE proxName) BooType) dummyRange |]
 wrapResult haskellExp (HaskType haskType) proxName = do
   let constructorName = mkName (getTermConstructorName haskType)
-  [| TermHask ($(conE constructorName) $(return haskellExp)) 
-             (typeAnnot $(varE proxName) (HaskType $(lift haskType))) 
+  [| TermHask ($(conE constructorName) $(return haskellExp))
+             (typeAnnot $(varE proxName) (HaskType $(lift haskType)))
              dummyRange |]
 wrapResult e typ _ =
-  fail $ "Unsupported result type: " ++ show typ ++ " for " ++ show e 
+  fail $ "Unsupported result type: " ++ show typ ++ " for " ++ show e
 
 ------------------------------------------------------------
 -- AST lifting
@@ -495,8 +628,8 @@ pureTermToExp ctx = \case
   TermHask v _ _ -> absurd v
 
 exprToExp :: CheckingContext -> Expr TypingPhase Identity -> Q Exp
-exprToExp ctx expr = 
-  [| $(case expr of 
+exprToExp ctx expr =
+  [| $(case expr of
       LookupMap t1 t2 tpy r ->
         [| LookupMap $(pureTermToExp ctx t1) $(pureTermToExp ctx t2) $(lift tpy) $(rangeToExp r) |]
       UpdateMap t1 t2 t3 tpy r ->
@@ -512,6 +645,31 @@ exprToExp ctx expr =
 rangeToExp :: Range -> Q Exp
 rangeToExp (Range (Position line1 col1 fname1) (Position line2 col2 fname2)) =
   [| Range (Position $(lift line1) $(lift col1) $(lift fname1)) (Position $(lift line2) $(lift col2) $(lift fname2)) |]
+
+------------------------------------------------------------
+-- Module utilities
+------------------------------------------------------------
+
+-- | Convert a file path to a valid Haskell module name
+-- Example: "tests/simple.sem" -> "Simple"
+--          "foo/bar/my-module.sem" -> "MyModule"
+filePathToModuleName :: FilePath -> String
+filePathToModuleName path =
+  let baseName = takeBaseName path  -- Remove directory and extension
+      sanitized = map (\c -> if isAlphaNum c then c else '_') baseName
+      capitalized = case sanitized of
+        (c:cs) -> toUpper c : cs
+        [] -> "Module"
+  in capitalized
+
+-- | Extract imported file paths from a program's Import declarations
+getImportedModules :: Program' p -> [FilePath]
+getImportedModules (Program decls _) = mapMaybe getImportFilename decls
+  where
+    getImportFilename :: Decl' p -> Maybe FilePath
+    getImportFilename = \case
+      Import filename _ -> Just filename
+      _ -> Nothing
 
 ------------------------------------------------------------
 -- Entrypoints
@@ -542,7 +700,7 @@ processTestQueries ctx = mapM (fmap (either error id) . runExceptT . processQuer
 
 -- | Generate Template Haskell expression for subtyping graph
 generateSubtyping :: CheckingContext -> Q Exp
-generateSubtyping context = 
+generateSubtyping context =
   [| Language.Types.fromAdjacencyList $(lift . toAdjacencyList . _subtypingGraph $ context) |]
 
 -- | Generate a Haskell program representing the Typed program with executable Haskell functions in it.
@@ -556,4 +714,93 @@ codegen enableDebugger context prog@(Program _ comments) = runQ $ do
     <*> (pprint <$> (processTestQueries context testQueryStrings >>= listE . map return))
     <*> (pprint <$> generateTermTypes context)
     <*> (pprint <$> generateSubtyping context)
+
+-- | Generate multiple Haskell modules from a list of ModuleInfo
+-- Returns a Map from module names to their Haskell code
+codegenModInfo :: [IR.ModuleInfo' ParsePhase] -> IO (Map.Map String String)
+codegenModInfo modules = do
+  -- Concatenate all modules and type check
+  let concatenated = concatModules modules
+  case runChecker' concatenated of
+    Left err -> error $ "Type checking failed: " ++ show err
+    Right (context, typedProgram) -> do
+      -- Extract the typed declarations from the typed program
+      let typedDecls = getDecls typedProgram
+
+      -- Phase shift each module to TypingPhase by assigning the correct typed declarations
+      let typedModules = assignTypedDecls modules typedDecls
+
+      -- Generate the subtyping module (shared across all modules)
+      subtypingModule <- generateSubtypingModule context
+
+      -- Generate code for all sub-modules
+      subModules <- mapM (generateSubModule context) typedModules
+
+      -- Generate main module that combines all sub-modules
+      mainModule <- generateMainModule context typedModules
+
+      return $ Map.fromList $ ("AnalysisLangSubtyping", subtypingModule) : subModules ++ [("Main", mainModule)]
+  where
+    -- Assign typed declarations back to their original modules
+    assignTypedDecls :: [IR.ModuleInfo' ParsePhase] -> [TypedDecl] -> [IR.ModuleInfo' TypingPhase]
+    assignTypedDecls parseModules allTypedDecls =
+      let declCounts = map (length . getDecls . IR.moduleProgram) parseModules
+          splitDecls = splitAt' declCounts allTypedDecls
+          makeTypedModule :: IR.ModuleInfo' ParsePhase -> [TypedDecl] -> IR.ModuleInfo' TypingPhase
+          makeTypedModule (IR.ModuleInfo path (Program _ comments)) decls =
+            IR.ModuleInfo path (Program decls (map typeComment comments) :: TypedProgram)
+      in zipWith makeTypedModule parseModules splitDecls
+
+    -- Split list at multiple points
+    splitAt' :: [Int] -> [a] -> [[a]]
+    splitAt' [] _ = []
+    splitAt' (n:ns) xs =
+      let (chunk, rest) = splitAt n xs
+      in chunk : splitAt' ns rest
+
+    -- Generate the subtyping module
+    generateSubtypingModule :: CheckingContext -> IO String
+    generateSubtypingModule context = runQ $ do
+      subtypingCode <- pprint <$> generateSubtyping context
+      return $ makeSubtypingModule subtypingCode
+
+    -- Generate code for a single sub-module
+    generateSubModule :: CheckingContext -> IR.ModuleInfo' TypingPhase -> IO (String, String)
+    generateSubModule context (IR.ModuleInfo filePath prog) = runQ $ do
+      let moduleName = filePathToModuleName filePath
+      let prelude = concat (haskellBlocks prog)
+      let imports = getImportedModules prog
+
+      astCode <- pprint <$> astToCode context prog
+      termTypesCode <- pprint <$> generateTermTypes context
+
+      let subCode = makeSubModule
+            moduleName
+            prelude
+            astCode
+            termTypesCode
+            imports
+
+      return (moduleName, subCode)
+
+    -- Generate the main module that combines all sub-modules
+    generateMainModule :: CheckingContext -> [IR.ModuleInfo' TypingPhase] -> IO String
+    generateMainModule context allTypedModules = runQ $ do
+      -- Collect preludes, test queries from all modules
+      let allPreludes = concatMap (haskellBlocks . IR.moduleProgram) allTypedModules
+      let allComments = concatMap (getComments . IR.moduleProgram) allTypedModules
+      let testQueryStrings = extractTestQueries allComments
+
+      testQueriesCode <- pprint <$> (processTestQueries context testQueryStrings >>= listE . map return)
+      termTypesCode <- pprint <$> generateTermTypes context
+
+      -- Get all module names for imports
+      let allModuleNames = map (filePathToModuleName . IR.moduleFilePath) allTypedModules
+
+      return $ makeMainModule
+        False  -- enableDebugger for now
+        (concat allPreludes)
+        testQueriesCode
+        termTypesCode
+        allModuleNames
 

@@ -47,7 +47,7 @@ deriving instance (ForAllPhases Eq p) => Eq (ModuleInfo' p)
 -- | Changes the module info to a module info from a different phase
 phaseShiftModule :: Program' p -> ModuleInfo' p' -> ModuleInfo' p
 phaseShiftModule prg mod = mod { moduleProgram = prg }
-  
+
 type ModuleInfo = ModuleInfo' ParsePhase
 
 -- | Import resolution errors

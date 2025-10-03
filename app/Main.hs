@@ -23,6 +23,8 @@ import Language.Solver
 import qualified Language.Solver.BacktrackingST as ST
 import System.Timeout (timeout)
 import Text.Pretty.Simple (pPrint)
+import qualified Data.Map as Map
+import System.Directory (createDirectoryIfMissing)
 
 -------------------------------------------------------------
 -- Data types
@@ -41,7 +43,8 @@ newtype GlobalOptions = GlobalOptions
 -- | Options for the "codegen" command
 data CodeGenOptions = CodeGenOptions {
                         verbose :: Bool, -- ^ whether the code generation should output the typing context
-                        enableDebugger :: Bool -- ^ whether to include debugger support in generated code
+                        enableDebugger :: Bool, -- ^ whether to include debugger support in generated code
+                        outputDir :: Maybe FilePath -- ^ optional output directory for multi-module generation
                       }
                     deriving (Ord, Eq, Show)
 
@@ -63,9 +66,10 @@ verbosityFlag =
 
 -- | Parser for the code generation options
 codegenOptionsParser :: Parser CodeGenOptions
-codegenOptionsParser = CodeGenOptions 
+codegenOptionsParser = CodeGenOptions
   <$> verbosityFlag
   <*> switch ( short 'd' <> long "debug" <> help "Include debugger support in generated code" )
+  <*> optional (strOption ( short 'o' <> long "output" <> metavar "DIR" <> help "Output directory for multi-module generation" ))
 
 -- | Parser for the 'check' subcommand
 checkCommand :: Parser (IO ())
@@ -211,15 +215,44 @@ runDebugCommand (InputOptions filename) = SolverDebugger.debugSession filename
 
 -- | Execute the code generation command
 runCodegenCommand :: InputOptions -> CodeGenOptions -> IO ()
-runCodegenCommand (InputOptions filename) (CodeGenOptions verbose enableDebug) = do
-  loadResult <- loadAndParseFile filename
-  case loadResult of
-    Left (contents, err) -> printImportError contents err >> exitFailure
-    Right (contents, ast) -> do
-      r@(ctx, _) <- either (printError contents >=> const exitFailure) return $ runChecker' ast
-      when verbose $ do
-        pPrint ctx
-      (uncurry (codegen enableDebug) >=> putStrLn) r
+runCodegenCommand (InputOptions filename) (CodeGenOptions verbose enableDebug maybeOutputDir) = do
+  case maybeOutputDir of
+    Nothing -> do
+      -- Single-module generation (original behavior)
+      loadResult <- loadAndParseFile filename
+      case loadResult of
+        Left (contents, err) -> printImportError contents err >> exitFailure
+        Right (contents, ast) -> do
+          r@(ctx, _) <- either (printError contents >=> const exitFailure) return $ runChecker' ast
+          when verbose $ do
+            pPrint ctx
+          (uncurry (codegen enableDebug) >=> putStrLn) r
+
+    Just outputDir -> do
+      -- Multi-module generation
+      modulesResult <- resolveImportsFromFile filename
+      case modulesResult of
+        Left err -> do
+          -- We don't have the file contents here, so we'll just print the error
+          putStrLn $ "Import resolution failed: " ++ show err
+          exitFailure
+        Right modules -> do
+          when verbose $ do
+            putStrLn $ "Resolved " ++ show (length modules) ++ " modules"
+
+          -- Generate code for all modules
+          codeMap <- codegenModInfo modules
+
+          -- Create output directory if it doesn't exist
+          createDirectoryIfMissing True outputDir
+
+          -- Write each module to a file
+          forM_ (Map.toList codeMap) $ \(moduleName, code) -> do
+            let outputFile = outputDir </> moduleName <.> "hs"
+            writeFile outputFile code
+            putStrLn $ "Generated: " ++ outputFile
+
+          putStrLn $ "Successfully generated " ++ show (Map.size codeMap) ++ " modules in " ++ outputDir
 
 -- | Execute the code generation and run command
 runRuncodegenCommand :: InputOptions -> IO ()
