@@ -107,7 +107,7 @@ resolveImportsM rootModule = do
   modules <- use moduleMap
   sorted <- topologicalSortWithGraph graph modules
 
-  -- Concatenate all programs in topological order, removing import declarations
+  -- Concatenate all programs in topological order
   return $ concatenatePrograms (reverse sorted)
 
 -- | Extract import file paths from a program
@@ -175,14 +175,7 @@ topologicalSortWithGraph graph moduleMap =
 -- | Concatenate programs in dependency order, removing import statements
 concatenatePrograms :: [ModuleInfo] -> Program
 concatenatePrograms modules =
-  let allDecls = concatMap (filterImports . getDecls . moduleProgram) modules
+  let allDecls = concatMap (getDecls . moduleProgram) modules
       allComments = concatMap (getComments . moduleProgram) modules
   in Program allDecls allComments
-  where
-    filterImports :: [Decl] -> [Decl]
-    filterImports = filter (not . isImport)
-
-    isImport :: Decl -> Bool
-    isImport (Import _ _) = True
-    isImport _ = False
 

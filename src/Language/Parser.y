@@ -262,16 +262,22 @@ parseError (t:_) = Left $ ParsingError (rangeStart $ rangeOf t) $ "Parse error: 
 -- Entrypoints
 -------------------------------------------------------------
 
--- | Parse a program from string
-parseProgram :: String -> Either Error Program
-parseProgram input = 
-  case lex input of
+-- | Parse a program from string with the given filename information
+parseProgramWithFilename :: String -- ^ the name of the file where the contents originate from
+                         -> String -- ^ the program contents themselves
+                         -> Either Error Program
+parseProgramWithFilename filename input = 
+  case lexWithFilename filename input of
     tokens -> 
       let (comments, otherTokens) = partitionTokens tokens
           commentsAST = map (\t -> AST.Comment (getComment t) (rangeOf t)) comments
       in case parseProgramTokens otherTokens of
            Right program -> Right (Program (getDecls program) (commentsAST ++ getComments program))
            Left err -> Left err
+
+-- | Parse a program from a string
+parseProgram :: String -> Either Error Program
+parseProgram = parseProgramWithFilename "<unknown>"
 
 -- | Separate comments from other tokens
 partitionTokens :: [TokenWithRange] -> ([TokenWithRange], [TokenWithRange])

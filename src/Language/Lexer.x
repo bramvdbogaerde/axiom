@@ -3,6 +3,7 @@
 
 module Language.Lexer (
   lex,
+  lexWithFilename,
   Token(..),
   TokenWithRange(..)
 ) where
@@ -59,19 +60,26 @@ tokens :-
 
 {
 
-type AlexUserState = String
-alexInitUserState = ""
+data AlexUserState = AlexUserState {
+  accumulated :: String,
+  currentFilename :: String
+}
+
+alexInitUserState = AlexUserState "" "<unknown>"
 
 -- | Appends the collected input into the current user state, skips to the next token
 save :: AlexInput -> Int -> Alex TokenWithRange
-save (_, _, _, str) len = (++ take len str) <$> alexGetUserState >>= alexSetUserState >> alexMonadScan
+save (_, _, _, str) len = do
+  st <- alexGetUserState
+  alexSetUserState $ st { accumulated = accumulated st ++ take len str }
+  alexMonadScan
 
 -- | Collects the collected input into the given token
 collectInto :: (String -> Range -> a) -> AlexInput -> Int -> Alex a
 collectInto f (pos, _, _, str) len = do
-  s <- alexGetUserState
-  let tok = f s (alexPosToRange pos (take len str))
-  alexSetUserState ""
+  st <- alexGetUserState
+  let tok = f (accumulated st) (alexPosToRange (currentFilename st) pos (take len str))
+  alexSetUserState $ st { accumulated = "" }
   return tok
 
 -- | Designates a special token for the end of the input
@@ -83,24 +91,35 @@ byteToString len = U.toString . B.pack . take len
 
 -- | Helper function to create tokens without needing string content
 mkToken :: Token -> AlexInput -> Int -> Alex TokenWithRange
-mkToken token (pos, _, _, str) len = return $ TokenWithRange token (alexPosToRange pos (take len str))
+mkToken token (pos, _, _, str) len = do
+  st <- alexGetUserState
+  return $ TokenWithRange token (alexPosToRange (currentFilename st) pos (take len str))
 
 -- | Helper function to create tokens that need the string content
 mkTokenWith :: (String -> Token) -> AlexInput -> Int -> Alex TokenWithRange
-mkTokenWith tokenFunc (pos, _, _, str) len = return $ TokenWithRange (tokenFunc $ (take len str)) (alexPosToRange pos (take len str))
+mkTokenWith tokenFunc (pos, _, _, str) len = do
+  st <- alexGetUserState
+  return $ TokenWithRange (tokenFunc $ (take len str)) (alexPosToRange (currentFilename st) pos (take len str))
 
 -- | Convert Alex position to Range
-alexPosToRange :: AlexPosn -> String -> Range
-alexPosToRange (AlexPn _ line col) str = 
-  Range (Position line col Nothing) (Position line (col + length str - 1) Nothing)
+alexPosToRange :: String -> AlexPosn -> String -> Range
+alexPosToRange fname (AlexPn _ line col) str =
+  Range (Position line col (Just fname)) (Position line (col + length str - 1) (Just fname))
 
- 
--- | Main lexing function
-lex :: String -> [TokenWithRange]
-lex = either (error . ("lexical error" ++)  . show) id . flip runAlex go
+
+-- | Main lexing function with filename
+lexWithFilename :: String -> String -> [TokenWithRange]
+lexWithFilename fname input = either (error . ("lexical error" ++)  . show) id $ runAlex input go
   where go = do
+          alexSetUserState $ AlexUserState "" fname
+          collectTokens
+        collectTokens = do
           tok <- alexMonadScan
           case tok of
             TokenWithRange EOF _ -> return []
-            _ ->  (tok:) <$> go
+            _ ->  (tok:) <$> collectTokens
+
+-- | Main lexing function (uses "<unknown>" as filename)
+lex :: String -> [TokenWithRange]
+lex = lexWithFilename "<unknown>"
 }
