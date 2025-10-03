@@ -68,7 +68,8 @@ module.exports = grammar({
         '(',
         sep1($.type_ref, ','),
         ')'
-      )
+      ),
+      $.haskell_expression
     ),
 
     // Type name
