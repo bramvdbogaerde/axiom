@@ -89,8 +89,8 @@ preludeExtensions =
   |]
 
 
-makeModule :: Bool -> String -> String -> String -> String -> String -> String  
-makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
+makeModule :: Bool -> String -> String -> String -> String -> String -> String -> String  
+makeModule enableDebugger prelude postlude ast testQueries termDecls subtyping = T.unpack
   [text|
   $preludeExtensions
   $preludeSystemImports
@@ -116,6 +116,8 @@ makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
 
   subtyping :: Language.Types.Subtyping
   subtyping = $subtyping'
+
+  $postlude'
 
   -- Queries
 
@@ -157,6 +159,7 @@ makeModule enableDebugger prelude ast testQueries termDecls subtyping = T.unpack
     prelude' = T.pack prelude
     termDecls' = T.pack termDecls
     subtyping' = T.pack subtyping
+    postlude'  = T.pack postlude
     debuggerImports' = T.pack $ if enableDebugger 
                                 then unlines
                                   [ "import qualified Language.SolverDebugger"
@@ -428,8 +431,8 @@ declToExp ctx = \case
   TransitionDecl name (tpy1, range1) (tpy2, range2) range ->
     [| TransitionDecl $(lift name) ($(lift tpy1), $(rangeToExp range1)) ($(lift tpy2), $(rangeToExp range2)) $(rangeToExp range) |]
 
-  HaskellDecl s range ->
-    [| HaskellDecl $(lift s) $(rangeToExp range) |]
+  HaskellDecl s isPre range ->
+    [| HaskellDecl $(lift s) $(lift isPre) $(rangeToExp range) |]
   Import filename range ->
     [| Import $(lift filename) $(rangeToExp range) |]
 
@@ -552,6 +555,7 @@ codegen enableDebugger context prog@(Program _ comments) = runQ $ do
   makeModule
         enableDebugger
         (concat (haskellBlocks prog))
+        (concat (haskellBlocksPost prog))
     <$> (pprint <$> astToCode context prog)
     <*> (pprint <$> (processTestQueries context testQueryStrings >>= listE . map return))
     <*> (pprint <$> generateTermTypes context)

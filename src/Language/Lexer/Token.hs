@@ -27,6 +27,7 @@ data Token = EOF
            | Quo { tokVal :: String }
            | IntLit { tokInt :: Int  }         -- ^ integer literal
            | Hask { tokVal ::  String }        -- ^ multiple lines of Haskell declarations
+           | HaskPost { tokVal :: String }     -- ^ same as Hask but appends the contents to the end of the generated code
            | HaskellExpr { tokVal :: String }  -- ^ '{ HASKELL_EXP }'
            | MapsTo
            deriving (Ord, Eq, Show)

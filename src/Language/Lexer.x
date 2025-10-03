@@ -46,6 +46,11 @@ tokens :-
   <0> "{{{"                         { begin h }
   <h> "}}}"                         { collectInto (\s r -> TokenWithRange (Hask s) r) `andBegin` 0 }
   <h> [$white $printable]           { save }
+
+  <0> "[[["                         { begin p }
+  <p> "]]]"                         { collectInto (\s r -> TokenWithRange (HaskPost s) r) `andBegin` 0 }
+  <p> [$white $printable]           { save }
+
   <0> "{"                           { mkToken LCBa }
   <0> "}"                           { mkToken RCBa }
   <0> "["                           { mkToken LBra }

@@ -558,8 +558,8 @@ pass3VisitDecl (Rewrite rewrite range) =
   Rewrite <$> typeRewrite rewrite <*> pure range
 pass3VisitDecl (Syntax name syntax range) =
   Syntax name <$> (catMaybes <$> mapM typeSyntax syntax) <*> pure range
-pass3VisitDecl (HaskellDecl s range) =
-  return $ HaskellDecl s range
+pass3VisitDecl (HaskellDecl s isPre range) =
+  return $ HaskellDecl s isPre range
 pass3VisitDecl (Import filename range) =
   return $ Import filename range
 
@@ -581,8 +581,8 @@ pass4VisitDecl (Syntax name syntax range) =
   -- NOTE: syntax definitions never contain any MapOf expressions
   -- as they are not allowed by the previous passes.
   return $ Syntax name syntax range
-pass4VisitDecl (HaskellDecl s range) =
-  return $ HaskellDecl s range
+pass4VisitDecl (HaskellDecl s isPre range) =
+  return $ HaskellDecl s isPre range
 pass4VisitDecl (Import filename range) =
   return $ Import filename range
 

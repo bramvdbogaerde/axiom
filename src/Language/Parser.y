@@ -61,6 +61,7 @@ import qualified Data.Set as Set
   INTLIT      { TokenWithRange (IntLit _) _ }
   HASKEXPR    { TokenWithRange (Token.HaskellExpr _) _ }
   HASKBLOCK   { TokenWithRange (Token.Hask _) _ }
+  HASKPOST    { TokenWithRange (Token.HaskPost _) _ }
 
 %right '~>'
 %left '=' '/=' '⇓'
@@ -77,6 +78,7 @@ ProgramElements : {- empty -}                { [] }
 ProgramElement :: { Decl }
 ProgramElement : Declaration ';'             { $1 }
                | HaskellBlock                { $1 }
+               | HaskellPost                 { $1 }
 
 Declaration :: { Decl }
 Declaration : SyntaxBlock                    { $1 }
@@ -169,7 +171,11 @@ TermArgList : Term                           { [$1] }
 
 -- Haskell block
 HaskellBlock :: { Decl }
-HaskellBlock : HASKBLOCK                     { HaskellDecl (getHaskellBlock $1) (rangeOf $1) }
+HaskellBlock : HASKBLOCK                     { HaskellDecl (getHaskellBlock $1) True (rangeOf $1) }
+
+-- Haskell block to be inserted at the end
+HaskellPost :: { Decl }
+HaskellPost : HASKPOST { HaskellDecl (getHaskellBlock $1) False (rangeOf $1) }
 
 -- Terms with precedence handling
 Term :: { PureTerm }

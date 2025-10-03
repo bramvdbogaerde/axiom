@@ -58,6 +58,7 @@ module Language.AST(
     TypingPhase,
 
     haskellBlocks,
+    haskellBlocksPost,
 
     typeComment,
     variableName,
@@ -145,7 +146,13 @@ type TypedProgram = Program' TypingPhase
 -- | Extract the Haskell blocks from the program
 haskellBlocks :: Program' p -> [String]
 haskellBlocks = mapMaybe extract . getDecls
-  where extract (HaskellDecl s _) = Just s
+  where extract (HaskellDecl s True _) = Just s
+        extract _ = Nothing
+
+-- | Extract the post Haskell blocks from the program
+haskellBlocksPost :: Program' p -> [String]
+haskellBlocksPost = mapMaybe extract . getDecls
+  where extract (HaskellDecl s False _) = Just s
         extract _ = Nothing
 
 -- | A comment with its position
@@ -206,7 +213,7 @@ data Decl' p = Syntax (Maybe String) [SyntaxDecl' p] Range  -- ^ Syntax block wi
              | Rewrite (PureRewriteDecl p) Range
              | RulesDecl (Maybe String) [RuleDecl' p] Range  -- ^ Rules block with optional name
              | TransitionDecl String (Typ, Range) (Typ, Range) Range
-             | HaskellDecl String Range
+             | HaskellDecl String Bool Range
              | Import String Range  -- ^ Import declaration with filename
 deriving instance (ForAllPhases Ord p) => Ord (Decl' p)
 deriving instance (ForAllPhases Eq p) => Eq (Decl' p)
