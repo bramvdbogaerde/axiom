@@ -400,6 +400,10 @@
       "required": true,
       "types": [
         {
+          "type": "haskell_expression",
+          "named": true
+        },
+        {
           "type": "type_name",
           "named": true
         },

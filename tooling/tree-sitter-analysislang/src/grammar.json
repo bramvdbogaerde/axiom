@@ -209,6 +209,10 @@
               "value": ")"
             }
           ]
+        },
+        {
+          "type": "SYMBOL",
+          "name": "haskell_expression"
         }
       ]
     },
