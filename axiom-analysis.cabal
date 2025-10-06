@@ -78,10 +78,10 @@ executable axiom
   main-is: Main.hs
   ghc-options: -Werror -Wall -Wno-name-shadowing -Wno-unused-record-wildcards
 
-test-suite analysislang-tests
+test-suite axiom-tests
   type: exitcode-stdio-1.0
   build-depends: base >= 4 && < 5
-              , analysislang
+              , axiom-analysis
               , hspec
               , HUnit
               , directory
