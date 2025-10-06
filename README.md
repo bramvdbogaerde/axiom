@@ -18,25 +18,13 @@ Axiom is a declarative language for defining operational semantics, abstract mac
 
 ### Prerequisites
 
-- **GHC** (Glasgow Haskell Compiler) - tested with GHC 8.10+
-- **Cabal** 3.0 or higher
-- **alex** and **happy** (Haskell lexer and parser generators)
-
-### Install Build Tools
-
-If you don't have `alex` and `happy` installed:
-
-```bash
-cabal install alex happy
-```
-
-Make sure `~/.cabal/bin` is in your `PATH`.
+- **GHC** (Glasgow Haskell Compiler) - tested with GHC 9.6+
 
 ### Building from Source
 
 ```bash
 git clone <repository-url>
-cd analysislang
+cd axiom
 cabal build
 ```
 
@@ -100,20 +88,21 @@ syntax {
     v in Value ::= closure(x, e, env);
     x in Var;
     env in Map(Var, Value);
+    input in Input ::= inp(e, env);
 };
 
-transition (Exp, env) ~> Value;
+transition Input ~> Value;
 
 rules {
     rule "Eval-Lambda"
     [ ]
     =>
-    [ (lambda(x, e), env) ~> closure(x, e, env) ];
+    [ inp(lambda(x, e), env) ~> closure(x, e, env) ];
 
     rule "Eval-Var"
     [ env(x) = v ]
     =>
-    [ (x, env) ~> v ];
+    [ inp(x, env) ~> v ];
 };
 ```
 
@@ -135,7 +124,7 @@ rule "Add"
 [ result = ${ x + y } ];
 ```
 
-For top-level imports and declarations, use `{{{ ... }}}`:
+For top-level imports use `{{{ ... }}}`:
 
 ```
 {{{
@@ -144,12 +133,12 @@ import qualified Data.Set as Set
 }}}
 ```
 
+For other declarations use `[[[ ... ]]]` instead.
+
 ## Language Server
 
-Axiom includes an LSP server that provides:
-- Real-time syntax and type error diagnostics
-- Symbol navigation and workspace symbols
-- Integration with any LSP-compatible editor
+Axiom includes an LSP server that provides real-time syntax and type error
+diagnostics, as well as symbol navigation and workspace symbols.
 
 ### Helix Configuration
 
@@ -179,20 +168,6 @@ axiom lsp
 ```
 
 as the language server command for files with the `.sem` extension.
-
-## Examples
-
-The `examples/` directory contains sample specifications:
-
-- **`lambda.sem`** - Lambda calculus with environment-based semantics, abstract addresses, and control flow
-- **`stdlib.sem`** - Standard library definitions and common patterns
-
-Run an example:
-
-```bash
-cabal run axiom -- check examples/lambda.sem
-cabal run axiom -- runsolver examples/lambda.sem
-```
 
 ## License
 
