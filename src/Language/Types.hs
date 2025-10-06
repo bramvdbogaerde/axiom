@@ -203,7 +203,7 @@ data Value where
 
 instance Show Value where
   show = \case IntValue i -> show i
-               StrValue s -> s
+               StrValue s -> show s
                BooValue b -> show b
 
 ------------------------------------------------------------
