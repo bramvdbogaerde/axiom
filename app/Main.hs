@@ -238,7 +238,7 @@ runRuncodegenCommand (InputOptions filename) = do
       writeFile outName generatedCode
       putStrLn $ "Generated code written to: " ++ outName
       -- TODO: ensure that this command can be executed without using cabal (dependending on the environment: prod/dev?).
-      exitCode <- system $ "cabal exec -- runghc --ghc-arg=\"-package analysislang\" --ghc-arg=\"-package maf2-domains\" " ++ outName
+      exitCode <- system $ "cabal exec -- runghc --ghc-arg=\"-package axiom-analysis\" --ghc-arg=\"-package maf2-domains\" " ++ outName
       exitWith exitCode
 
 -- | Execute the solver test command

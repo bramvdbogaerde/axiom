@@ -85,7 +85,7 @@ executeGeneratedCode generatedCode = withSystemTempFile "codegen_test.hs" $ \tem
 
   -- Execute with timeout (30 seconds)
   let cmd = "cabal"
-  let args = ["exec", "--", "runghc", "--ghc-arg=-package", "--ghc-arg=analysislang", tempFilePath]
+  let args = ["exec", "--", "runghc", "--ghc-arg=-package", "--ghc-arg=axiom-analysis", tempFilePath]
 
   timeoutResult <- timeout defaultTimeout $ readProcessWithExitCode cmd args ""
   case timeoutResult of
@@ -117,7 +117,7 @@ testCodegenFile filePath = runExceptT $ do
       (context, typedProgram) <- ExceptT $ return $ first show $ runChecker' program
 
       -- Generate code and execute
-      ExceptT $ codegen False context typedProgram >>= executeGeneratedCode
+      ExceptT $ codegen False "main" context typedProgram >>= executeGeneratedCode
 
 -- | Create a test for a single file
 createCodegenTest :: FilePath -> Spec
