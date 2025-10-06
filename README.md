@@ -12,7 +12,6 @@ Axiom is a declarative language for defining operational semantics, abstract mac
 - **Embedded Haskell** expressions using `${...}` syntax for complex operations
 - **Rich type system** with support for sets, maps, lattices, and user-defined functors
 - **Language Server Protocol (LSP)** support for editor integration with diagnostics and symbol navigation
-- **Code generation** to efficient, type-safe Haskell implementations
 
 ## Installation
 
