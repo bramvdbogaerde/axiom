@@ -89,8 +89,8 @@ preludeExtensions =
   |]
 
 
-makeModule :: Bool -> String -> String -> String -> String -> String -> String -> String  
-makeModule enableDebugger prelude postlude ast testQueries termDecls subtyping = T.unpack
+makeModule :: String -> Bool -> String -> String -> String -> String -> String -> String -> String  
+makeModule mainName enableDebugger prelude postlude ast testQueries termDecls subtyping = T.unpack
   [text|
   $preludeExtensions
   $preludeSystemImports
@@ -125,8 +125,8 @@ makeModule enableDebugger prelude postlude ast testQueries termDecls subtyping =
   testQueries :: [(PureTerm' CodeGenPhase, Bool)]  -- (query, shouldPass)
   testQueries = $testQueries'
 
-  main :: IO ()
-  main = do
+  $mainName' :: IO ()
+  $mainName' = do
     $debuggerMain'
 
   $debuggerREPL'
@@ -170,6 +170,8 @@ makeModule enableDebugger prelude postlude ast testQueries termDecls subtyping =
     debuggerMain' = T.pack $ if enableDebugger
                             then debuggerMainCode
                             else testRunnerMainCode
+
+    mainName' = T.pack mainName
     
     testRunnerMainCode = unlines
       [ "putStrLn $ \"Running \" ++ show (length testQueries) ++ \" test queries...\""
@@ -549,10 +551,11 @@ generateSubtyping context =
   [| Language.Types.fromAdjacencyList $(lift . toAdjacencyList . _subtypingGraph $ context) |]
 
 -- | Generate a Haskell program representing the Typed program with executable Haskell functions in it.
-codegen :: Bool -> CheckingContext -> TypedProgram -> IO String
-codegen enableDebugger context prog@(Program _ comments) = runQ $ do
+codegen :: Bool -> String -> CheckingContext -> TypedProgram -> IO String
+codegen enableDebugger mainName context prog@(Program _ comments) = runQ $ do
   let testQueryStrings = extractTestQueries comments
   makeModule
+        mainName
         enableDebugger
         (concat (haskellBlocks prog))
         (concat (haskellBlocksPost prog))

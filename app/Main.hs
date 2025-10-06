@@ -8,7 +8,7 @@ import Language.TypeCheck (runChecker', CheckingContext(..))
 import Language.CodeGen
 import Language.ImportResolver (resolveImportsFromFile, concatModules, ImportError(..))
 import Control.Monad
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.List (stripPrefix)
 import System.Console.ANSI
 import System.Exit
@@ -41,7 +41,8 @@ newtype GlobalOptions = GlobalOptions
 -- | Options for the "codegen" command
 data CodeGenOptions = CodeGenOptions {
                         verbose :: Bool, -- ^ whether the code generation should output the typing context
-                        enableDebugger :: Bool -- ^ whether to include debugger support in generated code
+                        enableDebugger :: Bool, -- ^ whether to include debugger support in generated code
+                        mainName :: Maybe String     -- ^ alternative main    
                       }
                     deriving (Ord, Eq, Show)
 
@@ -66,6 +67,7 @@ codegenOptionsParser :: Parser CodeGenOptions
 codegenOptionsParser = CodeGenOptions 
   <$> verbosityFlag
   <*> switch ( short 'd' <> long "debug" <> help "Include debugger support in generated code" )
+  <*> optional ( strOption $ short 'm' <> long "main" <> help "Alternative name for the main function" )
 
 -- | Parser for the 'check' subcommand
 checkCommand :: Parser (IO ())
@@ -211,7 +213,7 @@ runDebugCommand (InputOptions filename) = SolverDebugger.debugSession filename
 
 -- | Execute the code generation command
 runCodegenCommand :: InputOptions -> CodeGenOptions -> IO ()
-runCodegenCommand (InputOptions filename) (CodeGenOptions verbose enableDebug) = do
+runCodegenCommand (InputOptions filename) (CodeGenOptions verbose enableDebug mainName) = do
   loadResult <- loadAndParseFile filename
   case loadResult of
     Left (contents, err) -> printImportError contents err >> exitFailure
@@ -219,7 +221,7 @@ runCodegenCommand (InputOptions filename) (CodeGenOptions verbose enableDebug) =
       r@(ctx, _) <- either (printError contents >=> const exitFailure) return $ runChecker' ast
       when verbose $ do
         pPrint ctx
-      (uncurry (codegen enableDebug) >=> putStrLn) r
+      (uncurry (codegen enableDebug (fromMaybe "main" mainName)) >=> putStrLn) r
 
 -- | Execute the code generation and run command
 runRuncodegenCommand :: InputOptions -> IO ()
@@ -231,7 +233,7 @@ runRuncodegenCommand (InputOptions filename) = do
       either (printError contents) runGenerated $ runChecker' ast
   where
     runGenerated (context, typedProgram) = do
-      generatedCode <- codegen False context typedProgram
+      generatedCode <- codegen False "main" context typedProgram
       let outName = replaceExtension filename "out.hs"
       writeFile outName generatedCode
       putStrLn $ "Generated code written to: " ++ outName
