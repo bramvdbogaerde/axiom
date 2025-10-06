@@ -125,8 +125,8 @@ globalOptions = GlobalOptions <$> commandParser
 opts :: ParserInfo GlobalOptions
 opts = info (globalOptions <**> helper)
   ( fullDesc
- <> progDesc "Analysis language tools"
- <> header "analysislang - tools for analysis language programs" )
+ <> progDesc "Axiom is a DSL on top of Monarch to express formal static analysis semantics."
+ <> header "axiom - static analysis DSL" )
 
 -------------------------------------------------------------
 -- Utility functions
