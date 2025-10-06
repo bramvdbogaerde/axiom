@@ -7,6 +7,7 @@
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE LambdaCase #-}
 module Language.Types(
     -- * Type definitions
     Typ(..), 
@@ -198,7 +199,12 @@ data Value where
   IntValue :: Int -> Value
   StrValue :: String -> Value
   BooValue :: Bool -> Value
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance Show Value where
+  show = \case IntValue i -> show i
+               StrValue s -> s
+               BooValue b -> show b
 
 ------------------------------------------------------------
 -- Type conversions
