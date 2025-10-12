@@ -1,0 +1,16 @@
+
+
+syntax {
+	x in String;
+	n in Integer;
+	exp, e in Expr ::= lambda(x, exp) | n;
+	concl in Conclusion ::= conclusion1(exp);
+};
+
+
+rules {
+	rule "wildcard-matches-anything" [ lambda(_, e) = e0 ] => [ conclusion1(e0) ];
+};
+
+
+%test: conclusion1(lambda("x", 1)) 

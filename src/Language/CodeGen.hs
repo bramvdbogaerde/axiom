@@ -497,6 +497,8 @@ pureTermToExp ctx = \case
     where
       bimapE f g (x,y) = [| ($(f x), $(g y)) |]
 
+  Wildcard t r -> [| Wildcard $(lift t) $(rangeToExp r) |]
+
   TermHask v _ _ -> absurd v
 
 exprToExp :: CheckingContext -> Expr TypingPhase Identity -> Q Exp

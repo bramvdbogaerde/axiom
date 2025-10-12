@@ -163,7 +163,7 @@ defineTypeAlias name typeCon = modify (over typeAliases (Map.insert name typeCon
 
 -- | Resolve type aliases to their fully expanded form, detecting circularity
 resolveTypeAlias :: MonadCheck m => Maybe Range -> TypeCon -> m TypeCon
-resolveTypeAlias r typeCon = resolveTypeAlias' Set.empty typeCon
+resolveTypeAlias r = resolveTypeAlias' Set.empty
   where
     resolveTypeAlias' :: MonadCheck m => Set String -> TypeCon -> m TypeCon
     resolveTypeAlias' visited (TypeTyp name range) = do
@@ -349,6 +349,8 @@ pass1VisitCtor sortName = \case
   (SetOfTerms _ _ range) -> throwErrorAt range $ InvalidConstructor "Set literals cannot be used as constructors in syntax declarations"
   (TermExpr _ range) -> throwErrorAt range $ InvalidConstructor "Expression cannot be used as constructors in the syntax declarations"
   (TermMap _ _ range)    -> throwErrorAt range $ InvalidConstructor "Map literals cannot be used as constructors in the syntax declarations"
+  w@Wildcard {} -> throwErrorAt (rangeOf w) $ InvalidConstructor "Wildcards cannot be used as constructors in the syntax declarations"
+
   (TermHask v _ _) -> absurd v
   where
     ensureAtom (Atom nam _ _) = return (runIdentity nam)
@@ -475,6 +477,10 @@ checkTerm (TermMap mapping _ range) =
                   (return (kt, vt))
                   (throwErrorAt range (IncompatibleTypes [MapOf vtpy ktpy] [parentType]))
             ) . Map.toList
+checkTerm (Wildcard _ range) =
+  maybe (throwErrorAt range HaskellExprTypeInferenceError)
+        (\typ -> return (Wildcard typ range, typ)) =<< ask
+  
 checkTerm (TermHask v _ _) = absurd v
 
 checkTerm_ :: MonadCheck m => PureTerm -> m Typ
@@ -627,6 +633,7 @@ pass4VisitTerm (TermExpr expr range) =
   TermExpr <$> pass4VisitExpr expr <*> pure range
 pass4VisitTerm (TermMap mapping tpy r) =
   (TermMap . Map.fromList <$> mapM (\(k, v) -> (,) <$> pass4VisitTerm k <*> pass4VisitTerm v) (Map.toList mapping)) <*> pure tpy <*> pure r
+pass4VisitTerm w@(Wildcard {}) = return w
 
 pass4VisitExpr :: MonadCheck m => Expr TypingPhase Identity -> m (Expr TypingPhase Identity)
 pass4VisitExpr (LookupMap mapTerm keyTerm tpy range) =

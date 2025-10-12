@@ -357,6 +357,7 @@ data Term' p f  = Atom (f String) (XTypeAnnot p)  Range
                 | SetOfTerms (Set (Term' p f)) (XTypeAnnot p) Range
                 | TermHask (XEmbeddedValue p) (XTypeAnnot p) Range
                 | TermExpr (Expr p f) Range
+                | Wildcard (XTypeAnnot p) Range
 type Term = Term' ParsePhase
 
 deriving instance (Ord (f String), ForAllPhases Ord p) => Ord (Term' p f)
@@ -377,6 +378,7 @@ instance (Show (f String), ForAllPhases Show p) => Show (Term' p f) where
   show (TermHask value _ _) = "TermHask(" ++ show value ++ ")"
   show (TermExpr expr _) = "e("  ++ show expr ++ ")"
   show (TermMap mapping _ _) = "["  ++ List.intercalate "," (map (\(key, value) -> Printf.printf "%s ↦ %s" (show key) (show value)) (Map.toList mapping)) ++ "]"
+  show (Wildcard _ _) = "_"
 
 -- | Specialized Show instance for PureTerm that doesn't show Identity wrapper
 instance {-# OVERLAPPING #-} Show (PureTerm' p) where
@@ -393,6 +395,7 @@ instance {-# OVERLAPPING #-} Show (PureTerm' p) where
   show (TermHask _v _ _) = "" -- TODO
   show (TermExpr expr _) = "e(" ++ show expr ++ ")"
   show (TermMap mapping _ _) = "["  ++ List.intercalate "," (map (\(key, value) -> Printf.printf "%s ↦ %s" (show key) (show value)) (Map.toList mapping)) ++ "]"
+  show (Wildcard _ _) = "_"
 
 type PureTerm = PureTerm' ParsePhase
 type PureTerm' p = Term' p Identity
@@ -414,6 +417,7 @@ instance AtomNames (PureTerm' p) where
                     TermHask {} -> Set.empty
                     TermExpr expr _ -> atomNames expr
                     TermMap mapping _ _ -> foldMap (\(key, value) -> atomNames key `Set.union` atomNames value) $ Map.toList mapping
+                    Wildcard _ _ -> Set.empty
 instance AtomNames (Expr p Identity) where
   atomNames = \case LookupMap t1 t2 _ _ -> atomNames t1 `Set.union` atomNames t2
                     UpdateMap t1 t2 t3 _ _ -> atomNames t1 `Set.union` atomNames t2 `Set.union` atomNames t3
@@ -445,6 +449,7 @@ instance RangeOf (Term' p f) where
                   TermHask _ _ r -> r
                   TermExpr _ r -> r
                   TermMap _ _ r -> r
+                  Wildcard _ r -> r
 
 -- | Extract the name of the variable from variables suffixed with numbers
 variableName :: String -> String
@@ -513,6 +518,7 @@ isTermGround = \case
   TermHask {} -> True
   TermExpr expr _ -> isGround expr
   TermMap mapping _ _ -> all (\(key, value) -> isGround key && isGround value) $ Map.toList mapping
+  Wildcard _ _ -> False -- a wildcard term is equivalent to a variable without a name
 
 -- | Extract the type annotation from an expression
 exprTypeAnnot :: Expr p s -> XTypeAnnot p
@@ -538,6 +544,7 @@ termTypeAnnot = \case
   TermHask _ tpy _ -> tpy
   TermExpr expr _ -> exprTypeAnnot expr
   TermMap _ t _ -> t
+  Wildcard t _ -> t
 
 -------------------------------------------------------------
 -- Phase-dependent Haskell expression execution
@@ -614,6 +621,7 @@ anyTyped = \case
   TermHask value _ range -> TermHask (absurd value) AnyType range
   TermExpr expr range -> TermExpr (anyTypedExpr expr) range
   TermMap mapping _ range -> TermMap (Map.fromList $ map (bimap anyTyped anyTyped) $ Map.toList  mapping) AnyType range
+  Wildcard _ range -> Wildcard AnyType range
 
 -- | Remove the range information from an expression and replace it with a dummy range
 removeRangeExpr :: (ForAllPhases Ord p, Ord (a String)) => Expr p a -> Expr p a
@@ -638,5 +646,6 @@ removeRange = \case
   IncludedIn var term _ -> IncludedIn var (removeRange term) dummyRange
   TermHask value tpy _ -> TermHask value tpy dummyRange
   TermExpr expr _ -> TermExpr (removeRangeExpr expr) dummyRange
-  TermMap mapping tpy _ -> TermMap (Map.fromList $ map (bimap removeRange removeRange) $ Map.toList  mapping) tpy dummyRange    
+  TermMap mapping tpy _ -> TermMap (Map.fromList $ map (bimap removeRange removeRange) $ Map.toList  mapping) tpy dummyRange
+  Wildcard t _ -> Wildcard t dummyRange
 

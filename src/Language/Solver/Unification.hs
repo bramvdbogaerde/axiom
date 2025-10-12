@@ -201,6 +201,8 @@ refTerm term = runStateT (transformTerm term)
     transformTerm (TermMap mapping tpy range) =
       return $ TermMap mapping tpy range
 
+    transformTerm (Wildcard t range) = return (Wildcard t range)
+
     transformExpr = \case
             LookupMap t1 t2 tpy range ->
                 LookupMap <$> transformTerm t1 <*> transformTerm t2 <*> pure tpy <*> pure range
@@ -281,6 +283,9 @@ pureTerm' term _mapping = do
     convertTerm (TermMap mapping tpy range) =
       -- TODO: the bimapM here is redundant
       return $ TermMap mapping tpy range
+
+    convertTerm (Wildcard t range) =
+      return $ Wildcard t range
 
     convertExpr :: forall p (s :: Type) .  (ForAllPhases Ord p, AnnotateType p) => RefExpr p s -> StateT (VisitedList p s) (ExceptT String (BST.ST s)) (Expr p Identity)
     convertExpr = \case
@@ -366,7 +371,7 @@ evaluateExpr (RewriteApp nam args _ range) = tryRules =<< findRewriteRules nam
 -- engine. The order is as follows:
 --
 -- Atom < Eqq < Neq < Transition < HaskellExpr < Value
-data TermType = AtomTp | EqqTp | NeqTp | TransitionTp | ValueTp | FunctorTp | HaskellExprTp | IncludedInTp | TermHaskTp | TermExprTp | MapTermTp | SetOfTermsTp
+data TermType = AtomTp | WildcardTp |  EqqTp | NeqTp | TransitionTp | ValueTp | FunctorTp | HaskellExprTp | IncludedInTp | TermHaskTp | TermExprTp | MapTermTp | SetOfTermsTp
               deriving (Ord, Eq, Show, Enum)
 termTypeOf :: Term' p x -> TermType
 termTypeOf Atom{} = AtomTp
@@ -381,6 +386,7 @@ termTypeOf SetOfTerms{} = SetOfTermsTp
 termTypeOf TermHask{} = TermHaskTp
 termTypeOf TermExpr{} = TermExprTp
 termTypeOf TermMap {} = MapTermTp
+termTypeOf Wildcard {} = WildcardTp
 
 -- | Puts two terms into a predictable order, therefore elliminating some symmetric cases in the unification algorithm.
 termOrder :: Term' p x -> Term' p x -> (Term' p x, Term' p x)
@@ -413,6 +419,16 @@ unifyTerms = unifyTermsImpl
     unifyTermsImpl (TermHask v1 _ _) (TermHask v2 _ _) =
       if v1 == v2 then return ()
       else throwError "Embedded Haskell values don't match"
+
+    -- 
+    -- Wildcards
+    -- 
+    unifyTermsImpl (Wildcard _ _) _ =
+      -- wildcard always matches so return nothing
+      return ()
+    unifyTermsImpl t w@Wildcard {} =
+      unifyTermsImpl w t
+
 
     -- 
     -- AnalysisLang expressions

@@ -95,6 +95,7 @@ renameTerm (TermExpr expr range) = flip TermExpr range <$> renameExpr expr
 renameTerm (TermMap mapping tpy range) =
     TermMap . Map.fromList <$> mapM (bimapM renameTerm renameTerm) (Map.toList mapping) <*> pure tpy <*> pure range
   where bimapM f g (x,y) = liftA2 (,) (f x) (g y)
+renameTerm w@Wildcard {} = return w
 
 renameExpr :: forall p m . (HaskellExprRename p, ForAllPhases Ord p, MonadRename m) => Expr p Identity -> m (Expr p Identity)
 renameExpr = \case
@@ -162,6 +163,7 @@ unrenameTerm (TermHask value tpy range) = TermHask value tpy range
 unrenameTerm (TermExpr expr range) = TermExpr (unrenameExpr expr) range
 unrenameTerm (TermMap mapping tpy range) =
     TermMap (Map.fromList $ map (bimap unrenameTerm unrenameTerm) $ Map.toList mapping) tpy range
+unrenameTerm w@(Wildcard {}) = w
 
 unrenameExpr :: (ForAllPhases Ord p) => Expr p Identity -> Expr p Identity
 unrenameExpr = \case

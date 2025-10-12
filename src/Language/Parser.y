@@ -56,6 +56,7 @@ import qualified Data.Set as Set
   ';'         { TokenWithRange Sem _ }
   '|'         { TokenWithRange Bar _ }
   '|->'       { TokenWithRange MapsTo _ }
+  '_'         { TokenWithRange Token.Wildcard _ }
   IDENT       { TokenWithRange (Ident _) _ }
   STRING      { TokenWithRange (Quo _) _ }
   INTLIT      { TokenWithRange (IntLit _) _ }
@@ -212,6 +213,8 @@ BasicTerm : IDENT                            { Atom (Identity (getIdent $1)) () 
           | HASKEXPR                         { AST.HaskellExpr (getHaskellExpr $1) () (rangeOf $1) }
           | INTLIT                           { TermValue (IntValue (getIntLit $1)) () (rangeOf $1) }
           | BOOL                             { TermValue (BooValue (getBooLit $1))  () (rangeOf $1) }
+          | '_'                              { AST.Wildcard () (rangeOf $1) }
+          | STRING                           { TermValue (StrValue (getString $1)) () (rangeOf $1) }
           | Expr { TermExpr $1 (rangeOf $1) }
 
 Goal :: { PureTerm }
