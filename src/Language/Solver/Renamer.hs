@@ -22,7 +22,6 @@ import Language.AST
 import Data.Bifunctor
 import qualified Data.Set as Set
 import Text.Regex (mkRegex, matchRegex)
-import Data.Maybe (fromJust, listToMaybe)
 
 
 -------------------------------------------------------------
@@ -179,6 +178,6 @@ unrenameExpr = \case
 
 -- | Removes the part of the variable name that makes it unique
 baseName :: String -> String
-baseName s = maybe s (fromJust . listToMaybe) (matchRegex r s)
+baseName s = maybe s head (matchRegex r s)
     where r = mkRegex "(.*)_.*"
 
