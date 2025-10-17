@@ -34,6 +34,7 @@ import Text.Read (readMaybe)
 import Control.Lens.Setter ((?~))
 import Control.Monad.Error.Class
 import Control.Monad.Except (runExceptT)
+import Data.Maybe (listToMaybe)
 
 
 -------------------------------------------------------------
@@ -334,7 +335,7 @@ debugSession semFile = do
       putStr "debug> " >> hFlushAll stdout
       input <- getLine
       if | input == "quit" -> putStrLn "Goodbye!"
-         | not (null input) && head input == ':' -> handleCommand input config ctx rules
+         | maybe False (== ':') (listToMaybe input) -> handleCommand input config ctx rules
          | otherwise -> handleQuery input config ctx rules >> debugLoop config ctx rules
 
     handleCommand input config ctx rules =

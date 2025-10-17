@@ -1,5 +1,7 @@
 {
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -Wno-x-partial #-}
+
 
 module Language.Lexer (
   lex,

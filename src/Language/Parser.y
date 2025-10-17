@@ -1,6 +1,7 @@
 {
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -Wno-x-partial #-}
 
 module Language.Parser(parseProgram, parseTerm, parseRule, parseGoal, Error(..)) where
 

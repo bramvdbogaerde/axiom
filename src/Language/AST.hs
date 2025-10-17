@@ -85,7 +85,7 @@ module Language.AST(
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.Regex (mkRegex, matchRegex)
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe, listToMaybe, fromJust)
 import Language.Range
 import Data.Kind
 import Data.Functor.Identity
@@ -457,7 +457,7 @@ variableName s = fromMaybe (error $ "could not get variable name of " ++ s) $ sa
 
 -- | Same as 'variableName' but returns 'Nothing' if the variable cannot be extracted
 safeVariableName :: String -> Maybe String
-safeVariableName s = head <$> matchRegex r s
+safeVariableName s = fromJust . listToMaybe <$> matchRegex r s -- SAFETY: is there is a match then listToMaybe always returns "Just"
   where r = mkRegex "([a-zA-Z]+)\\d*"
 
 -- | Allowed infix names that can be used in a term
