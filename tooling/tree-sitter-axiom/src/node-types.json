@@ -15,6 +15,21 @@
     }
   },
   {
+    "type": "big_step_expr",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "term",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "declaration",
     "named": true,
     "fields": {},
@@ -111,6 +126,10 @@
           "named": true
         },
         {
+          "type": "big_step_expr",
+          "named": true
+        },
+        {
           "type": "functor",
           "named": true
         },
@@ -120,6 +139,10 @@
         },
         {
           "type": "integer_literal",
+          "named": true
+        },
+        {
+          "type": "wildcard",
           "named": true
         }
       ]
@@ -527,6 +550,10 @@
     "named": false
   },
   {
+    "type": "wildcard",
+    "named": true
+  },
+  {
     "type": "{",
     "named": false
   },
@@ -540,6 +567,10 @@
   },
   {
     "type": "~>",
+    "named": false
+  },
+  {
+    "type": "⇓",
     "named": false
   }
 ]

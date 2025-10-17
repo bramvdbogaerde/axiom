@@ -133,7 +133,9 @@ module.exports = grammar({
       $.atom,
       $.functor,
       $.haskell_expression,
-      $.integer_literal
+      $.integer_literal,
+      $.wildcard,
+      $.big_step_expr
     ),
 
     atom: $ => $.identifier,
@@ -162,6 +164,20 @@ module.exports = grammar({
       '~>',
       $.term
     )),
+
+    // Wildcard: _
+    wildcard: $ => '_',
+
+    // Big step evaluation: (terms) ⇓ (terms)
+    big_step_expr: $ => seq(
+      '(',
+      optional(sep1($.term, ',')),
+      ')',
+      '⇓',
+      '(',
+      optional(sep1($.term, ',')),
+      ')'
+    ),
 
     // Test comments: %test: <term>
     test_comment: $ => prec(1, seq(
