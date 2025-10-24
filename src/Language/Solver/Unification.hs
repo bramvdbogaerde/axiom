@@ -212,6 +212,7 @@ refTerm term = runStateT (transformTerm term)
                 RewriteApp nam <$> mapM transformTerm ags <*> pure tpy <*> pure range
             EmptyMap tpy r -> return $ EmptyMap tpy r
             GroundTerm t tpy range -> GroundTerm <$> transformTerm t <*> pure tpy <*> pure range
+            SetUnion t1 t2 tpy range -> SetUnion <$> transformTerm t1 <*> transformTerm t2 <*> pure tpy <*> pure range
 
 -- | Transform a term to a reference term within the unification monad and use
 -- the internal variable mapping while doing so.
@@ -297,6 +298,7 @@ pureTerm' term _mapping = do
             RewriteApp nam <$> mapM convertTerm ags <*> pure tpy <*> pure range
         EmptyMap tpy r -> return $ EmptyMap tpy r
         GroundTerm t tpy r -> GroundTerm <$> convertTerm t <*> pure tpy <*> pure r
+        SetUnion t1 t2 tpy r -> SetUnion <$> convertTerm t1 <*> convertTerm t2 <*> pure tpy <*> pure r
 
 
 -- | Same as pureTerm' but raises an error if the term could not be converted
@@ -362,6 +364,18 @@ evaluateExpr (RewriteApp nam args _ range) = tryRules =<< findRewriteRules nam
             zipWithM_ unifyTerms refPars args
             return refBdy) `catchError` const (tryRules remaining)
         uniqueRewrite  = zoom numUniqueVariables . lift . Renamer.renameState . Renamer.renameRewrite
+evaluateExpr (SetUnion t1 t2 tpy range) = do
+    -- TODO: evaluation order seems to be wrong as we are converting from refterm -> pureterm and back
+    -- which seems needlessly convoluled. 
+    t1' <- (pureTerm'' =<< normalizeTerm t1) >>= (fmap Set.fromList . mapM refTerm') . isSet
+    t2' <- (pureTerm'' =<< normalizeTerm t2) >>= (fmap Set.fromList . mapM refTerm') . isSet
+    return (SetOfTerms (Set.union t1' t2') tpy range)
+    where isSet (SetOfTerms s _ _) = Set.toList s
+          isSet t =
+            -- this is actually a type checking error as the arguments should always evaluate to sets or not be ground.
+            error $ "unexpected: the given value is not a set (bug in the type checking phase), instead it is  " ++ show (termTypeOf t)
+
+
 -------------------------------------------------------------
 -- Unification 
 -------------------------------------------------------------

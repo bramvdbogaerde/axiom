@@ -514,6 +514,8 @@ exprToExp ctx expr =
         [| EmptyMap $(lift tpy) $(rangeToExp r) |]
       GroundTerm t tpy r ->
         [| GroundTerm $(pureTermToExp ctx t) $(lift tpy) $(rangeToExp r) |]
+      SetUnion t1 t2 tpy r ->
+        [| SetUnion $(pureTermToExp ctx t1) $(pureTermToExp ctx t2) $(lift tpy) $(rangeToExp r) |]
       ) |]
 
 rangeToExp :: Range -> Q Exp

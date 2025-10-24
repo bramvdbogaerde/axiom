@@ -509,6 +509,15 @@ checkExpr (GroundTerm term _ range) = do
   return (GroundTerm typedTerm tpy range, tpy)
 checkExpr (EmptyMap _ range) =
   liftA2 (,) (asks (flip EmptyMap range . fromJust)) (asks fromJust)
+checkExpr (SetUnion t1 t2 _ range) = do
+  (t1', tpy1) <- checkTerm t1
+  (t2', tpy2) <- checkTerm t2
+  -- TODO: use subtyping and widen the type of the unioned set to the more
+  -- general one.
+  when (tpy1 /= tpy2)
+    (throwErrorAt range (IncompatibleTypes [tpy1] [tpy2]))
+  return (SetUnion t1' t2' tpy1 range, tpy1)
+  
 checkExpr _ = error "checkExpr: only LookupMap, UpdateMap and GroundTerm are supported in expressions"
 
 -- | Update or widen the sort name for a rewrite rule
@@ -645,6 +654,8 @@ pass4VisitExpr (RewriteApp nam args tpy range) =
 pass4VisitExpr e@(EmptyMap {}) = return e
 pass4VisitExpr (GroundTerm t tpy range) =
   GroundTerm <$> pass4VisitTerm t <*> pure tpy <*> pure range
+pass4VisitExpr (SetUnion s1 s2 tpy range) =
+  SetUnion <$> pass4VisitTerm s1 <*> pass4VisitTerm s2 <*> pure tpy <*> pure range
 
 -- Some terms have to be rewritten based on their types.
 -- For instance, a lookup 'mapping(key)' looks like a functor term but based on its

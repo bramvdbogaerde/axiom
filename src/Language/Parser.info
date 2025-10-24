@@ -17,71 +17,79 @@ Grammar
 	ProgramElements -> ProgramElement ProgramElements   (6)
 	ProgramElement -> Declaration ';'                  (7)
 	ProgramElement -> HaskellBlock                     (8)
-	Declaration -> SyntaxBlock                         (9)
-	Declaration -> RulesBlock                          (10)
-	Declaration -> TransitionDecl                      (11)
-	Declaration -> RewriteRule                         (12)
-	Declaration -> ImportDecl                          (13)
-	SyntaxBlock -> 'syntax' '{' SyntaxDecls '}'        (14)
-	SyntaxDecls ->                                     (15)
-	SyntaxDecls -> SyntaxDecl ';' SyntaxDecls          (16)
-	SyntaxDecl -> TypeRef MaybeProductions             (17)
-	SyntaxDecl -> IdentList 'in' TypeRef MaybeProductions   (18)
-	TypeRef -> IDENT                                   (19)
-	TypeRef -> IDENT '(' TypeRefs ')'                  (20)
-	TypeRef -> HASKEXPR                                (21)
-	TypeRefs ->                                        (22)
-	TypeRefs -> TypeRef                                (23)
-	TypeRefs -> TypeRef ',' TypeRefs                   (24)
-	IdentList -> IDENT                                 (25)
-	IdentList -> IDENT ',' IdentList                   (26)
-	MaybeProductions ->                                (27)
-	MaybeProductions -> '::=' Productions              (28)
-	Productions -> Term                                (29)
-	Productions -> Term '|' Productions                (30)
-	RulesBlock -> 'rules' '{' Rules '}'                (31)
-	Rules ->                                           (32)
-	Rules -> Rule ';' Rules                            (33)
-	Rule -> 'rule' STRING '[' Goals ']' '=>' '[' TermList ']'   (34)
-	Goals ->                                           (35)
-	Goals -> Goal                                      (36)
-	Goals -> Goal ';' Goals                            (37)
-	TermList ->                                        (38)
-	TermList -> Terms                                  (39)
-	Terms -> Term                                      (40)
-	Terms -> Term ';' Terms                            (41)
-	TransitionDecl -> 'transition' IDENT '~>' IDENT    (42)
-	RewriteRule -> IDENT '(' TermArgs ')' '=' Term     (43)
-	ImportDecl -> 'import' STRING                      (44)
-	TermArgs ->                                        (45)
-	TermArgs -> TermArgList                            (46)
-	TermArgList -> Term                                (47)
-	TermArgList -> Term ',' TermArgList                (48)
-	HaskellBlock -> HASKBLOCK                          (49)
-	Term -> BasicTerm                                  (50)
-	Term -> Term '~>' Term                             (51)
-	Term -> BigStepExpr                                (52)
-	Term -> '{' Elements '}'                           (53)
-	BigStepExpr -> '(' Elements ')' '⇓' '(' Elements ')'   (54)
-	Expr -> '[' Bindings ']'                           (55)
-	Expr -> BasicTerm '[' Bindings ']'                 (56)
-	Bindings ->                                        (57)
-	Bindings -> Binding                                (58)
-	Bindings -> Binding ';' Bindings                   (59)
-	Binding -> Term '|->' Term                         (60)
-	Elements ->                                        (61)
-	Elements -> Term                                   (62)
-	Elements -> Term ',' Elements                      (63)
-	BasicTerm -> IDENT                                 (64)
-	BasicTerm -> IDENT '(' TermArgs ')'                (65)
-	BasicTerm -> HASKEXPR                              (66)
-	BasicTerm -> INTLIT                                (67)
-	BasicTerm -> BOOL                                  (68)
-	BasicTerm -> Expr                                  (69)
-	Goal -> Term                                       (70)
-	Goal -> IDENT 'in' Term                            (71)
-	Goal -> Term '=' Term                              (72)
-	Goal -> Term '/=' Term                             (73)
+	ProgramElement -> HaskellPost                      (9)
+	Declaration -> SyntaxBlock                         (10)
+	Declaration -> RulesBlock                          (11)
+	Declaration -> TransitionDecl                      (12)
+	Declaration -> RewriteRule                         (13)
+	Declaration -> ImportDecl                          (14)
+	SyntaxBlock -> 'syntax' '{' SyntaxDecls '}'        (15)
+	SyntaxBlock -> 'syntax' IDENT '{' SyntaxDecls '}'   (16)
+	SyntaxDecls ->                                     (17)
+	SyntaxDecls -> SyntaxDecl ';' SyntaxDecls          (18)
+	SyntaxDecl -> 'alias' TypeRef 'as' IDENT           (19)
+	SyntaxDecl -> TypeRef MaybeProductions             (20)
+	SyntaxDecl -> IdentList 'in' TypeRef MaybeProductions   (21)
+	TypeRef -> IDENT                                   (22)
+	TypeRef -> IDENT '(' TypeRefs ')'                  (23)
+	TypeRef -> HASKEXPR                                (24)
+	TypeRefs ->                                        (25)
+	TypeRefs -> TypeRef                                (26)
+	TypeRefs -> TypeRef ',' TypeRefs                   (27)
+	IdentList -> IDENT                                 (28)
+	IdentList -> IDENT ',' IdentList                   (29)
+	MaybeProductions ->                                (30)
+	MaybeProductions -> '::=' Productions              (31)
+	Productions -> Term                                (32)
+	Productions -> Term '|' Productions                (33)
+	RulesBlock -> 'rules' '{' Rules '}'                (34)
+	RulesBlock -> 'rules' IDENT '{' Rules '}'          (35)
+	Rules ->                                           (36)
+	Rules -> Rule ';' Rules                            (37)
+	Rule -> 'rule' STRING '[' Goals ']' '=>' '[' TermList ']'   (38)
+	Goals ->                                           (39)
+	Goals -> Goal                                      (40)
+	Goals -> Goal ';' Goals                            (41)
+	TermList ->                                        (42)
+	TermList -> Terms                                  (43)
+	Terms -> Term                                      (44)
+	Terms -> Term ';' Terms                            (45)
+	TransitionDecl -> 'transition' IDENT '~>' IDENT    (46)
+	RewriteRule -> IDENT '(' TermArgs ')' '=' Term     (47)
+	ImportDecl -> 'import' STRING                      (48)
+	TermArgs ->                                        (49)
+	TermArgs -> TermArgList                            (50)
+	TermArgList -> Term                                (51)
+	TermArgList -> Term ',' TermArgList                (52)
+	HaskellBlock -> HASKBLOCK                          (53)
+	HaskellPost -> HASKPOST                            (54)
+	Term -> BasicTerm                                  (55)
+	Term -> Term '~>' Term                             (56)
+	Term -> BigStepExpr                                (57)
+	Term -> '{' Elements '}'                           (58)
+	BigStepExpr -> '(' Elements ')' '⇓' '(' Elements ')'   (59)
+	Expr -> '[' Bindings ']'                           (60)
+	Expr -> BasicTerm '[' Bindings ']'                 (61)
+	Expr -> '(' Expr 'union' Expr ')'                  (62)
+	Bindings ->                                        (63)
+	Bindings -> Binding                                (64)
+	Bindings -> Binding ';' Bindings                   (65)
+	Binding -> Term '|->' Term                         (66)
+	Elements ->                                        (67)
+	Elements -> Term                                   (68)
+	Elements -> Term ',' Elements                      (69)
+	BasicTerm -> IDENT                                 (70)
+	BasicTerm -> IDENT '(' TermArgs ')'                (71)
+	BasicTerm -> HASKEXPR                              (72)
+	BasicTerm -> INTLIT                                (73)
+	BasicTerm -> BOOL                                  (74)
+	BasicTerm -> '_'                                   (75)
+	BasicTerm -> STRING                                (76)
+	BasicTerm -> Expr                                  (77)
+	Goal -> Term                                       (78)
+	Goal -> IDENT 'in' Term                            (79)
+	Goal -> Term '=' Term                              (80)
+	Goal -> Term '/=' Term                             (81)
 
 -----------------------------------------------------------------------------
 Terminals
@@ -99,6 +107,8 @@ Terminals
 	'in'           { TokenWithRange (Ident "in") _ }
 	'transition'   { TokenWithRange (Ident "transition") _ }
 	'import'       { TokenWithRange (Ident "import") _ }
+	'alias'        { TokenWithRange (Ident "alias") _ }
+	'as'           { TokenWithRange (Ident "as") _ }
 	'('            { TokenWithRange Lpar _ }
 	')'            { TokenWithRange Rpar _ }
 	'{'            { TokenWithRange LCBa _ }
@@ -110,11 +120,14 @@ Terminals
 	';'            { TokenWithRange Sem _ }
 	'|'            { TokenWithRange Bar _ }
 	'|->'          { TokenWithRange MapsTo _ }
+	'_'            { TokenWithRange Token.Wildcard _ }
+	'union'        { TokenWithRange Token.Union _ }
 	IDENT          { TokenWithRange (Ident _) _ }
 	STRING         { TokenWithRange (Quo _) _ }
 	INTLIT         { TokenWithRange (IntLit _) _ }
 	HASKEXPR       { TokenWithRange (Token.HaskellExpr _) _ }
 	HASKBLOCK      { TokenWithRange (Token.Hask _) _ }
+	HASKPOST       { TokenWithRange (Token.HaskPost _) _ }
 
 -----------------------------------------------------------------------------
 Non-terminals
@@ -125,36 +138,37 @@ Non-terminals
 	%start_parseGoalTokens rule  3
 	Program         rule  4
 	ProgramElements rules 5, 6
-	ProgramElement  rules 7, 8
-	Declaration     rules 9, 10, 11, 12, 13
-	SyntaxBlock     rule  14
-	SyntaxDecls     rules 15, 16
-	SyntaxDecl      rules 17, 18
-	TypeRef         rules 19, 20, 21
-	TypeRefs        rules 22, 23, 24
-	IdentList       rules 25, 26
-	MaybeProductions rules 27, 28
-	Productions     rules 29, 30
-	RulesBlock      rule  31
-	Rules           rules 32, 33
-	Rule            rule  34
-	Goals           rules 35, 36, 37
-	TermList        rules 38, 39
-	Terms           rules 40, 41
-	TransitionDecl  rule  42
-	RewriteRule     rule  43
-	ImportDecl      rule  44
-	TermArgs        rules 45, 46
-	TermArgList     rules 47, 48
-	HaskellBlock    rule  49
-	Term            rules 50, 51, 52, 53
-	BigStepExpr     rule  54
-	Expr            rules 55, 56
-	Bindings        rules 57, 58, 59
-	Binding         rule  60
-	Elements        rules 61, 62, 63
-	BasicTerm       rules 64, 65, 66, 67, 68, 69
-	Goal            rules 70, 71, 72, 73
+	ProgramElement  rules 7, 8, 9
+	Declaration     rules 10, 11, 12, 13, 14
+	SyntaxBlock     rules 15, 16
+	SyntaxDecls     rules 17, 18
+	SyntaxDecl      rules 19, 20, 21
+	TypeRef         rules 22, 23, 24
+	TypeRefs        rules 25, 26, 27
+	IdentList       rules 28, 29
+	MaybeProductions rules 30, 31
+	Productions     rules 32, 33
+	RulesBlock      rules 34, 35
+	Rules           rules 36, 37
+	Rule            rule  38
+	Goals           rules 39, 40, 41
+	TermList        rules 42, 43
+	Terms           rules 44, 45
+	TransitionDecl  rule  46
+	RewriteRule     rule  47
+	ImportDecl      rule  48
+	TermArgs        rules 49, 50
+	TermArgList     rules 51, 52
+	HaskellBlock    rule  53
+	HaskellPost     rule  54
+	Term            rules 55, 56, 57, 58
+	BigStepExpr     rule  59
+	Expr            rules 60, 61, 62
+	Bindings        rules 63, 64, 65
+	Binding         rule  66
+	Elements        rules 67, 68, 69
+	BasicTerm       rules 70, 71, 72, 73, 74, 75, 76, 77
+	Goal            rules 78, 79, 80, 81
 
 -----------------------------------------------------------------------------
 States
@@ -163,15 +177,16 @@ State 0
 
 	%start_parseProgramTokens -> . Program              (rule 0)
 
-	'rules'        shift, and enter state 14
-	'syntax'       shift, and enter state 15
-	'transition'   shift, and enter state 16
-	'import'       shift, and enter state 17
-	IDENT          shift, and enter state 18
-	HASKBLOCK      shift, and enter state 19
+	'rules'        shift, and enter state 15
+	'syntax'       shift, and enter state 16
+	'transition'   shift, and enter state 17
+	'import'       shift, and enter state 18
+	IDENT          shift, and enter state 19
+	HASKBLOCK      shift, and enter state 20
+	HASKPOST       shift, and enter state 21
 	%eof           reduce using rule 5
 
-	Program        goto state 36
+	Program        goto state 40
 	ProgramElementsgoto state 5
 	ProgramElement goto state 6
 	Declaration    goto state 7
@@ -181,60 +196,66 @@ State 0
 	RewriteRule    goto state 11
 	ImportDecl     goto state 12
 	HaskellBlock   goto state 13
+	HaskellPost    goto state 14
 
 State 1
 
 	%start_parseTermTokens -> . Term                    (rule 1)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
-	Term           goto state 34
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
+	Term           goto state 38
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
 
 State 2
 
 	%start_parseRuleTokens -> . Rule                    (rule 2)
 
-	'rule'         shift, and enter state 33
+	'rule'         shift, and enter state 37
 
-	Rule           goto state 32
+	Rule           goto state 36
 
 State 3
 
 	%start_parseGoalTokens -> . Goal                    (rule 3)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 29
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 32
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
-	Term           goto state 20
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
-	Goal           goto state 24
+	Term           goto state 22
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
+	Goal           goto state 26
 
 State 4
 
 	Program -> . ProgramElements                        (rule 4)
 
-	'rules'        shift, and enter state 14
-	'syntax'       shift, and enter state 15
-	'transition'   shift, and enter state 16
-	'import'       shift, and enter state 17
-	IDENT          shift, and enter state 18
-	HASKBLOCK      shift, and enter state 19
+	'rules'        shift, and enter state 15
+	'syntax'       shift, and enter state 16
+	'transition'   shift, and enter state 17
+	'import'       shift, and enter state 18
+	IDENT          shift, and enter state 19
+	HASKBLOCK      shift, and enter state 20
+	HASKPOST       shift, and enter state 21
 
 	ProgramElementsgoto state 5
 	ProgramElement goto state 6
@@ -245,6 +266,7 @@ State 4
 	RewriteRule    goto state 11
 	ImportDecl     goto state 12
 	HaskellBlock   goto state 13
+	HaskellPost    goto state 14
 
 State 5
 
@@ -257,15 +279,16 @@ State 6
 
 	ProgramElements -> ProgramElement . ProgramElements    (rule 6)
 
-	'rules'        shift, and enter state 14
-	'syntax'       shift, and enter state 15
-	'transition'   shift, and enter state 16
-	'import'       shift, and enter state 17
-	IDENT          shift, and enter state 18
-	HASKBLOCK      shift, and enter state 19
+	'rules'        shift, and enter state 15
+	'syntax'       shift, and enter state 16
+	'transition'   shift, and enter state 17
+	'import'       shift, and enter state 18
+	IDENT          shift, and enter state 19
+	HASKBLOCK      shift, and enter state 20
+	HASKPOST       shift, and enter state 21
 	%eof           reduce using rule 5
 
-	ProgramElementsgoto state 56
+	ProgramElementsgoto state 63
 	ProgramElement goto state 6
 	Declaration    goto state 7
 	SyntaxBlock    goto state 8
@@ -274,47 +297,48 @@ State 6
 	RewriteRule    goto state 11
 	ImportDecl     goto state 12
 	HaskellBlock   goto state 13
+	HaskellPost    goto state 14
 
 State 7
 
 	ProgramElement -> Declaration . ';'                 (rule 7)
 
-	';'            shift, and enter state 55
+	';'            shift, and enter state 62
 
 
 State 8
 
-	Declaration -> SyntaxBlock .                        (rule 9)
-
-	';'            reduce using rule 9
-
-
-State 9
-
-	Declaration -> RulesBlock .                         (rule 10)
+	Declaration -> SyntaxBlock .                        (rule 10)
 
 	';'            reduce using rule 10
 
 
-State 10
+State 9
 
-	Declaration -> TransitionDecl .                     (rule 11)
+	Declaration -> RulesBlock .                         (rule 11)
 
 	';'            reduce using rule 11
 
 
-State 11
+State 10
 
-	Declaration -> RewriteRule .                        (rule 12)
+	Declaration -> TransitionDecl .                     (rule 12)
 
 	';'            reduce using rule 12
 
 
-State 12
+State 11
 
-	Declaration -> ImportDecl .                         (rule 13)
+	Declaration -> RewriteRule .                        (rule 13)
 
 	';'            reduce using rule 13
+
+
+State 12
+
+	Declaration -> ImportDecl .                         (rule 14)
+
+	';'            reduce using rule 14
 
 
 State 13
@@ -327,536 +351,654 @@ State 13
 	'import'       reduce using rule 8
 	IDENT          reduce using rule 8
 	HASKBLOCK      reduce using rule 8
+	HASKPOST       reduce using rule 8
 	%eof           reduce using rule 8
 
 
 State 14
 
-	RulesBlock -> 'rules' . '{' Rules '}'               (rule 31)
+	ProgramElement -> HaskellPost .                     (rule 9)
 
-	'{'            shift, and enter state 54
+	'rules'        reduce using rule 9
+	'syntax'       reduce using rule 9
+	'transition'   reduce using rule 9
+	'import'       reduce using rule 9
+	IDENT          reduce using rule 9
+	HASKBLOCK      reduce using rule 9
+	HASKPOST       reduce using rule 9
+	%eof           reduce using rule 9
 
 
 State 15
 
-	SyntaxBlock -> 'syntax' . '{' SyntaxDecls '}'       (rule 14)
+	RulesBlock -> 'rules' . '{' Rules '}'               (rule 34)
+	RulesBlock -> 'rules' . IDENT '{' Rules '}'         (rule 35)
 
-	'{'            shift, and enter state 53
+	'{'            shift, and enter state 60
+	IDENT          shift, and enter state 61
 
 
 State 16
 
-	TransitionDecl -> 'transition' . IDENT '~>' IDENT    (rule 42)
+	SyntaxBlock -> 'syntax' . '{' SyntaxDecls '}'       (rule 15)
+	SyntaxBlock -> 'syntax' . IDENT '{' SyntaxDecls '}'    (rule 16)
 
-	IDENT          shift, and enter state 52
+	'{'            shift, and enter state 58
+	IDENT          shift, and enter state 59
 
 
 State 17
 
-	ImportDecl -> 'import' . STRING                     (rule 44)
+	TransitionDecl -> 'transition' . IDENT '~>' IDENT    (rule 46)
 
-	STRING         shift, and enter state 51
+	IDENT          shift, and enter state 57
 
 
 State 18
 
-	RewriteRule -> IDENT . '(' TermArgs ')' '=' Term    (rule 43)
+	ImportDecl -> 'import' . STRING                     (rule 48)
 
-	'('            shift, and enter state 50
+	STRING         shift, and enter state 56
 
 
 State 19
 
-	HaskellBlock -> HASKBLOCK .                         (rule 49)
+	RewriteRule -> IDENT . '(' TermArgs ')' '=' Term    (rule 47)
 
-	'rules'        reduce using rule 49
-	'syntax'       reduce using rule 49
-	'transition'   reduce using rule 49
-	'import'       reduce using rule 49
-	IDENT          reduce using rule 49
-	HASKBLOCK      reduce using rule 49
-	%eof           reduce using rule 49
+	'('            shift, and enter state 55
 
 
 State 20
 
-	Term -> Term . '~>' Term                            (rule 51)
-	Goal -> Term .                                      (rule 70)
-	Goal -> Term . '=' Term                             (rule 72)
-	Goal -> Term . '/=' Term                            (rule 73)
+	HaskellBlock -> HASKBLOCK .                         (rule 53)
 
-	'~>'           shift, and enter state 38
-	'='            shift, and enter state 48
-	'/='           shift, and enter state 49
-	']'            reduce using rule 70
-	';'            reduce using rule 70
-	%eof           reduce using rule 70
+	'rules'        reduce using rule 53
+	'syntax'       reduce using rule 53
+	'transition'   reduce using rule 53
+	'import'       reduce using rule 53
+	IDENT          reduce using rule 53
+	HASKBLOCK      reduce using rule 53
+	HASKPOST       reduce using rule 53
+	%eof           reduce using rule 53
 
 
 State 21
 
-	Term -> BigStepExpr .                               (rule 52)
+	HaskellPost -> HASKPOST .                           (rule 54)
 
-	'~>'           reduce using rule 52
-	'='            reduce using rule 52
-	'/='           reduce using rule 52
-	')'            reduce using rule 52
-	'}'            reduce using rule 52
-	']'            reduce using rule 52
-	','            reduce using rule 52
-	';'            reduce using rule 52
-	'|'            reduce using rule 52
-	'|->'          reduce using rule 52
-	%eof           reduce using rule 52
+	'rules'        reduce using rule 54
+	'syntax'       reduce using rule 54
+	'transition'   reduce using rule 54
+	'import'       reduce using rule 54
+	IDENT          reduce using rule 54
+	HASKBLOCK      reduce using rule 54
+	HASKPOST       reduce using rule 54
+	%eof           reduce using rule 54
 
 
 State 22
 
-	BasicTerm -> Expr .                                 (rule 69)
+	Term -> Term . '~>' Term                            (rule 56)
+	Goal -> Term .                                      (rule 78)
+	Goal -> Term . '=' Term                             (rule 80)
+	Goal -> Term . '/=' Term                            (rule 81)
 
-	'~>'           reduce using rule 69
-	'='            reduce using rule 69
-	'/='           reduce using rule 69
-	')'            reduce using rule 69
-	'}'            reduce using rule 69
-	'['            reduce using rule 69
-	']'            reduce using rule 69
-	','            reduce using rule 69
-	';'            reduce using rule 69
-	'|'            reduce using rule 69
-	'|->'          reduce using rule 69
-	%eof           reduce using rule 69
+	'~>'           shift, and enter state 42
+	'='            shift, and enter state 53
+	'/='           shift, and enter state 54
+	']'            reduce using rule 78
+	';'            reduce using rule 78
+	%eof           reduce using rule 78
 
 
 State 23
 
-	Term -> BasicTerm .                                 (rule 50)
-	Expr -> BasicTerm . '[' Bindings ']'                (rule 56)
+	Term -> BigStepExpr .                               (rule 57)
 
-	'~>'           reduce using rule 50
-	'='            reduce using rule 50
-	'/='           reduce using rule 50
-	')'            reduce using rule 50
-	'}'            reduce using rule 50
-	'['            shift, and enter state 47
-	']'            reduce using rule 50
-	','            reduce using rule 50
-	';'            reduce using rule 50
-	'|'            reduce using rule 50
-	'|->'          reduce using rule 50
-	%eof           reduce using rule 50
+	'~>'           reduce using rule 57
+	'='            reduce using rule 57
+	'/='           reduce using rule 57
+	')'            reduce using rule 57
+	'}'            reduce using rule 57
+	']'            reduce using rule 57
+	','            reduce using rule 57
+	';'            reduce using rule 57
+	'|'            reduce using rule 57
+	'|->'          reduce using rule 57
+	%eof           reduce using rule 57
 
 
 State 24
+
+	BasicTerm -> Expr .                                 (rule 77)
+
+	'~>'           reduce using rule 77
+	'='            reduce using rule 77
+	'/='           reduce using rule 77
+	')'            reduce using rule 77
+	'}'            reduce using rule 77
+	'['            reduce using rule 77
+	']'            reduce using rule 77
+	','            reduce using rule 77
+	';'            reduce using rule 77
+	'|'            reduce using rule 77
+	'|->'          reduce using rule 77
+	%eof           reduce using rule 77
+
+
+State 25
+
+	Term -> BasicTerm .                                 (rule 55)
+	Expr -> BasicTerm . '[' Bindings ']'                (rule 61)
+
+	'~>'           reduce using rule 55
+	'='            reduce using rule 55
+	'/='           reduce using rule 55
+	')'            reduce using rule 55
+	'}'            reduce using rule 55
+	'['            shift, and enter state 52
+	']'            reduce using rule 55
+	','            reduce using rule 55
+	';'            reduce using rule 55
+	'|'            reduce using rule 55
+	'|->'          reduce using rule 55
+	%eof           reduce using rule 55
+
+
+State 26
 
 	%start_parseGoalTokens -> Goal .                    (rule 3)
 
 	%eof           accept
 
 
-State 25
-
-	BasicTerm -> BOOL .                                 (rule 68)
-
-	'~>'           reduce using rule 68
-	'='            reduce using rule 68
-	'/='           reduce using rule 68
-	')'            reduce using rule 68
-	'}'            reduce using rule 68
-	'['            reduce using rule 68
-	']'            reduce using rule 68
-	','            reduce using rule 68
-	';'            reduce using rule 68
-	'|'            reduce using rule 68
-	'|->'          reduce using rule 68
-	%eof           reduce using rule 68
-
-
-State 26
-
-	BigStepExpr -> '(' . Elements ')' '⇓' '(' Elements ')'    (rule 54)
-
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	')'            reduce using rule 61
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
-
-	Term           goto state 44
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	Elements       goto state 46
-	BasicTerm      goto state 23
-
 State 27
 
-	Term -> '{' . Elements '}'                          (rule 53)
+	BasicTerm -> BOOL .                                 (rule 74)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'}'            reduce using rule 61
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	'~>'           reduce using rule 74
+	'='            reduce using rule 74
+	'/='           reduce using rule 74
+	')'            reduce using rule 74
+	'}'            reduce using rule 74
+	'['            reduce using rule 74
+	']'            reduce using rule 74
+	','            reduce using rule 74
+	';'            reduce using rule 74
+	'|'            reduce using rule 74
+	'|->'          reduce using rule 74
+	%eof           reduce using rule 74
 
-	Term           goto state 44
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	Elements       goto state 45
-	BasicTerm      goto state 23
 
 State 28
 
-	Expr -> '[' . Bindings ']'                          (rule 55)
+	BigStepExpr -> '(' . Elements ')' '⇓' '(' Elements ')'    (rule 59)
+	Expr -> '(' . Expr 'union' Expr ')'                 (rule 62)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	']'            reduce using rule 57
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	')'            reduce using rule 67
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
-	Term           goto state 41
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	Bindings       goto state 42
-	Binding        goto state 43
-	BasicTerm      goto state 23
+	Term           goto state 48
+	BigStepExpr    goto state 23
+	Expr           goto state 50
+	Elements       goto state 51
+	BasicTerm      goto state 25
 
 State 29
 
-	BasicTerm -> IDENT .                                (rule 64)
-	BasicTerm -> IDENT . '(' TermArgs ')'               (rule 65)
-	Goal -> IDENT . 'in' Term                           (rule 71)
+	Term -> '{' . Elements '}'                          (rule 58)
 
-	'~>'           reduce using rule 64
-	'='            reduce using rule 64
-	'/='           reduce using rule 64
-	'in'           shift, and enter state 40
-	'('            shift, and enter state 37
-	'['            reduce using rule 64
-	']'            reduce using rule 64
-	';'            reduce using rule 64
-	%eof           reduce using rule 64
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'}'            reduce using rule 67
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	Term           goto state 48
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	Elements       goto state 49
+	BasicTerm      goto state 25
 
 State 30
 
-	BasicTerm -> INTLIT .                               (rule 67)
+	Expr -> '[' . Bindings ']'                          (rule 60)
 
-	'~>'           reduce using rule 67
-	'='            reduce using rule 67
-	'/='           reduce using rule 67
-	')'            reduce using rule 67
-	'}'            reduce using rule 67
-	'['            reduce using rule 67
-	']'            reduce using rule 67
-	','            reduce using rule 67
-	';'            reduce using rule 67
-	'|'            reduce using rule 67
-	'|->'          reduce using rule 67
-	%eof           reduce using rule 67
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	']'            reduce using rule 63
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	Term           goto state 45
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	Bindings       goto state 46
+	Binding        goto state 47
+	BasicTerm      goto state 25
 
 State 31
 
-	BasicTerm -> HASKEXPR .                             (rule 66)
+	BasicTerm -> '_' .                                  (rule 75)
 
-	'~>'           reduce using rule 66
-	'='            reduce using rule 66
-	'/='           reduce using rule 66
-	')'            reduce using rule 66
-	'}'            reduce using rule 66
-	'['            reduce using rule 66
-	']'            reduce using rule 66
-	','            reduce using rule 66
-	';'            reduce using rule 66
-	'|'            reduce using rule 66
-	'|->'          reduce using rule 66
-	%eof           reduce using rule 66
+	'~>'           reduce using rule 75
+	'='            reduce using rule 75
+	'/='           reduce using rule 75
+	')'            reduce using rule 75
+	'}'            reduce using rule 75
+	'['            reduce using rule 75
+	']'            reduce using rule 75
+	','            reduce using rule 75
+	';'            reduce using rule 75
+	'|'            reduce using rule 75
+	'|->'          reduce using rule 75
+	%eof           reduce using rule 75
 
 
 State 32
+
+	BasicTerm -> IDENT .                                (rule 70)
+	BasicTerm -> IDENT . '(' TermArgs ')'               (rule 71)
+	Goal -> IDENT . 'in' Term                           (rule 79)
+
+	'~>'           reduce using rule 70
+	'='            reduce using rule 70
+	'/='           reduce using rule 70
+	'in'           shift, and enter state 44
+	'('            shift, and enter state 41
+	'['            reduce using rule 70
+	']'            reduce using rule 70
+	';'            reduce using rule 70
+	%eof           reduce using rule 70
+
+
+State 33
+
+	BasicTerm -> STRING .                               (rule 76)
+
+	'~>'           reduce using rule 76
+	'='            reduce using rule 76
+	'/='           reduce using rule 76
+	')'            reduce using rule 76
+	'}'            reduce using rule 76
+	'['            reduce using rule 76
+	']'            reduce using rule 76
+	','            reduce using rule 76
+	';'            reduce using rule 76
+	'|'            reduce using rule 76
+	'|->'          reduce using rule 76
+	%eof           reduce using rule 76
+
+
+State 34
+
+	BasicTerm -> INTLIT .                               (rule 73)
+
+	'~>'           reduce using rule 73
+	'='            reduce using rule 73
+	'/='           reduce using rule 73
+	')'            reduce using rule 73
+	'}'            reduce using rule 73
+	'['            reduce using rule 73
+	']'            reduce using rule 73
+	','            reduce using rule 73
+	';'            reduce using rule 73
+	'|'            reduce using rule 73
+	'|->'          reduce using rule 73
+	%eof           reduce using rule 73
+
+
+State 35
+
+	BasicTerm -> HASKEXPR .                             (rule 72)
+
+	'~>'           reduce using rule 72
+	'='            reduce using rule 72
+	'/='           reduce using rule 72
+	')'            reduce using rule 72
+	'}'            reduce using rule 72
+	'['            reduce using rule 72
+	']'            reduce using rule 72
+	','            reduce using rule 72
+	';'            reduce using rule 72
+	'|'            reduce using rule 72
+	'|->'          reduce using rule 72
+	%eof           reduce using rule 72
+
+
+State 36
 
 	%start_parseRuleTokens -> Rule .                    (rule 2)
 
 	%eof           accept
 
 
-State 33
+State 37
 
-	Rule -> 'rule' . STRING '[' Goals ']' '=>' '[' TermList ']'    (rule 34)
+	Rule -> 'rule' . STRING '[' Goals ']' '=>' '[' TermList ']'    (rule 38)
 
-	STRING         shift, and enter state 39
+	STRING         shift, and enter state 43
 
 
-State 34
+State 38
 
 	%start_parseTermTokens -> Term .                    (rule 1)
-	Term -> Term . '~>' Term                            (rule 51)
+	Term -> Term . '~>' Term                            (rule 56)
 
-	'~>'           shift, and enter state 38
+	'~>'           shift, and enter state 42
 	%eof           accept
 
 
-State 35
+State 39
 
-	BasicTerm -> IDENT .                                (rule 64)
-	BasicTerm -> IDENT . '(' TermArgs ')'               (rule 65)
+	BasicTerm -> IDENT .                                (rule 70)
+	BasicTerm -> IDENT . '(' TermArgs ')'               (rule 71)
 
-	'~>'           reduce using rule 64
-	'='            reduce using rule 64
-	'/='           reduce using rule 64
-	'('            shift, and enter state 37
-	')'            reduce using rule 64
-	'}'            reduce using rule 64
-	'['            reduce using rule 64
-	']'            reduce using rule 64
-	','            reduce using rule 64
-	';'            reduce using rule 64
-	'|'            reduce using rule 64
-	'|->'          reduce using rule 64
-	%eof           reduce using rule 64
+	'~>'           reduce using rule 70
+	'='            reduce using rule 70
+	'/='           reduce using rule 70
+	'('            shift, and enter state 41
+	')'            reduce using rule 70
+	'}'            reduce using rule 70
+	'['            reduce using rule 70
+	']'            reduce using rule 70
+	','            reduce using rule 70
+	';'            reduce using rule 70
+	'|'            reduce using rule 70
+	'|->'          reduce using rule 70
+	%eof           reduce using rule 70
 
 
-State 36
+State 40
 
 	%start_parseProgramTokens -> Program .              (rule 0)
 
 	%eof           accept
 
 
-State 37
-
-	BasicTerm -> IDENT '(' . TermArgs ')'               (rule 65)
-
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	')'            reduce using rule 45
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
-
-	TermArgs       goto state 81
-	TermArgList    goto state 67
-	Term           goto state 68
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
-
-State 38
-
-	Term -> Term '~>' . Term                            (rule 51)
-
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
-
-	Term           goto state 80
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
-
-State 39
-
-	Rule -> 'rule' STRING . '[' Goals ']' '=>' '[' TermList ']'    (rule 34)
-
-	'['            shift, and enter state 79
-
-
-State 40
-
-	Goal -> IDENT 'in' . Term                           (rule 71)
-
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
-
-	Term           goto state 78
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
-
 State 41
 
-	Term -> Term . '~>' Term                            (rule 51)
-	Binding -> Term . '|->' Term                        (rule 60)
+	BasicTerm -> IDENT '(' . TermArgs ')'               (rule 71)
 
-	'~>'           shift, and enter state 38
-	'|->'          shift, and enter state 77
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	')'            reduce using rule 49
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	TermArgs       goto state 92
+	TermArgList    goto state 77
+	Term           goto state 78
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
 
 State 42
 
-	Expr -> '[' Bindings . ']'                          (rule 55)
+	Term -> Term '~>' . Term                            (rule 56)
 
-	']'            shift, and enter state 76
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	Term           goto state 91
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
 
 State 43
 
-	Bindings -> Binding .                               (rule 58)
-	Bindings -> Binding . ';' Bindings                  (rule 59)
+	Rule -> 'rule' STRING . '[' Goals ']' '=>' '[' TermList ']'    (rule 38)
 
-	']'            reduce using rule 58
-	';'            shift, and enter state 75
+	'['            shift, and enter state 90
 
 
 State 44
 
-	Term -> Term . '~>' Term                            (rule 51)
-	Elements -> Term .                                  (rule 62)
-	Elements -> Term . ',' Elements                     (rule 63)
+	Goal -> IDENT 'in' . Term                           (rule 79)
 
-	'~>'           shift, and enter state 38
-	')'            reduce using rule 62
-	'}'            reduce using rule 62
-	','            shift, and enter state 74
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	Term           goto state 89
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
 
 State 45
 
-	Term -> '{' Elements . '}'                          (rule 53)
+	Term -> Term . '~>' Term                            (rule 56)
+	Binding -> Term . '|->' Term                        (rule 66)
 
-	'}'            shift, and enter state 73
+	'~>'           shift, and enter state 42
+	'|->'          shift, and enter state 88
 
 
 State 46
 
-	BigStepExpr -> '(' Elements . ')' '⇓' '(' Elements ')'    (rule 54)
+	Expr -> '[' Bindings . ']'                          (rule 60)
 
-	')'            shift, and enter state 72
+	']'            shift, and enter state 87
 
 
 State 47
 
-	Expr -> BasicTerm '[' . Bindings ']'                (rule 56)
+	Bindings -> Binding .                               (rule 64)
+	Bindings -> Binding . ';' Bindings                  (rule 65)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	']'            reduce using rule 57
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	']'            reduce using rule 64
+	';'            shift, and enter state 86
 
-	Term           goto state 41
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	Bindings       goto state 71
-	Binding        goto state 43
-	BasicTerm      goto state 23
 
 State 48
 
-	Goal -> Term '=' . Term                             (rule 72)
+	Term -> Term . '~>' Term                            (rule 56)
+	Elements -> Term .                                  (rule 68)
+	Elements -> Term . ',' Elements                     (rule 69)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	'~>'           shift, and enter state 42
+	')'            reduce using rule 68
+	'}'            reduce using rule 68
+	','            shift, and enter state 85
 
-	Term           goto state 70
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
 
 State 49
 
-	Goal -> Term '/=' . Term                            (rule 73)
+	Term -> '{' Elements . '}'                          (rule 58)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	'}'            shift, and enter state 84
 
-	Term           goto state 69
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
 
 State 50
 
-	RewriteRule -> IDENT '(' . TermArgs ')' '=' Term    (rule 43)
+	Expr -> '(' Expr . 'union' Expr ')'                 (rule 62)
+	BasicTerm -> Expr .                                 (rule 77)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	')'            reduce using rule 45
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	'~>'           reduce using rule 77
+	')'            reduce using rule 77
+	'['            reduce using rule 77
+	','            reduce using rule 77
+	'union'        shift, and enter state 83
 
-	TermArgs       goto state 66
-	TermArgList    goto state 67
-	Term           goto state 68
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
 
 State 51
 
-	ImportDecl -> 'import' STRING .                     (rule 44)
+	BigStepExpr -> '(' Elements . ')' '⇓' '(' Elements ')'    (rule 59)
 
-	';'            reduce using rule 44
+	')'            shift, and enter state 82
 
 
 State 52
 
-	TransitionDecl -> 'transition' IDENT . '~>' IDENT    (rule 42)
+	Expr -> BasicTerm '[' . Bindings ']'                (rule 61)
 
-	'~>'           shift, and enter state 65
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	']'            reduce using rule 63
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	Term           goto state 45
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	Bindings       goto state 81
+	Binding        goto state 47
+	BasicTerm      goto state 25
 
 State 53
 
-	SyntaxBlock -> 'syntax' '{' . SyntaxDecls '}'       (rule 14)
+	Goal -> Term '=' . Term                             (rule 80)
 
-	'}'            reduce using rule 15
-	IDENT          shift, and enter state 63
-	HASKEXPR       shift, and enter state 64
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
-	SyntaxDecls    goto state 59
-	SyntaxDecl     goto state 60
-	TypeRef        goto state 61
-	IdentList      goto state 62
+	Term           goto state 80
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
 
 State 54
 
-	RulesBlock -> 'rules' '{' . Rules '}'               (rule 31)
+	Goal -> Term '/=' . Term                            (rule 81)
 
-	'rule'         shift, and enter state 33
-	'}'            reduce using rule 32
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
-	Rules          goto state 57
-	Rule           goto state 58
+	Term           goto state 79
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
 
 State 55
+
+	RewriteRule -> IDENT '(' . TermArgs ')' '=' Term    (rule 47)
+
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	')'            reduce using rule 49
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
+
+	TermArgs       goto state 76
+	TermArgList    goto state 77
+	Term           goto state 78
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
+
+State 56
+
+	ImportDecl -> 'import' STRING .                     (rule 48)
+
+	';'            reduce using rule 48
+
+
+State 57
+
+	TransitionDecl -> 'transition' IDENT . '~>' IDENT    (rule 46)
+
+	'~>'           shift, and enter state 75
+
+
+State 58
+
+	SyntaxBlock -> 'syntax' '{' . SyntaxDecls '}'       (rule 15)
+
+	'alias'        shift, and enter state 72
+	'}'            reduce using rule 17
+	IDENT          shift, and enter state 73
+	HASKEXPR       shift, and enter state 74
+
+	SyntaxDecls    goto state 68
+	SyntaxDecl     goto state 69
+	TypeRef        goto state 70
+	IdentList      goto state 71
+
+State 59
+
+	SyntaxBlock -> 'syntax' IDENT . '{' SyntaxDecls '}'    (rule 16)
+
+	'{'            shift, and enter state 67
+
+
+State 60
+
+	RulesBlock -> 'rules' '{' . Rules '}'               (rule 34)
+
+	'rule'         shift, and enter state 37
+	'}'            reduce using rule 36
+
+	Rules          goto state 65
+	Rule           goto state 66
+
+State 61
+
+	RulesBlock -> 'rules' IDENT . '{' Rules '}'         (rule 35)
+
+	'{'            shift, and enter state 64
+
+
+State 62
 
 	ProgramElement -> Declaration ';' .                 (rule 7)
 
@@ -866,376 +1008,345 @@ State 55
 	'import'       reduce using rule 7
 	IDENT          reduce using rule 7
 	HASKBLOCK      reduce using rule 7
+	HASKPOST       reduce using rule 7
 	%eof           reduce using rule 7
 
 
-State 56
+State 63
 
 	ProgramElements -> ProgramElement ProgramElements .    (rule 6)
 
 	%eof           reduce using rule 6
 
 
-State 57
-
-	RulesBlock -> 'rules' '{' Rules . '}'               (rule 31)
-
-	'}'            shift, and enter state 101
-
-
-State 58
-
-	Rules -> Rule . ';' Rules                           (rule 33)
-
-	';'            shift, and enter state 100
-
-
-State 59
-
-	SyntaxBlock -> 'syntax' '{' SyntaxDecls . '}'       (rule 14)
-
-	'}'            shift, and enter state 99
-
-
-State 60
-
-	SyntaxDecls -> SyntaxDecl . ';' SyntaxDecls         (rule 16)
-
-	';'            shift, and enter state 98
-
-
-State 61
-
-	SyntaxDecl -> TypeRef . MaybeProductions            (rule 17)
-
-	'::='          shift, and enter state 97
-	';'            reduce using rule 27
-
-	MaybeProductionsgoto state 96
-
-State 62
-
-	SyntaxDecl -> IdentList . 'in' TypeRef MaybeProductions    (rule 18)
-
-	'in'           shift, and enter state 95
-
-
-State 63
-
-	TypeRef -> IDENT .                                  (rule 19)
-	TypeRef -> IDENT . '(' TypeRefs ')'                 (rule 20)
-	IdentList -> IDENT .                                (rule 25)
-	IdentList -> IDENT . ',' IdentList                  (rule 26)
-
-	'::='          reduce using rule 19
-	'in'           reduce using rule 25
-	'('            shift, and enter state 93
-	','            shift, and enter state 94
-	';'            reduce using rule 19
-
-
 State 64
 
-	TypeRef -> HASKEXPR .                               (rule 21)
+	RulesBlock -> 'rules' IDENT '{' . Rules '}'         (rule 35)
 
-	'::='          reduce using rule 21
-	')'            reduce using rule 21
-	','            reduce using rule 21
-	';'            reduce using rule 21
+	'rule'         shift, and enter state 37
+	'}'            reduce using rule 36
 
+	Rules          goto state 119
+	Rule           goto state 66
 
 State 65
 
-	TransitionDecl -> 'transition' IDENT '~>' . IDENT    (rule 42)
+	RulesBlock -> 'rules' '{' Rules . '}'               (rule 34)
 
-	IDENT          shift, and enter state 92
+	'}'            shift, and enter state 118
 
 
 State 66
 
-	RewriteRule -> IDENT '(' TermArgs . ')' '=' Term    (rule 43)
+	Rules -> Rule . ';' Rules                           (rule 37)
 
-	')'            shift, and enter state 91
+	';'            shift, and enter state 117
 
 
 State 67
 
-	TermArgs -> TermArgList .                           (rule 46)
+	SyntaxBlock -> 'syntax' IDENT '{' . SyntaxDecls '}'    (rule 16)
 
-	')'            reduce using rule 46
+	'alias'        shift, and enter state 72
+	'}'            reduce using rule 17
+	IDENT          shift, and enter state 73
+	HASKEXPR       shift, and enter state 74
 
+	SyntaxDecls    goto state 116
+	SyntaxDecl     goto state 69
+	TypeRef        goto state 70
+	IdentList      goto state 71
 
 State 68
 
-	TermArgList -> Term .                               (rule 47)
-	TermArgList -> Term . ',' TermArgList               (rule 48)
-	Term -> Term . '~>' Term                            (rule 51)
+	SyntaxBlock -> 'syntax' '{' SyntaxDecls . '}'       (rule 15)
 
-	'~>'           shift, and enter state 38
-	')'            reduce using rule 47
-	','            shift, and enter state 90
+	'}'            shift, and enter state 115
 
 
 State 69
 
-	Term -> Term . '~>' Term                            (rule 51)
-	Goal -> Term '/=' Term .                            (rule 73)
+	SyntaxDecls -> SyntaxDecl . ';' SyntaxDecls         (rule 18)
 
-	'~>'           shift, and enter state 38
-	']'            reduce using rule 73
-	';'            reduce using rule 73
-	%eof           reduce using rule 73
+	';'            shift, and enter state 114
 
 
 State 70
 
-	Term -> Term . '~>' Term                            (rule 51)
-	Goal -> Term '=' Term .                             (rule 72)
+	SyntaxDecl -> TypeRef . MaybeProductions            (rule 20)
 
-	'~>'           shift, and enter state 38
-	']'            reduce using rule 72
-	';'            reduce using rule 72
-	%eof           reduce using rule 72
+	'::='          shift, and enter state 113
+	';'            reduce using rule 30
 
+	MaybeProductionsgoto state 112
 
 State 71
 
-	Expr -> BasicTerm '[' Bindings . ']'                (rule 56)
+	SyntaxDecl -> IdentList . 'in' TypeRef MaybeProductions    (rule 21)
 
-	']'            shift, and enter state 89
+	'in'           shift, and enter state 111
 
 
 State 72
 
-	BigStepExpr -> '(' Elements ')' . '⇓' '(' Elements ')'    (rule 54)
+	SyntaxDecl -> 'alias' . TypeRef 'as' IDENT          (rule 19)
 
-	'⇓'            shift, and enter state 88
+	IDENT          shift, and enter state 110
+	HASKEXPR       shift, and enter state 74
 
+	TypeRef        goto state 109
 
 State 73
 
-	Term -> '{' Elements '}' .                          (rule 53)
+	TypeRef -> IDENT .                                  (rule 22)
+	TypeRef -> IDENT . '(' TypeRefs ')'                 (rule 23)
+	IdentList -> IDENT .                                (rule 28)
+	IdentList -> IDENT . ',' IdentList                  (rule 29)
 
-	'~>'           reduce using rule 53
-	'='            reduce using rule 53
-	'/='           reduce using rule 53
-	')'            reduce using rule 53
-	'}'            reduce using rule 53
-	']'            reduce using rule 53
-	','            reduce using rule 53
-	';'            reduce using rule 53
-	'|'            reduce using rule 53
-	'|->'          reduce using rule 53
-	%eof           reduce using rule 53
+	'::='          reduce using rule 22
+	'in'           reduce using rule 28
+	'('            shift, and enter state 107
+	','            shift, and enter state 108
+	';'            reduce using rule 22
 
 
 State 74
 
-	Elements -> Term ',' . Elements                     (rule 63)
+	TypeRef -> HASKEXPR .                               (rule 24)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	')'            reduce using rule 61
-	'{'            shift, and enter state 27
-	'}'            reduce using rule 61
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	'::='          reduce using rule 24
+	'as'           reduce using rule 24
+	')'            reduce using rule 24
+	','            reduce using rule 24
+	';'            reduce using rule 24
 
-	Term           goto state 44
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	Elements       goto state 87
-	BasicTerm      goto state 23
 
 State 75
 
-	Bindings -> Binding ';' . Bindings                  (rule 59)
+	TransitionDecl -> 'transition' IDENT '~>' . IDENT    (rule 46)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	']'            reduce using rule 57
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	IDENT          shift, and enter state 106
 
-	Term           goto state 41
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	Bindings       goto state 86
-	Binding        goto state 43
-	BasicTerm      goto state 23
 
 State 76
 
-	Expr -> '[' Bindings ']' .                          (rule 55)
+	RewriteRule -> IDENT '(' TermArgs . ')' '=' Term    (rule 47)
 
-	'~>'           reduce using rule 55
-	'='            reduce using rule 55
-	'/='           reduce using rule 55
-	')'            reduce using rule 55
-	'}'            reduce using rule 55
-	'['            reduce using rule 55
-	']'            reduce using rule 55
-	','            reduce using rule 55
-	';'            reduce using rule 55
-	'|'            reduce using rule 55
-	'|->'          reduce using rule 55
-	%eof           reduce using rule 55
+	')'            shift, and enter state 105
 
 
 State 77
 
-	Binding -> Term '|->' . Term                        (rule 60)
+	TermArgs -> TermArgList .                           (rule 50)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	')'            reduce using rule 50
 
-	Term           goto state 85
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
 
 State 78
 
-	Term -> Term . '~>' Term                            (rule 51)
-	Goal -> IDENT 'in' Term .                           (rule 71)
+	TermArgList -> Term .                               (rule 51)
+	TermArgList -> Term . ',' TermArgList               (rule 52)
+	Term -> Term . '~>' Term                            (rule 56)
 
-	'~>'           shift, and enter state 38
-	']'            reduce using rule 71
-	';'            reduce using rule 71
-	%eof           reduce using rule 71
+	'~>'           shift, and enter state 42
+	')'            reduce using rule 51
+	','            shift, and enter state 104
 
 
 State 79
 
-	Rule -> 'rule' STRING '[' . Goals ']' '=>' '[' TermList ']'    (rule 34)
+	Term -> Term . '~>' Term                            (rule 56)
+	Goal -> Term '/=' Term .                            (rule 81)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	']'            reduce using rule 35
-	IDENT          shift, and enter state 29
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	'~>'           shift, and enter state 42
+	']'            reduce using rule 81
+	';'            reduce using rule 81
+	%eof           reduce using rule 81
 
-	Goals          goto state 83
-	Term           goto state 20
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
-	Goal           goto state 84
 
 State 80
 
-	Term -> Term . '~>' Term                            (rule 51)
-	Term -> Term '~>' Term .                            (rule 51)
+	Term -> Term . '~>' Term                            (rule 56)
+	Goal -> Term '=' Term .                             (rule 80)
 
-	'~>'           shift, and enter state 38
-	'='            reduce using rule 51
-	'/='           reduce using rule 51
-	')'            reduce using rule 51
-	'}'            reduce using rule 51
-	']'            reduce using rule 51
-	','            reduce using rule 51
-	';'            reduce using rule 51
-	'|'            reduce using rule 51
-	'|->'          reduce using rule 51
-	%eof           reduce using rule 51
+	'~>'           shift, and enter state 42
+	']'            reduce using rule 80
+	';'            reduce using rule 80
+	%eof           reduce using rule 80
 
 
 State 81
 
-	BasicTerm -> IDENT '(' TermArgs . ')'               (rule 65)
+	Expr -> BasicTerm '[' Bindings . ']'                (rule 61)
 
-	')'            shift, and enter state 82
+	']'            shift, and enter state 103
 
 
 State 82
 
-	BasicTerm -> IDENT '(' TermArgs ')' .               (rule 65)
+	BigStepExpr -> '(' Elements ')' . '⇓' '(' Elements ')'    (rule 59)
 
-	'~>'           reduce using rule 65
-	'='            reduce using rule 65
-	'/='           reduce using rule 65
-	')'            reduce using rule 65
-	'}'            reduce using rule 65
-	'['            reduce using rule 65
-	']'            reduce using rule 65
-	','            reduce using rule 65
-	';'            reduce using rule 65
-	'|'            reduce using rule 65
-	'|->'          reduce using rule 65
-	%eof           reduce using rule 65
+	'⇓'            shift, and enter state 102
 
 
 State 83
 
-	Rule -> 'rule' STRING '[' Goals . ']' '=>' '[' TermList ']'    (rule 34)
+	Expr -> '(' Expr 'union' . Expr ')'                 (rule 62)
 
-	']'            shift, and enter state 116
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 101
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	Expr           goto state 99
+	BasicTerm      goto state 100
 
 State 84
 
-	Goals -> Goal .                                     (rule 36)
-	Goals -> Goal . ';' Goals                           (rule 37)
+	Term -> '{' Elements '}' .                          (rule 58)
 
-	']'            reduce using rule 36
-	';'            shift, and enter state 115
+	'~>'           reduce using rule 58
+	'='            reduce using rule 58
+	'/='           reduce using rule 58
+	')'            reduce using rule 58
+	'}'            reduce using rule 58
+	']'            reduce using rule 58
+	','            reduce using rule 58
+	';'            reduce using rule 58
+	'|'            reduce using rule 58
+	'|->'          reduce using rule 58
+	%eof           reduce using rule 58
 
 
 State 85
 
-	Term -> Term . '~>' Term                            (rule 51)
-	Binding -> Term '|->' Term .                        (rule 60)
+	Elements -> Term ',' . Elements                     (rule 69)
 
-	'~>'           shift, and enter state 38
-	']'            reduce using rule 60
-	';'            reduce using rule 60
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	')'            reduce using rule 67
+	'{'            shift, and enter state 29
+	'}'            reduce using rule 67
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	Term           goto state 48
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	Elements       goto state 98
+	BasicTerm      goto state 25
 
 State 86
 
-	Bindings -> Binding ';' Bindings .                  (rule 59)
+	Bindings -> Binding ';' . Bindings                  (rule 65)
 
-	']'            reduce using rule 59
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	']'            reduce using rule 63
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	Term           goto state 45
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	Bindings       goto state 97
+	Binding        goto state 47
+	BasicTerm      goto state 25
 
 State 87
 
-	Elements -> Term ',' Elements .                     (rule 63)
+	Expr -> '[' Bindings ']' .                          (rule 60)
 
-	')'            reduce using rule 63
-	'}'            reduce using rule 63
+	'~>'           reduce using rule 60
+	'='            reduce using rule 60
+	'/='           reduce using rule 60
+	')'            reduce using rule 60
+	'}'            reduce using rule 60
+	'['            reduce using rule 60
+	']'            reduce using rule 60
+	','            reduce using rule 60
+	';'            reduce using rule 60
+	'|'            reduce using rule 60
+	'|->'          reduce using rule 60
+	'union'        reduce using rule 60
+	%eof           reduce using rule 60
 
 
 State 88
 
-	BigStepExpr -> '(' Elements ')' '⇓' . '(' Elements ')'    (rule 54)
+	Binding -> Term '|->' . Term                        (rule 66)
 
-	'('            shift, and enter state 114
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	Term           goto state 96
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
 
 State 89
 
-	Expr -> BasicTerm '[' Bindings ']' .                (rule 56)
+	Term -> Term . '~>' Term                            (rule 56)
+	Goal -> IDENT 'in' Term .                           (rule 79)
 
-	'~>'           reduce using rule 56
+	'~>'           shift, and enter state 42
+	']'            reduce using rule 79
+	';'            reduce using rule 79
+	%eof           reduce using rule 79
+
+
+State 90
+
+	Rule -> 'rule' STRING '[' . Goals ']' '=>' '[' TermList ']'    (rule 38)
+
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	']'            reduce using rule 39
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 32
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
+
+	Goals          goto state 94
+	Term           goto state 22
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
+	Goal           goto state 95
+
+State 91
+
+	Term -> Term . '~>' Term                            (rule 56)
+	Term -> Term '~>' Term .                            (rule 56)
+
+	'~>'           shift, and enter state 42
 	'='            reduce using rule 56
 	'/='           reduce using rule 56
 	')'            reduce using rule 56
 	'}'            reduce using rule 56
-	'['            reduce using rule 56
 	']'            reduce using rule 56
 	','            reduce using rule 56
 	';'            reduce using rule 56
@@ -1244,472 +1355,683 @@ State 89
 	%eof           reduce using rule 56
 
 
-State 90
-
-	TermArgList -> Term ',' . TermArgList               (rule 48)
-
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
-
-	TermArgList    goto state 113
-	Term           goto state 68
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
-
-State 91
-
-	RewriteRule -> IDENT '(' TermArgs ')' . '=' Term    (rule 43)
-
-	'='            shift, and enter state 112
-
-
 State 92
 
-	TransitionDecl -> 'transition' IDENT '~>' IDENT .    (rule 42)
+	BasicTerm -> IDENT '(' TermArgs . ')'               (rule 71)
 
-	';'            reduce using rule 42
+	')'            shift, and enter state 93
 
 
 State 93
 
-	TypeRef -> IDENT '(' . TypeRefs ')'                 (rule 20)
+	BasicTerm -> IDENT '(' TermArgs ')' .               (rule 71)
 
-	')'            reduce using rule 22
-	IDENT          shift, and enter state 107
-	HASKEXPR       shift, and enter state 64
+	'~>'           reduce using rule 71
+	'='            reduce using rule 71
+	'/='           reduce using rule 71
+	')'            reduce using rule 71
+	'}'            reduce using rule 71
+	'['            reduce using rule 71
+	']'            reduce using rule 71
+	','            reduce using rule 71
+	';'            reduce using rule 71
+	'|'            reduce using rule 71
+	'|->'          reduce using rule 71
+	%eof           reduce using rule 71
 
-	TypeRef        goto state 110
-	TypeRefs       goto state 111
 
 State 94
 
-	IdentList -> IDENT ',' . IdentList                  (rule 26)
+	Rule -> 'rule' STRING '[' Goals . ']' '=>' '[' TermList ']'    (rule 38)
 
-	IDENT          shift, and enter state 109
+	']'            shift, and enter state 137
 
-	IdentList      goto state 108
 
 State 95
 
-	SyntaxDecl -> IdentList 'in' . TypeRef MaybeProductions    (rule 18)
+	Goals -> Goal .                                     (rule 40)
+	Goals -> Goal . ';' Goals                           (rule 41)
 
-	IDENT          shift, and enter state 107
-	HASKEXPR       shift, and enter state 64
+	']'            reduce using rule 40
+	';'            shift, and enter state 136
 
-	TypeRef        goto state 106
 
 State 96
 
-	SyntaxDecl -> TypeRef MaybeProductions .            (rule 17)
+	Term -> Term . '~>' Term                            (rule 56)
+	Binding -> Term '|->' Term .                        (rule 66)
 
-	';'            reduce using rule 17
+	'~>'           shift, and enter state 42
+	']'            reduce using rule 66
+	';'            reduce using rule 66
 
 
 State 97
 
-	MaybeProductions -> '::=' . Productions             (rule 28)
+	Bindings -> Binding ';' Bindings .                  (rule 65)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	']'            reduce using rule 65
 
-	Productions    goto state 104
-	Term           goto state 105
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
 
 State 98
 
-	SyntaxDecls -> SyntaxDecl ';' . SyntaxDecls         (rule 16)
+	Elements -> Term ',' Elements .                     (rule 69)
 
-	'}'            reduce using rule 15
-	IDENT          shift, and enter state 63
-	HASKEXPR       shift, and enter state 64
+	')'            reduce using rule 69
+	'}'            reduce using rule 69
 
-	SyntaxDecls    goto state 103
-	SyntaxDecl     goto state 60
-	TypeRef        goto state 61
-	IdentList      goto state 62
 
 State 99
 
-	SyntaxBlock -> 'syntax' '{' SyntaxDecls '}' .       (rule 14)
+	Expr -> '(' Expr 'union' Expr . ')'                 (rule 62)
+	BasicTerm -> Expr .                                 (rule 77)
 
-	';'            reduce using rule 14
+	')'            shift, and enter state 135
+	'['            reduce using rule 77
 
 
 State 100
 
-	Rules -> Rule ';' . Rules                           (rule 33)
+	Expr -> BasicTerm . '[' Bindings ']'                (rule 61)
 
-	'rule'         shift, and enter state 33
-	'}'            reduce using rule 32
+	'['            shift, and enter state 52
 
-	Rules          goto state 102
-	Rule           goto state 58
 
 State 101
 
-	RulesBlock -> 'rules' '{' Rules '}' .               (rule 31)
+	Expr -> '(' . Expr 'union' Expr ')'                 (rule 62)
 
-	';'            reduce using rule 31
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 101
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	Expr           goto state 50
+	BasicTerm      goto state 100
 
 State 102
 
-	Rules -> Rule ';' Rules .                           (rule 33)
+	BigStepExpr -> '(' Elements ')' '⇓' . '(' Elements ')'    (rule 59)
 
-	'}'            reduce using rule 33
+	'('            shift, and enter state 134
 
 
 State 103
 
-	SyntaxDecls -> SyntaxDecl ';' SyntaxDecls .         (rule 16)
+	Expr -> BasicTerm '[' Bindings ']' .                (rule 61)
 
-	'}'            reduce using rule 16
+	'~>'           reduce using rule 61
+	'='            reduce using rule 61
+	'/='           reduce using rule 61
+	')'            reduce using rule 61
+	'}'            reduce using rule 61
+	'['            reduce using rule 61
+	']'            reduce using rule 61
+	','            reduce using rule 61
+	';'            reduce using rule 61
+	'|'            reduce using rule 61
+	'|->'          reduce using rule 61
+	'union'        reduce using rule 61
+	%eof           reduce using rule 61
 
 
 State 104
 
-	MaybeProductions -> '::=' Productions .             (rule 28)
+	TermArgList -> Term ',' . TermArgList               (rule 52)
 
-	';'            reduce using rule 28
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	TermArgList    goto state 133
+	Term           goto state 78
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
 
 State 105
 
-	Productions -> Term .                               (rule 29)
-	Productions -> Term . '|' Productions               (rule 30)
-	Term -> Term . '~>' Term                            (rule 51)
+	RewriteRule -> IDENT '(' TermArgs ')' . '=' Term    (rule 47)
 
-	'~>'           shift, and enter state 38
-	';'            reduce using rule 29
-	'|'            shift, and enter state 124
+	'='            shift, and enter state 132
 
 
 State 106
 
-	SyntaxDecl -> IdentList 'in' TypeRef . MaybeProductions    (rule 18)
+	TransitionDecl -> 'transition' IDENT '~>' IDENT .    (rule 46)
 
-	'::='          shift, and enter state 97
-	';'            reduce using rule 27
+	';'            reduce using rule 46
 
-	MaybeProductionsgoto state 123
 
 State 107
 
-	TypeRef -> IDENT .                                  (rule 19)
-	TypeRef -> IDENT . '(' TypeRefs ')'                 (rule 20)
+	TypeRef -> IDENT '(' . TypeRefs ')'                 (rule 23)
 
-	'::='          reduce using rule 19
-	'('            shift, and enter state 93
-	')'            reduce using rule 19
-	','            reduce using rule 19
-	';'            reduce using rule 19
+	')'            reduce using rule 25
+	IDENT          shift, and enter state 110
+	HASKEXPR       shift, and enter state 74
 
+	TypeRef        goto state 130
+	TypeRefs       goto state 131
 
 State 108
 
-	IdentList -> IDENT ',' IdentList .                  (rule 26)
+	IdentList -> IDENT ',' . IdentList                  (rule 29)
 
-	'in'           reduce using rule 26
+	IDENT          shift, and enter state 129
 
+	IdentList      goto state 128
 
 State 109
 
-	IdentList -> IDENT .                                (rule 25)
-	IdentList -> IDENT . ',' IdentList                  (rule 26)
+	SyntaxDecl -> 'alias' TypeRef . 'as' IDENT          (rule 19)
 
-	'in'           reduce using rule 25
-	','            shift, and enter state 94
+	'as'           shift, and enter state 127
 
 
 State 110
 
-	TypeRefs -> TypeRef .                               (rule 23)
-	TypeRefs -> TypeRef . ',' TypeRefs                  (rule 24)
+	TypeRef -> IDENT .                                  (rule 22)
+	TypeRef -> IDENT . '(' TypeRefs ')'                 (rule 23)
 
-	')'            reduce using rule 23
-	','            shift, and enter state 122
+	'::='          reduce using rule 22
+	'as'           reduce using rule 22
+	'('            shift, and enter state 107
+	')'            reduce using rule 22
+	','            reduce using rule 22
+	';'            reduce using rule 22
 
 
 State 111
 
-	TypeRef -> IDENT '(' TypeRefs . ')'                 (rule 20)
+	SyntaxDecl -> IdentList 'in' . TypeRef MaybeProductions    (rule 21)
 
-	')'            shift, and enter state 121
+	IDENT          shift, and enter state 110
+	HASKEXPR       shift, and enter state 74
 
+	TypeRef        goto state 126
 
 State 112
 
-	RewriteRule -> IDENT '(' TermArgs ')' '=' . Term    (rule 43)
+	SyntaxDecl -> TypeRef MaybeProductions .            (rule 20)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	';'            reduce using rule 20
 
-	Term           goto state 120
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
 
 State 113
 
-	TermArgList -> Term ',' TermArgList .               (rule 48)
+	MaybeProductions -> '::=' . Productions             (rule 31)
 
-	')'            reduce using rule 48
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
+	Productions    goto state 124
+	Term           goto state 125
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
 
 State 114
 
-	BigStepExpr -> '(' Elements ')' '⇓' '(' . Elements ')'    (rule 54)
+	SyntaxDecls -> SyntaxDecl ';' . SyntaxDecls         (rule 18)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	')'            reduce using rule 61
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	'alias'        shift, and enter state 72
+	'}'            reduce using rule 17
+	IDENT          shift, and enter state 73
+	HASKEXPR       shift, and enter state 74
 
-	Term           goto state 44
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	Elements       goto state 119
-	BasicTerm      goto state 23
+	SyntaxDecls    goto state 123
+	SyntaxDecl     goto state 69
+	TypeRef        goto state 70
+	IdentList      goto state 71
 
 State 115
 
-	Goals -> Goal ';' . Goals                           (rule 37)
+	SyntaxBlock -> 'syntax' '{' SyntaxDecls '}' .       (rule 15)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	']'            reduce using rule 35
-	IDENT          shift, and enter state 29
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	';'            reduce using rule 15
 
-	Goals          goto state 118
-	Term           goto state 20
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
-	Goal           goto state 84
 
 State 116
 
-	Rule -> 'rule' STRING '[' Goals ']' . '=>' '[' TermList ']'    (rule 34)
+	SyntaxBlock -> 'syntax' IDENT '{' SyntaxDecls . '}'    (rule 16)
 
-	'=>'           shift, and enter state 117
+	'}'            shift, and enter state 122
 
 
 State 117
 
-	Rule -> 'rule' STRING '[' Goals ']' '=>' . '[' TermList ']'    (rule 34)
+	Rules -> Rule ';' . Rules                           (rule 37)
 
-	'['            shift, and enter state 128
+	'rule'         shift, and enter state 37
+	'}'            reduce using rule 36
 
+	Rules          goto state 121
+	Rule           goto state 66
 
 State 118
 
-	Goals -> Goal ';' Goals .                           (rule 37)
+	RulesBlock -> 'rules' '{' Rules '}' .               (rule 34)
 
-	']'            reduce using rule 37
+	';'            reduce using rule 34
 
 
 State 119
 
-	BigStepExpr -> '(' Elements ')' '⇓' '(' Elements . ')'    (rule 54)
+	RulesBlock -> 'rules' IDENT '{' Rules . '}'         (rule 35)
 
-	')'            shift, and enter state 127
+	'}'            shift, and enter state 120
 
 
 State 120
 
-	RewriteRule -> IDENT '(' TermArgs ')' '=' Term .    (rule 43)
-	Term -> Term . '~>' Term                            (rule 51)
+	RulesBlock -> 'rules' IDENT '{' Rules '}' .         (rule 35)
 
-	'~>'           shift, and enter state 38
-	';'            reduce using rule 43
+	';'            reduce using rule 35
 
 
 State 121
 
-	TypeRef -> IDENT '(' TypeRefs ')' .                 (rule 20)
+	Rules -> Rule ';' Rules .                           (rule 37)
 
-	'::='          reduce using rule 20
-	')'            reduce using rule 20
-	','            reduce using rule 20
-	';'            reduce using rule 20
+	'}'            reduce using rule 37
 
 
 State 122
 
-	TypeRefs -> TypeRef ',' . TypeRefs                  (rule 24)
+	SyntaxBlock -> 'syntax' IDENT '{' SyntaxDecls '}' .    (rule 16)
 
-	')'            reduce using rule 22
-	IDENT          shift, and enter state 107
-	HASKEXPR       shift, and enter state 64
+	';'            reduce using rule 16
 
-	TypeRef        goto state 110
-	TypeRefs       goto state 126
 
 State 123
 
-	SyntaxDecl -> IdentList 'in' TypeRef MaybeProductions .    (rule 18)
+	SyntaxDecls -> SyntaxDecl ';' SyntaxDecls .         (rule 18)
 
-	';'            reduce using rule 18
+	'}'            reduce using rule 18
 
 
 State 124
 
-	Productions -> Term '|' . Productions               (rule 30)
+	MaybeProductions -> '::=' Productions .             (rule 31)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	';'            reduce using rule 31
 
-	Productions    goto state 125
-	Term           goto state 105
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
 
 State 125
 
-	Productions -> Term '|' Productions .               (rule 30)
+	Productions -> Term .                               (rule 32)
+	Productions -> Term . '|' Productions               (rule 33)
+	Term -> Term . '~>' Term                            (rule 56)
 
-	';'            reduce using rule 30
+	'~>'           shift, and enter state 42
+	';'            reduce using rule 32
+	'|'            shift, and enter state 146
 
 
 State 126
 
-	TypeRefs -> TypeRef ',' TypeRefs .                  (rule 24)
+	SyntaxDecl -> IdentList 'in' TypeRef . MaybeProductions    (rule 21)
 
-	')'            reduce using rule 24
+	'::='          shift, and enter state 113
+	';'            reduce using rule 30
 
+	MaybeProductionsgoto state 145
 
 State 127
 
-	BigStepExpr -> '(' Elements ')' '⇓' '(' Elements ')' .    (rule 54)
+	SyntaxDecl -> 'alias' TypeRef 'as' . IDENT          (rule 19)
 
-	'~>'           reduce using rule 54
-	'='            reduce using rule 54
-	'/='           reduce using rule 54
-	')'            reduce using rule 54
-	'}'            reduce using rule 54
-	']'            reduce using rule 54
-	','            reduce using rule 54
-	';'            reduce using rule 54
-	'|'            reduce using rule 54
-	'|->'          reduce using rule 54
-	%eof           reduce using rule 54
+	IDENT          shift, and enter state 144
 
 
 State 128
 
-	Rule -> 'rule' STRING '[' Goals ']' '=>' '[' . TermList ']'    (rule 34)
+	IdentList -> IDENT ',' IdentList .                  (rule 29)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	']'            reduce using rule 38
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	'in'           reduce using rule 29
 
-	TermList       goto state 129
-	Terms          goto state 130
-	Term           goto state 131
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
 
 State 129
 
-	Rule -> 'rule' STRING '[' Goals ']' '=>' '[' TermList . ']'    (rule 34)
+	IdentList -> IDENT .                                (rule 28)
+	IdentList -> IDENT . ',' IdentList                  (rule 29)
 
-	']'            shift, and enter state 133
+	'in'           reduce using rule 28
+	','            shift, and enter state 108
 
 
 State 130
 
-	TermList -> Terms .                                 (rule 39)
+	TypeRefs -> TypeRef .                               (rule 26)
+	TypeRefs -> TypeRef . ',' TypeRefs                  (rule 27)
 
-	']'            reduce using rule 39
+	')'            reduce using rule 26
+	','            shift, and enter state 143
 
 
 State 131
 
-	Terms -> Term .                                     (rule 40)
-	Terms -> Term . ';' Terms                           (rule 41)
-	Term -> Term . '~>' Term                            (rule 51)
+	TypeRef -> IDENT '(' TypeRefs . ')'                 (rule 23)
 
-	'~>'           shift, and enter state 38
-	']'            reduce using rule 40
-	';'            shift, and enter state 132
+	')'            shift, and enter state 142
 
 
 State 132
 
-	Terms -> Term ';' . Terms                           (rule 41)
+	RewriteRule -> IDENT '(' TermArgs ')' '=' . Term    (rule 47)
 
-	BOOL           shift, and enter state 25
-	'('            shift, and enter state 26
-	'{'            shift, and enter state 27
-	'['            shift, and enter state 28
-	IDENT          shift, and enter state 35
-	INTLIT         shift, and enter state 30
-	HASKEXPR       shift, and enter state 31
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
 
-	Terms          goto state 134
-	Term           goto state 131
-	BigStepExpr    goto state 21
-	Expr           goto state 22
-	BasicTerm      goto state 23
+	Term           goto state 141
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
 
 State 133
 
-	Rule -> 'rule' STRING '[' Goals ']' '=>' '[' TermList ']' .    (rule 34)
+	TermArgList -> Term ',' TermArgList .               (rule 52)
 
-	';'            reduce using rule 34
-	%eof           reduce using rule 34
+	')'            reduce using rule 52
 
 
 State 134
 
-	Terms -> Term ';' Terms .                           (rule 41)
+	BigStepExpr -> '(' Elements ')' '⇓' '(' . Elements ')'    (rule 59)
+
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	')'            reduce using rule 67
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
+
+	Term           goto state 48
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	Elements       goto state 140
+	BasicTerm      goto state 25
+
+State 135
+
+	Expr -> '(' Expr 'union' Expr ')' .                 (rule 62)
+
+	'~>'           reduce using rule 62
+	'='            reduce using rule 62
+	'/='           reduce using rule 62
+	')'            reduce using rule 62
+	'}'            reduce using rule 62
+	'['            reduce using rule 62
+	']'            reduce using rule 62
+	','            reduce using rule 62
+	';'            reduce using rule 62
+	'|'            reduce using rule 62
+	'|->'          reduce using rule 62
+	'union'        reduce using rule 62
+	%eof           reduce using rule 62
+
+
+State 136
+
+	Goals -> Goal ';' . Goals                           (rule 41)
+
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	']'            reduce using rule 39
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 32
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
+
+	Goals          goto state 139
+	Term           goto state 22
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
+	Goal           goto state 95
+
+State 137
+
+	Rule -> 'rule' STRING '[' Goals ']' . '=>' '[' TermList ']'    (rule 38)
+
+	'=>'           shift, and enter state 138
+
+
+State 138
+
+	Rule -> 'rule' STRING '[' Goals ']' '=>' . '[' TermList ']'    (rule 38)
+
+	'['            shift, and enter state 150
+
+
+State 139
+
+	Goals -> Goal ';' Goals .                           (rule 41)
 
 	']'            reduce using rule 41
+
+
+State 140
+
+	BigStepExpr -> '(' Elements ')' '⇓' '(' Elements . ')'    (rule 59)
+
+	')'            shift, and enter state 149
+
+
+State 141
+
+	RewriteRule -> IDENT '(' TermArgs ')' '=' Term .    (rule 47)
+	Term -> Term . '~>' Term                            (rule 56)
+
+	'~>'           shift, and enter state 42
+	';'            reduce using rule 47
+
+
+State 142
+
+	TypeRef -> IDENT '(' TypeRefs ')' .                 (rule 23)
+
+	'::='          reduce using rule 23
+	'as'           reduce using rule 23
+	')'            reduce using rule 23
+	','            reduce using rule 23
+	';'            reduce using rule 23
+
+
+State 143
+
+	TypeRefs -> TypeRef ',' . TypeRefs                  (rule 27)
+
+	')'            reduce using rule 25
+	IDENT          shift, and enter state 110
+	HASKEXPR       shift, and enter state 74
+
+	TypeRef        goto state 130
+	TypeRefs       goto state 148
+
+State 144
+
+	SyntaxDecl -> 'alias' TypeRef 'as' IDENT .          (rule 19)
+
+	';'            reduce using rule 19
+
+
+State 145
+
+	SyntaxDecl -> IdentList 'in' TypeRef MaybeProductions .    (rule 21)
+
+	';'            reduce using rule 21
+
+
+State 146
+
+	Productions -> Term '|' . Productions               (rule 33)
+
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
+
+	Productions    goto state 147
+	Term           goto state 125
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
+
+State 147
+
+	Productions -> Term '|' Productions .               (rule 33)
+
+	';'            reduce using rule 33
+
+
+State 148
+
+	TypeRefs -> TypeRef ',' TypeRefs .                  (rule 27)
+
+	')'            reduce using rule 27
+
+
+State 149
+
+	BigStepExpr -> '(' Elements ')' '⇓' '(' Elements ')' .    (rule 59)
+
+	'~>'           reduce using rule 59
+	'='            reduce using rule 59
+	'/='           reduce using rule 59
+	')'            reduce using rule 59
+	'}'            reduce using rule 59
+	']'            reduce using rule 59
+	','            reduce using rule 59
+	';'            reduce using rule 59
+	'|'            reduce using rule 59
+	'|->'          reduce using rule 59
+	%eof           reduce using rule 59
+
+
+State 150
+
+	Rule -> 'rule' STRING '[' Goals ']' '=>' '[' . TermList ']'    (rule 38)
+
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	']'            reduce using rule 42
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
+
+	TermList       goto state 151
+	Terms          goto state 152
+	Term           goto state 153
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
+
+State 151
+
+	Rule -> 'rule' STRING '[' Goals ']' '=>' '[' TermList . ']'    (rule 38)
+
+	']'            shift, and enter state 155
+
+
+State 152
+
+	TermList -> Terms .                                 (rule 43)
+
+	']'            reduce using rule 43
+
+
+State 153
+
+	Terms -> Term .                                     (rule 44)
+	Terms -> Term . ';' Terms                           (rule 45)
+	Term -> Term . '~>' Term                            (rule 56)
+
+	'~>'           shift, and enter state 42
+	']'            reduce using rule 44
+	';'            shift, and enter state 154
+
+
+State 154
+
+	Terms -> Term ';' . Terms                           (rule 45)
+
+	BOOL           shift, and enter state 27
+	'('            shift, and enter state 28
+	'{'            shift, and enter state 29
+	'['            shift, and enter state 30
+	'_'            shift, and enter state 31
+	IDENT          shift, and enter state 39
+	STRING         shift, and enter state 33
+	INTLIT         shift, and enter state 34
+	HASKEXPR       shift, and enter state 35
+
+	Terms          goto state 156
+	Term           goto state 153
+	BigStepExpr    goto state 23
+	Expr           goto state 24
+	BasicTerm      goto state 25
+
+State 155
+
+	Rule -> 'rule' STRING '[' Goals ']' '=>' '[' TermList ']' .    (rule 38)
+
+	';'            reduce using rule 38
+	%eof           reduce using rule 38
+
+
+State 156
+
+	Terms -> Term ';' Terms .                           (rule 45)
+
+	']'            reduce using rule 45
 
 
 -----------------------------------------------------------------------------
 Grammar Totals
 -----------------------------------------------------------------------------
-Number of rules: 74
-Number of terminals: 29
-Number of non-terminals: 36
-Number of states: 135
+Number of rules: 82
+Number of terminals: 34
+Number of non-terminals: 37
+Number of states: 157
