@@ -43,6 +43,7 @@ tokens :-
   <0> "|->"                         { mkToken MapsTo }
   <0> "("                           { mkToken Lpar }
   <0> ")"                           { mkToken Rpar }
+  <0> "union"                       { mkToken Union }
   <0> "{{{"                         { begin h }
   <h> "}}}"                         { collectInto (\s r -> TokenWithRange (Hask s) r) `andBegin` 0 }
   <h> [$white $printable]           { save }
@@ -63,7 +64,6 @@ tokens :-
   <0> $alpha $alphanum*             { mkTokenWith Ident }
   <0> \"[^\"]*\"                    { mkTokenWith (\s -> Quo (init (tail s))) }
   <0> $digit+                       { mkTokenWith (\s -> IntLit (read s)) }
-
 {
 
 data AlexUserState = AlexUserState {

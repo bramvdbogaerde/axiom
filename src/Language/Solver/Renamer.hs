@@ -33,7 +33,7 @@ data RenamerCtx = RenamerCtx {
                     _variableMapping :: Map String Int
                     -- | Counter for fresh variables
                   , _freshCtr :: Int
-                 }
+                }
 
 $(makeLenses ''RenamerCtx)
 
@@ -107,6 +107,7 @@ renameExpr = \case
         RewriteApp nam <$> mapM renameTerm ags <*> pure tpy <*> pure range
     e@(EmptyMap {}) -> return e
     GroundTerm t tpy range -> GroundTerm <$> renameTerm t <*> pure tpy <*> pure range
+    SetUnion t1 t2 tpy range -> SetUnion <$> renameTerm t1 <*> renameTerm t2 <*> pure tpy <*> pure range
 
 -- | Rename all variables in a list of terms
 renameTerms :: (HaskellExprRename p, ForAllPhases Ord p, MonadRename m) => [PureTerm' p] -> m [PureTerm' p]
@@ -175,6 +176,7 @@ unrenameExpr = \case
         RewriteApp nam (map unrenameTerm ags) tpy range
     e@(EmptyMap {}) -> e
     GroundTerm t tpy range -> GroundTerm (unrenameTerm t) tpy range
+    SetUnion t1 t2 tpy range -> SetUnion (unrenameTerm t1) (unrenameTerm t2) tpy range
 
 -- | Removes the part of the variable name that makes it unique
 baseName :: String -> String

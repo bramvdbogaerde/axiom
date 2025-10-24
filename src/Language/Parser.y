@@ -57,6 +57,7 @@ import qualified Data.Set as Set
   '|'         { TokenWithRange Bar _ }
   '|->'       { TokenWithRange MapsTo _ }
   '_'         { TokenWithRange Token.Wildcard _ }
+  'union'     { TokenWithRange Token.Union _ }
   IDENT       { TokenWithRange (Ident _) _ }
   STRING      { TokenWithRange (Quo _) _ }
   INTLIT      { TokenWithRange (IntLit _) _ }
@@ -65,7 +66,7 @@ import qualified Data.Set as Set
   HASKPOST    { TokenWithRange (Token.HaskPost _) _ }
 
 %right '~>'
-%left '=' '/=' '⇓'
+%left '=' '/=' '⇓' 'union'
 
 %%
 
@@ -193,6 +194,7 @@ BigStepExpr : '(' Elements ')' '⇓' '(' Elements ')' { Functor "⇓" ($2 ++ $6)
 Expr :: { PureExpr }
 Expr : '[' Bindings ']' { curryUpdateMap (TermExpr (EmptyMap () (mkRange $1 $3)) (mkRange $1 $3)) $2 () (mkRange $1 $3) }
      | BasicTerm '[' Bindings ']' { curryUpdateMap $1 $3 () (mkRange $1 $4) }
+     | '(' Term 'union' Term ')' { SetUnion $2 $4 () (mkRange $1 $5) }
 
 Bindings :: { [(PureTerm, PureTerm)] }
 Bindings : {- empty -} { [] }

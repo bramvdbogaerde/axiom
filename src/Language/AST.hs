@@ -290,6 +290,7 @@ data Expr p s = LookupMap (Term' p s) (Term' p s) (XTypeAnnot p) Range -- ^ look
             | EmptyMap (XTypeAnnot p) Range
             | RewriteApp String [Term' p s] (XTypeAnnot p) Range
             | GroundTerm (Term' p s) (XTypeAnnot p) Range
+            | SetUnion (Term' p s) (Term' p s) (XTypeAnnot p) Range
 -- | A pure expression after the parsing phase
 type PureExpr = Expr ParsePhase Identity
 
@@ -303,6 +304,7 @@ instance (Show (Term' p s)) => Show (Expr p s) where
   show (EmptyMap _ _) = "∅"
   show (RewriteApp functor args _ _) = show functor ++ "(" ++ List.intercalate "," (map show args) ++ ")"
   show (GroundTerm t _ _) = "g(" ++ show t ++ ")"
+  show (SetUnion s1 s2 _ _) = show s1 ++ " union " ++ show s2
 
 instance RangeOf (Expr p s) where
   rangeOf (LookupMap _ _ _ r)   = r
@@ -310,6 +312,7 @@ instance RangeOf (Expr p s) where
   rangeOf (EmptyMap _ r) = r
   rangeOf (RewriteApp _ _ _ r) = r
   rangeOf (GroundTerm _ _ r) = r
+  rangeOf (SetUnion _ _ _ r) = r
 
 instance IsGround (Expr p s) where
   isGround (LookupMap t1 t2 _ _) = isGround t1 && isGround t2
@@ -317,6 +320,7 @@ instance IsGround (Expr p s) where
   isGround (RewriteApp _ ts _ _) = all isGround ts
   isGround (EmptyMap _ _) = True
   isGround (GroundTerm t _ _) = isGround t
+  isGround (SetUnion t1 t2 _ _)= isGround t1 && isGround t2
 
 instance (Eq (s String), ForAllPhases Eq p) => EqIgnoreRange (Expr p s) where
    eqIgnoreRange (LookupMap t1 t2 ty _) (LookupMap t1' t2' ty' _)  =
@@ -424,6 +428,7 @@ instance AtomNames (Expr p Identity) where
                     EmptyMap _ _ -> Set.empty
                     RewriteApp _ ags _ _ -> foldMap atomNames ags
                     GroundTerm t _ _ -> atomNames t
+                    SetUnion t1 t2 _ _ -> atomNames t1 `Set.union` atomNames t2
 
 -- | Returns the name of the functor embedded in the term (if any),
 -- also matches on equality and transition relations and returns the obvious functor names for them.
@@ -528,6 +533,7 @@ exprTypeAnnot = \case
   RewriteApp _ _ tpy _ -> tpy
   EmptyMap tpy _ -> tpy
   GroundTerm _ tpy _ -> tpy
+  SetUnion _ _ tpy _ -> tpy
 
 -- | Extract the type annotation from a term
 termTypeAnnot :: forall p x. AnnotateType p => Term' p x -> XTypeAnnot p
@@ -605,6 +611,7 @@ anyTypedExpr = \case
   EmptyMap _ r -> EmptyMap AnyType r
   RewriteApp nam ags _ r -> RewriteApp nam (map anyTyped ags) AnyType r
   GroundTerm t _ r -> GroundTerm (anyTyped t) AnyType r
+  SetUnion t1 t2 _ r -> SetUnion (anyTyped t1) (anyTyped t2) AnyType r
 
 -- | Convert a ParsePhase term to TypingPhase by annotating AnyType everywhere
 anyTyped :: Ord (a String) => Term' ParsePhase a -> Term' TypingPhase a
@@ -631,6 +638,7 @@ removeRangeExpr = \case
   EmptyMap tpy _ -> EmptyMap tpy dummyRange
   RewriteApp nam ags tpy _ -> RewriteApp nam (map removeRange ags) tpy dummyRange
   GroundTerm t tpy _ -> GroundTerm (removeRange t) tpy dummyRange
+  SetUnion t1 t2 tpy _ -> SetUnion (removeRange t1) (removeRange t2) tpy dummyRange
 
 -- | Remove the range information from a term and replace it with a dummy range
 removeRange :: (ForAllPhases Ord p, Ord (a String)) => Term' p a -> Term' p a
