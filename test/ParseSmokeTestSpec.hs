@@ -36,7 +36,7 @@ spec = describe "Parse smoke tests" $ do
 createParseTest :: FilePath -> Spec
 createParseTest filePath = 
   it ("should parse " ++ takeFileName filePath) $ do
-    importResult <- resolveImportsFromFile filePath
+    importResult <- snd <$> resolveImportsFromFile filePath
     case importResult of
       Left importErr -> expectationFailure $ "Parse error: " ++ show importErr
       Right _ -> return () -- Success
@@ -44,7 +44,7 @@ createParseTest filePath =
 -- | Test parsing a single file
 testParseFile :: FilePath -> IO (FilePath, Bool)
 testParseFile filePath = do
-  importResult <- resolveImportsFromFile filePath
+  importResult <- snd <$> resolveImportsFromFile filePath
   case importResult of
     Left importErr -> do
       putStrLn $ "Parse error in " ++ filePath ++ ": " ++ show importErr

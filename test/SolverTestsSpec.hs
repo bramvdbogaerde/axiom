@@ -68,7 +68,7 @@ runTestQuery (Program decls _) queryStr = do
 -- | Load and parse a test file, returning either an error or (program, queries)
 loadTestFile :: FilePath -> ExceptT String IO (Program, [(String, Bool)])
 loadTestFile filePath = do
-  importResult <- ExceptT $ first show . fmap concatModules <$> resolveImportsFromFile filePath
+  importResult <- ExceptT $ first show . fmap concatModules . snd <$> resolveImportsFromFile filePath
   let program@(Program _ comments) = importResult
   let queries = extractTestQueries comments
   return (program, queries)
