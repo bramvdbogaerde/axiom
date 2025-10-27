@@ -69,7 +69,7 @@ writeLatexFile outDir name latexType content = do
 runLatexCommand :: LatexOptions -> IO ()
 runLatexCommand (LatexOptions inputFile outputDir) = do
   -- Parse the input file
-  result <- resolveImportsFromFile inputFile
+  (_, result) <- resolveImportsFromFile inputFile
   prog <- case result of
     Left err -> error $ "Parse error: " ++ show err
     Right p -> pure p

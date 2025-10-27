@@ -6,7 +6,7 @@ import Language.AST
 import Language.Parser
 import Language.TypeCheck (runChecker', CheckingContext(..))
 import Language.CodeGen
-import Language.ImportResolver (resolveImportsFromFile, concatModules, ImportError(..))
+import Language.ImportResolver (resolveImportsFromFile, concatModules, ImportError(..), ModuleMap)
 import Control.Monad
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.List (stripPrefix)
@@ -134,14 +134,9 @@ opts = info (globalOptions <**> helper)
 
 -- | Load a file and parse it into an AST, returning both the source and parsed program
 -- Returns Left with error info if parsing fails
-loadAndParseFile :: String -> IO (Either (String, ImportError) (String, Program))
+loadAndParseFile :: String -> IO (ModuleMap, Either ImportError Program)
 loadAndParseFile filename = do
-  -- TODO: the imports should also be considered, thus we should return a Map, mapping filenames to their programs, this is already constructed in the ImportResolver but never exposed.
-  contents <- readFile filename
-  program <- fmap concatModules <$> resolveImportsFromFile filename
-  return $ case program of
-    Left err -> Left (contents, err)
-    Right ast -> Right (contents, ast)
+  (fmap . fmap) concatModules <$> resolveImportsFromFile filename
 
 -- | Print text in green color for success messages
 printGreen :: String -> IO ()
@@ -200,10 +195,10 @@ runTestQuery (Program decls _) queryStr = do
 runCheckCommand :: InputOptions -> Bool -> IO ()
 runCheckCommand (InputOptions filename) verbose = do
   putStrLn $ "Checking " ++ filename
-  loadResult <- loadAndParseFile filename
+  (contents, loadResult) <- loadAndParseFile filename
   case loadResult of
-    Left (contents, err) -> printImportError contents err
-    Right (contents, ast) -> do
+    Left err -> printImportError contents err
+    Right ast  -> do
       result <- traverse (\(ctx, ast') -> when verbose (pPrint ctx >> pPrint ast') >> return (ctx, ast')) $ runChecker' ast
       either (printError contents) (const printSuccess) result
 
@@ -214,10 +209,10 @@ runDebugCommand (InputOptions filename) = SolverDebugger.debugSession filename
 -- | Execute the code generation command
 runCodegenCommand :: InputOptions -> CodeGenOptions -> IO ()
 runCodegenCommand (InputOptions filename) (CodeGenOptions verbose enableDebug mainName) = do
-  loadResult <- loadAndParseFile filename
+  (contents, loadResult) <- loadAndParseFile filename
   case loadResult of
-    Left (contents, err) -> printImportError contents err >> exitFailure
-    Right (contents, ast) -> do
+    Left err -> printImportError contents err >> exitFailure
+    Right ast -> do
       r@(ctx, _) <- either (printError contents >=> const exitFailure) return $ runChecker' ast
       when verbose $ do
         pPrint ctx
@@ -226,10 +221,10 @@ runCodegenCommand (InputOptions filename) (CodeGenOptions verbose enableDebug ma
 -- | Execute the code generation and run command
 runRuncodegenCommand :: InputOptions -> IO ()
 runRuncodegenCommand (InputOptions filename) = do
-  loadResult <- loadAndParseFile filename
+  (contents, loadResult) <- loadAndParseFile filename
   case loadResult of
-    Left (contents, err) -> printImportError contents err >> exitFailure
-    Right (contents, ast) ->
+    Left err -> printImportError contents err >> exitFailure
+    Right ast ->
       either (printError contents) runGenerated $ runChecker' ast
   where
     runGenerated (context, typedProgram) = do
@@ -244,10 +239,10 @@ runRuncodegenCommand (InputOptions filename) = do
 -- | Execute the solver test command
 runRunsolverCommand :: InputOptions -> IO ()
 runRunsolverCommand (InputOptions filename) = do
-  loadResult <- loadAndParseFile filename
+  (contents, loadResult) <- loadAndParseFile filename
   case loadResult of
-    Left (contents, err) -> printImportError contents err >> exitFailure
-    Right (_contents, ast@(Program _ comments)) -> do
+    Left err -> printImportError contents err >> exitFailure
+    Right ast@(Program _ comments) -> do
       let queries = extractTestQueries comments
       if null queries
         then putStrLn "No test queries found in file (looking for %test: comments)"

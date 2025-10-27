@@ -2,7 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Language.Parser(parseProgram, parseTerm, parseRule, parseGoal, Error(..)) where
+module Language.Parser(parseProgram, parseProgramWithFilename, parseTerm, parseRule, parseGoal, Error(..)) where
 
 import Prelude hiding (lex)
 

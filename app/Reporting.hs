@@ -4,21 +4,33 @@ import Language.TypeCheck (ModelError(..))
 import qualified Language.TypeCheck as TypeCheck
 import qualified Language.Parser as Parser
 import Language.Types (Typ(..), toSortName)
-import Language.AST (Range(..), Position(..))
-import Language.ImportResolver (ImportError(..))
+import Language.AST (Range(..), Position(..), filenameStart)
+import Language.ImportResolver (ImportError(..), ModuleMap)
+import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import System.Console.ANSI
 import Data.List (intercalate)
+import Control.Monad
 
 -------------------------------------------------------------
 -- Auxiliary functions
 -------------------------------------------------------------
 
-printError :: String -> TypeCheck.Error -> IO ()
-printError sourceCode (TypeCheck.Error modelErr maybeRange _ctx) = do
+printError :: ModuleMap -> TypeCheck.Error -> IO ()
+printError modules (TypeCheck.Error modelErr maybeRange _ctx) = do
   printColoredLn [SetColor Foreground Vivid Red, SetConsoleIntensity BoldIntensity] "Error:"
   putStrLn $ "  " ++ formatModelError modelErr
-  maybe (return ()) ((putStrLn "" >>) . printLocationInfo sourceCode) maybeRange
+  maybe (return ()) ((putStrLn "" >>) . printLocationInfo (getSourceFromRange modules maybeRange)) maybeRange
   setSGR [Reset]
+
+getSourceFromRange :: ModuleMap -> Maybe Range -> String
+getSourceFromRange modules r = do
+  fromMaybe "no source information"
+            (foldMap (flip Map.lookup modules <=< filenameStart) r)
+
+getSource :: ModuleMap -> FilePath -> String
+getSource modules name =
+  fromMaybe "no source information" $ Map.lookup name modules
 
 printParseError :: String -> Parser.Error -> IO ()
 printParseError sourceCode (Parser.ParsingError pos msg) = do
@@ -29,9 +41,9 @@ printParseError sourceCode (Parser.ParsingError pos msg) = do
   printLocationInfo sourceCode range
   setSGR [Reset]
 
-printImportError :: String -> ImportError -> IO ()
-printImportError contents (ParseError _filepath err) =
-  printParseError contents err
+printImportError :: ModuleMap -> ImportError -> IO ()
+printImportError modules (ParseError filepath err) =
+  printParseError (getSource modules filepath) err
 printImportError _contents (FileNotFound filepath) = do
   printColoredLn [SetColor Foreground Vivid Red, SetConsoleIntensity BoldIntensity] "File Not Found:"
   putStrLn $ "  " ++ filepath

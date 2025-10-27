@@ -1,4 +1,4 @@
-module Language.Range(RangeOf(..), Position(..), Range(..), dummyRange) where
+module Language.Range(RangeOf(..), Position(..), Range(..), filenameStart, dummyRange) where
 
 -- | Compute the range of arbitrary program elements
 class RangeOf a where
@@ -16,6 +16,10 @@ data Position = Position {
 data Range = Range { rangeStart :: Position,
                      rangeEnd :: Position }
            deriving (Ord, Eq, Show)
+
+-- | Returns the filename of the starting position of the range
+filenameStart :: Range -> Maybe String
+filenameStart = filename .  rangeStart
 
 -- | A dummy range for cases where range information is not available
 dummyRange :: Range

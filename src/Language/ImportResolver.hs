@@ -14,12 +14,16 @@ module Language.ImportResolver (
     ImportError(..),
     ModuleInfo'(..),
     ModuleInfo,
+    ModuleMap
   ) where
 
 import Language.AST
-import Language.Parser (parseProgram, Error(..))
+import Language.Parser (parseProgramWithFilename, Error(..))
+import Data.Bifunctor (first)
+import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.Tuple (swap)
 import Data.Graph (Graph, empty, addEdge, addNode, topSort)
 import Data.Maybe (mapMaybe)
 import Control.Monad.State
@@ -35,10 +39,14 @@ import Prelude hiding (readFile)
 import System.IO (readFile)
 
 
+-- | Mapping from module names to their source
+type ModuleMap = Map FilePath String
+
 -- | Information about a parsed module
 data ModuleInfo' p = ModuleInfo
   { moduleFilePath :: FilePath
   , moduleProgram :: Program' p
+  , moduleSource :: String
   }
 
 deriving instance (ForAllPhases Show p) => Show (ModuleInfo' p)
@@ -61,7 +69,8 @@ data ImportError
 -- | State for import resolution
 data ImportState = ImportState
   { _visitedFiles :: Set.Set FilePath
-  , _moduleMap :: Map.Map FilePath ModuleInfo
+  , _moduleMap  :: Map.Map FilePath ModuleInfo
+  , _moduleSrcs :: Map.Map FilePath String
   , _dependencyGraph :: Graph FilePath () 
   } deriving (Show)
 
@@ -88,26 +97,27 @@ resolveImportPath baseDir importPath
 
 -- | Main function to resolve all imports starting from a root module,
 -- returning all modules in their topological order
-resolveImports :: ModuleInfo -> IO (Either ImportError [ModuleInfo])
+resolveImports :: ModuleInfo -> IO (ModuleMap, Either ImportError [ModuleInfo])
 resolveImports rootModule@ModuleInfo{..} = do
   let initialState = ImportState
         Set.empty
         (Map.singleton moduleFilePath rootModule)  -- Include root in module map
+        (Map.singleton moduleFilePath moduleSource)
         (addNode moduleFilePath empty)  -- Add root node to graph
       initialPath = takeDirectory moduleFilePath
-  evalStateT (runReaderT (runExceptT (resolveImportsM rootModule)) initialPath) initialState
+  first _moduleSrcs . swap <$> (runStateT (runReaderT (runExceptT (resolveImportsM rootModule)) initialPath) initialState)
 
 -- | Entrypoint that loads and resolves imports from a file path
-resolveImportsFromFile :: FilePath -> IO (Either ImportError [ModuleInfo])
+resolveImportsFromFile :: FilePath -> IO (ModuleMap, Either ImportError [ModuleInfo])
 resolveImportsFromFile filePath = do
-  either (const $ return $ Left (FileNotFound filePath))
-         (either (return . Left . ParseError filePath)
-                            (createModuleAndResolve filePath) . parseProgram)
+  either (const $ return $ (Map.empty, Left (FileNotFound filePath)))
+         (\src -> either (return . (Map.singleton filePath src,) . Left . ParseError filePath)
+                         (createModuleAndResolve filePath src)
+                       $ parseProgramWithFilename filePath src)
     =<< try @SomeException (readFile filePath)
   where
-    createModuleAndResolve :: FilePath -> Program -> IO (Either ImportError [ModuleInfo])
-    createModuleAndResolve path program = do
-      resolveImports (ModuleInfo path program)
+    createModuleAndResolve path source program = do
+      resolveImports (ModuleInfo path program source)
 
 -- | Resolve imports starting from a root module
 resolveImportsM :: ModuleInfo -> ImportM [ModuleInfo] 
@@ -148,7 +158,7 @@ collectModulesRecursively modInfo@ModuleInfo{..} = do
       -- Add this module as a node to the dependency graph
       dependencyGraph %= addNode moduleFilePath
 
-      -- Extract dependencies dynamically from the program
+      -- Extract dependencies from the program
       dependencies <- extractImports moduleProgram
 
       -- Add edges for all dependencies to the graph
@@ -164,16 +174,17 @@ collectModulesRecursively modInfo@ModuleInfo{..} = do
     processDependency :: FilePath -> ImportM ()
     processDependency depPath = do
       -- Parse and process the dependency in the context of its directory
-      depProgram <- loadAndParseFile depPath
+      (depProgram, src) <- loadAndParseFile depPath
+      moduleSrcs %= Map.insert depPath src
       local (const $ takeDirectory depPath) $
-        collectModulesRecursively (ModuleInfo depPath depProgram)
+        collectModulesRecursively (ModuleInfo depPath depProgram src)
 
--- | Load and parse a file
-loadAndParseFile :: FilePath -> ImportM Program
+-- | Load and parse a file, returns the original source string as well
+loadAndParseFile :: FilePath -> ImportM (Program, String)
 loadAndParseFile filePath = do
   result <- liftIO $ try @SomeException (readFile filePath)
   content <- either (const $ throwError (FileNotFound filePath)) return result
-  either (throwError . ParseError filePath) return (parseProgram content)
+  either (throwError . ParseError filePath) (return . (,content)) (parseProgramWithFilename filePath content)
 
 -- | Perform topological sort using the incrementally built graph
 topologicalSortWithGraph :: Graph FilePath () -> Map.Map FilePath ModuleInfo -> ImportM [ModuleInfo]
