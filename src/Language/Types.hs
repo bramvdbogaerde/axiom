@@ -103,7 +103,9 @@ isSubtypeOf _ VoidType = const False
 isSubtypeOf (SetOf t1) (SetOf t2) = isSubtypeOf t1 t2
 isSubtypeOf (MapOf k1 v1) (MapOf k2 v2) =
   \subtyping -> isSubtypeOf k2 k1 subtyping && isSubtypeOf v1 v2 subtyping
--- TODO: functions
+isSubtypeOf (FunType t1 t2) (FunType t1' t2') =
+  -- contravariance 
+  \subtyping -> isSubtypeOf t1' t1 subtyping && isSubtypeOf t2 t2' subtyping
 isSubtypeOf t1 t2 
   | t1 == t2 = const True
   | otherwise = Graph.isReachable t1 t2
