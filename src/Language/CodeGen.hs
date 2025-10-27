@@ -313,7 +313,7 @@ generateExecuteFunction haskellExp freeVarList typingCtx expectedType = do
 generateExtraction :: TypingContext -> Name -> String -> Q (Maybe Exp)
 generateExtraction typingCtx mappingName varName = do
   runMaybeT $ do
-      baseVarName <- MaybeT $ return $ safeVariableName varName
+      baseVarName <- MaybeT $ return $ safeVariableName (extractTermVariable varName)
       sortName <- MaybeT $ return $ Map.lookup baseVarName typingCtx
       let typ = sortName
 
