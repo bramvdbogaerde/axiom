@@ -458,12 +458,13 @@ instance RangeOf (Term' p f) where
 
 -- | Extract the name of the variable from variables suffixed with numbers
 variableName :: String -> String
-variableName s = fromMaybe (error $ "could not get variable name of " ++ s) $ safeVariableName s
+variableName s =
+  fromMaybe (error $ "could not get variable name of " ++ s) $ safeVariableName s
 
 -- | Same as 'variableName' but returns 'Nothing' if the variable cannot be extracted
 safeVariableName :: String -> Maybe String
 safeVariableName s = head <$> matchRegex r s
-  where r = mkRegex "([a-zA-Z]+)\\d*"
+  where r = mkRegex "([^0-9]+)[0-9]*"
 
 -- | Allowed infix names that can be used in a term
 infixNames :: [String]
