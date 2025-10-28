@@ -29,6 +29,7 @@ library
                   , Language.Parser
                   , Language.TypeCheck
                   , Language.Solver
+                  , Language.Axiom
                   , Language.SolverDebugger
                   , Language.ImportResolver
                   , Language.Solver.Unification
