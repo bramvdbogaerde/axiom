@@ -141,6 +141,11 @@ restoreSnapshot = liftST . ST.restore
 refTerm :: (ForAllPhases Ord p, AnnotateType p) => PureTerm' p -> Solver p q s (RefTerm p s)
 refTerm = liftUnification . Unification.refTerm'
 
+
+-- | Convert a RefTerm back to a pure term
+pureTerm :: (ForAllPhases Ord p, AnnotateType p) => RefTerm p s -> Solver p q s (PureTerm' p)
+pureTerm = liftUnification . Unification.pureTerm''
+
 -- | Generate unique variables in a given pure term
 uniqueTerm :: (HaskellExprRename p, ForAllPhases Ord p) => PureTerm' p -> Solver p q s (PureTerm' p)
 uniqueTerm term = do
@@ -261,6 +266,13 @@ doesUnify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprRename p, HaskellEx
 doesUnify t1 t2 = do
  snapshot <- takeSnapshot
  isRight <$> unify t1 t2 <* restoreSnapshot snapshot
+
+-- | Force the unification of a pure term and returns the unified pure term
+forceUnify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
+           => PureTerm' p
+           -> Solver p q s (PureTerm' p)
+forceUnify t1 =
+  refTerm t1 >>= pureTerm
 
 ------------------------------------------------------------
 -- Core search functions
@@ -408,13 +420,18 @@ processRule :: forall p q s . (AnnotateType p, Queue q, HaskellExprRename p, Has
             -> Bool             -- ^ whether the goal was originally in the in-cache
             -> RuleDecl' p      -- ^ the rule to match with
             -> Solver p q s ()
-processRule goal remainingGoals whenSucceeds isInCache rule = do
+processRule goal remainingGoals whenSucceeds0 isInCache rule = do
   RuleDecl ruleName precedents consequents _ <- Solver $ lift $ zoom Unification.numUniqueVariables $ lift $ Renamer.renameRuleState rule
 
-  -- Assert that there's only one consequent for now
+  -- TODO: the other consequents at the moment are only **secondary** meaning that they are resolved when the main goals
+  -- are resolved by using the in-cache.
   case consequents of
-    [consequent] -> do
+    (consequent:consequents) -> do
       refConsequent <- refTerm consequent
+      unifiedConsequents <- mapM forceUnify consequents
+
+      -- Add the the other consequents to the in-cache (i.e., whenSucceeds)
+      let whenSucceeds' = unifiedConsequents ++ whenSucceeds0
 
       -- Create unification goal: current goal = consequent
       let unificationGoal = SearchGoal ("Csq-" ++ ruleName) (Eqq goal refConsequent (typeAnnot (Proxy @p) AnyType) dummyRange)
@@ -422,7 +439,7 @@ processRule goal remainingGoals whenSucceeds isInCache rule = do
       if null precedents
         then do
           -- Rules WITHOUT precedents: Process directly without caching
-          continue (unificationGoal : remainingGoals) whenSucceeds
+          continue (unificationGoal : remainingGoals) whenSucceeds'
         else do
           -- Rules WITH precedents: Apply caching logic
           mapping <- gets (^. searchCtx . currentMapping)
@@ -432,29 +449,29 @@ processRule goal remainingGoals whenSucceeds isInCache rule = do
             then do -- Goal is in whenSucceeds (in-cache)
               cachedResults <- lookupCache pureGoal
               if Set.null cachedResults
-                then continue remainingGoals whenSucceeds -- Out-cache empty: skip this rule entirely
+                then continue remainingGoals whenSucceeds' -- Out-cache empty: skip this rule entirely
                 else do
                   -- Out-cache has results: create Eqq goals for each cached result
                   let resultsList = Set.toList cachedResults
-                  mapM_ (processResult "In" remainingGoals) resultsList
+                  mapM_ (processResult "In" remainingGoals whenSucceeds') resultsList
             else do -- Goal not in-cache: add it, process precedents, and check out-cache
               -- Check out-cache for existing results and create additional search states
               cachedResults <- lookupCache pureGoal
               unless (Set.null cachedResults) $ do
                 let resultsList = Set.toList cachedResults
-                mapM_ (processResult "Old" remainingGoals) resultsList
+                mapM_ (processResult "Old" remainingGoals whenSucceeds') resultsList
 
               -- Also proceed with normal rule processing
               precedentRefs <- mapM refTerm precedents
               let precedentGoals = map (SearchGoal ruleName) precedentRefs
               let newGoals = unificationGoal : precedentGoals ++ remainingGoals
-              continue newGoals whenSucceeds
+              continue newGoals whenSucceeds'
       where
-        processResult prefix remainingGoals cachedResult = do
+        processResult prefix remainingGoals whenSucceeds' cachedResult = do
           cachedRef <- refTerm cachedResult
           let eqqGoal = SearchGoal ("Cached-" ++ prefix ++ "-" ++ ruleName) (Eqq goal cachedRef (typeAnnot (Proxy @p) AnyType) dummyRange)
-          continue (eqqGoal : remainingGoals) whenSucceeds
-    _ -> error $ "Rule " ++ ruleName ++ " has " ++ show (length consequents) ++ " consequents, expected exactly 1"
+          continue (eqqGoal : remainingGoals) whenSucceeds'
+    _ -> error $ "Rule " ++ ruleName ++ " has " ++ show (length consequents) ++ " consequents, expected to be 1 or more"
 
 ------------------------------------------------------------
 -- Inspection

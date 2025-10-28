@@ -300,7 +300,6 @@ pureTerm' term _mapping = do
         GroundTerm t tpy r -> GroundTerm <$> convertTerm t <*> pure tpy <*> pure r
         SetUnion t1 t2 tpy r -> SetUnion <$> convertTerm t1 <*> convertTerm t2 <*> pure tpy <*> pure r
 
-
 -- | Same as pureTerm' but raises an error if the term could not be converted
 pureTerm :: (ForAllPhases Ord p, AnnotateType p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
 pureTerm term = pureTerm' term >=> either error return
