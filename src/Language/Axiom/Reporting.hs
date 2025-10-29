@@ -1,4 +1,4 @@
-module Reporting where
+module Language.Axiom.Reporting where
 
 import Language.TypeCheck (ModelError(..))
 import qualified Language.TypeCheck as TypeCheck
@@ -22,6 +22,14 @@ printError modules (TypeCheck.Error modelErr maybeRange _ctx) = do
   putStrLn $ "  " ++ formatModelError modelErr
   maybe (return ()) ((putStrLn "" >>) . printLocationInfo (getSourceFromRange modules maybeRange)) maybeRange
   setSGR [Reset]
+
+printTypeError :: String -> TypeCheck.Error -> IO ()
+printTypeError body (TypeCheck.Error modelErr maybeRange _ctx) = do
+  printColoredLn [SetColor Foreground Vivid Red, SetConsoleIntensity BoldIntensity] "Error:"
+  putStrLn $ "  " ++ formatModelError modelErr
+  maybe (return ()) ((putStrLn "" >>) . printLocationInfo body) maybeRange
+  setSGR [Reset]
+
 
 getSourceFromRange :: ModuleMap -> Maybe Range -> String
 getSourceFromRange modules r = do

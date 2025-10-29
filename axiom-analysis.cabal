@@ -21,7 +21,9 @@ library
                  bytestring,
                  utf8-string,
                  filepath,
-                 directory
+                 directory,
+                 ansi-terminal
+
   build-tools: alex, happy
   exposed-modules:  Language.AST
                   , Language.CodeGen
@@ -42,6 +44,7 @@ library
                   , Language.Range
                   , Language.Lexer
                   , Language.TemplateHaskell.SyntaxExtra
+                  , Language.Axiom.Reporting
   other-modules:   Language.Lexer.Token
                  , Data.Graph
   extensions: TemplateHaskell
@@ -68,8 +71,7 @@ executable axiom
               , process
               , filepath
               , directory
-  other-modules: Reporting
-               , LanguageServer
+  other-modules: LanguageServer
                , LanguageServer.Diagnostics
                , LanguageServer.Symbols
                , Latex.Generator

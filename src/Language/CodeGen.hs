@@ -10,11 +10,14 @@ module Language.CodeGen (
     codegen,
   ) where
 
+import qualified Language.Axiom.Reporting as Reporting
+import qualified Language.Parser as Parsing
 import Language.Haskell.TH hiding (Range)
 import Language.Haskell.TH.Syntax hiding (Range)
 import Language.Haskell.Meta.Parse (parseExp)
 import Language.AST
 import Language.TypeCheck
+import qualified Language.TypeCheck as Typing
 import Language.Types
 import Language.Parser (parseTerm)
 import Language.TemplateHaskell.SyntaxExtra (freeVars)
@@ -37,6 +40,7 @@ import NeatInterpolation
 import qualified Control.Monad.Trans as Trans
 import Control.Monad.Except (liftEither)
 import Data.Either (fromRight)
+import System.Exit
 import Language.Haskell.Meta (parseType)
 
 ------------------------------------------------------------
@@ -202,14 +206,14 @@ makeModule mainName enableDebugger prelude postlude ast testQueries termDecls su
       [ "putStrLn \"Generated code debugger\""
       , "putStrLn \"Available test queries:\""
       , "mapM_ (\\(i, (query, _)) -> putStrLn $ show i ++ \": \" ++ show query) (zip [1..] testQueries)"
-      , "debuggerREPL"
+      , "debuggerREPL testQueries"
       ]
     
     debuggerREPL' = T.pack $ if enableDebugger then debuggerREPLCode else ""
     
     debuggerREPLCode = unlines
-      [ "debuggerREPL :: IO ()"
-      , "debuggerREPL = do"
+      [ "debuggerREPL ::  [(PureTerm' CodeGenPhase, Bool)] -> IO ()"
+      , "debuggerREPL testQueries = do"
       , "  putStr \"debug> \""
       , "  System.IO.hFlush System.IO.stdout"
       , "  input <- getLine"
@@ -221,23 +225,23 @@ makeModule mainName enableDebugger prelude postlude ast testQueries termDecls su
       , "      putStrLn \"  list    - List available queries\""
       , "      putStrLn \"  run N   - Debug query number N\""
       , "      putStrLn \"  quit    - Exit debugger\""
-      , "      debuggerREPL"
+      , "      debuggerREPL testQueries"
       , "    \"list\" -> do"
       , "      putStrLn \"Available test queries:\""
       , "      mapM_ (\\(i, (query, _)) -> putStrLn $ show i ++ \": \" ++ show query) (zip [1..] testQueries)"
-      , "      debuggerREPL"
+      , "      debuggerREPL testQueries"
       , "    _ | Just queryNumStr <- Data.List.stripPrefix \"run \" input -> do"
       , "        case Text.Read.readMaybe queryNumStr of"
       , "          Just queryNum | queryNum >= 1 && queryNum <= length testQueries -> do"
       , "            let (query, _) = testQueries !! (queryNum - 1)"
       , "            debugQuery query"
-      , "            debuggerREPL"
+      , "            debuggerREPL testQueries"
       , "          _ -> do"
       , "            putStrLn $ \"Invalid query number. Use 1-\" ++ show (length testQueries)"
-      , "            debuggerREPL"
+      , "            debuggerREPL testQueries"
       , "    _ -> do"
       , "      putStrLn \"Unknown command. Type 'help' for available commands.\""
-      , "      debuggerREPL"
+      , "      debuggerREPL testQueries"
       , ""
       , "debugQuery :: PureTerm' CodeGenPhase -> IO ()"
       , "debugQuery query = do"
@@ -543,14 +547,26 @@ extractTestQueries = catMaybes . map extractQuery
           tryPrefix (prefix, shouldPass) = ((,shouldPass) <$> stripPrefix prefix content)
       in foldr ((<|>) . tryPrefix) Nothing prefixes
 
+data CodeGenError = ParseError String Parsing.Error
+                  | TypeError String Typing.Error
+                  deriving (Eq, Ord, Show)
+
+printError :: CodeGenError -> Q a
+printError err = liftIO $ do
+  case err of
+    ParseError queryStr err -> Reporting.printParseError queryStr err
+    TypeError queryStr err -> Reporting.printTypeError queryStr err
+
+  exitFailure
+
 -- | Parse and type check test queries during code generation
 processTestQueries :: CheckingContext -> [(String, Bool)] -> Q [Exp]
-processTestQueries ctx = mapM (fmap (either error id) . runExceptT . processQuery ctx)
+processTestQueries ctx = mapM (either printError return <=< (runExceptT . processQuery ctx))
   where
-    processQuery :: CheckingContext -> (String, Bool) -> ExceptT String Q Exp
+    processQuery :: CheckingContext -> (String, Bool) -> ExceptT CodeGenError Q Exp
     processQuery ctx (queryStr, shouldPass) = do
-      parsedQuery <- liftEither $ first ((("Failed to parse test query '" ++ queryStr ++ "': ") ++) . show) $ parseTerm queryStr
-      typedQuery <- liftEither $ first ((("Failed to type check test query '" ++ queryStr ++ "': ") ++) . show) $
+      parsedQuery <- liftEither $ first (ParseError queryStr) $ parseTerm queryStr
+      typedQuery <- liftEither $ first (TypeError queryStr) $
                     runCheckTerm ctx parsedQuery
       Trans.lift $ do
         queryExp <- pureTermToExp ctx typedQuery

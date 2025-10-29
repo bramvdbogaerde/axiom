@@ -11,7 +11,7 @@ module LanguageServer.Diagnostics
 import Language.TypeCheck (Error(..))
 import qualified Language.AST as AST
 import Language.LSP.Protocol.Types (Diagnostic(..), DiagnosticSeverity(..), Range(..), Position(..))
-import Reporting (formatModelError)
+import Language.Axiom.Reporting (formatModelError)
 import qualified Data.Text as T
 
 -------------------------------------------------------------

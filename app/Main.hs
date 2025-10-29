@@ -14,7 +14,7 @@ import System.Console.ANSI
 import System.Exit
 import System.Process
 import System.FilePath
-import Reporting (printError, printImportError)
+import Language.Axiom.Reporting (printError, printImportError)
 import Options.Applicative
 import qualified LanguageServer
 import qualified Language.SolverDebugger as SolverDebugger
