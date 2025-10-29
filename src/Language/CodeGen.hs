@@ -55,6 +55,7 @@ preludeSystemImports =
   import Language.AST (XEmbeddedValue)
   import qualified Language.Range
   import qualified Language.Types
+  import qualified Language.TypeCheck
   import Language.Solver
   import qualified Language.Solver.BacktrackingST as ST
 
@@ -89,8 +90,8 @@ preludeExtensions =
   |]
 
 
-makeModule :: String -> Bool -> String -> String -> String -> String -> String -> String -> String  
-makeModule mainName enableDebugger prelude postlude ast testQueries termDecls subtyping = T.unpack
+makeModule :: String -> Bool -> String -> String -> String -> String -> String -> String -> String -> String
+makeModule mainName enableDebugger prelude postlude ast testQueries termDecls subtyping checkingContext = T.unpack
   [text|
   $preludeExtensions
   $preludeSystemImports
@@ -116,6 +117,11 @@ makeModule mainName enableDebugger prelude postlude ast testQueries termDecls su
 
   subtyping :: Language.Types.Subtyping
   subtyping = $subtyping'
+
+  -- Type checking context
+
+  checkingContext :: Language.TypeCheck.CheckingContext
+  checkingContext = $checkingContext'
 
   $postlude'
 
@@ -159,6 +165,7 @@ makeModule mainName enableDebugger prelude postlude ast testQueries termDecls su
     prelude' = T.pack prelude
     termDecls' = T.pack termDecls
     subtyping' = T.pack subtyping
+    checkingContext' = T.pack checkingContext
     postlude'  = T.pack postlude
     debuggerImports' = T.pack $ if enableDebugger 
                                 then unlines
@@ -551,8 +558,19 @@ processTestQueries ctx = mapM (fmap (either error id) . runExceptT . processQuer
 
 -- | Generate Template Haskell expression for subtyping graph
 generateSubtyping :: CheckingContext -> Q Exp
-generateSubtyping context = 
+generateSubtyping context =
   [| Language.Types.fromAdjacencyList $(lift . toAdjacencyList . _subtypingGraph $ context) |]
+
+-- | Generate Template Haskell expression for the checking context
+generateCheckingContext :: CheckingContext -> Q Exp
+generateCheckingContext context =
+  [| Language.TypeCheck.CheckingContext
+       $(lift $ _typingContext context)
+       $(generateSubtyping context)
+       $(lift $ _definedSorts context)
+       $(lift $ _rewriteNames context)
+       $(lift $ _typeAliases context)
+  |]
 
 -- | Generate a Haskell program representing the Typed program with executable Haskell functions in it.
 codegen :: Bool -> String -> CheckingContext -> TypedProgram -> IO String
@@ -567,4 +585,5 @@ codegen enableDebugger mainName context prog@(Program _ comments) = runQ $ do
     <*> (pprint <$> (processTestQueries context testQueryStrings >>= listE . map return))
     <*> (pprint <$> generateTermTypes context)
     <*> (pprint <$> generateSubtyping context)
+    <*> (pprint <$> generateCheckingContext context)
 

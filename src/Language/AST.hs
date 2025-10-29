@@ -11,6 +11,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DeriveLift #-}
 module Language.AST(
     Tpy,
     Program,
@@ -93,6 +94,7 @@ import Data.List (intercalate)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Void (Void, absurd)
+import Language.Haskell.TH.Syntax (Lift)
 
 import Language.Types
 import Data.Data
@@ -177,7 +179,7 @@ data TypeCon = TypeApp TypeCon [TypeCon] Range -- ^ T(T1, ..., TN)
              | TypeTyp String Range            -- ^ T
              | TypeVar String Range            -- ^ a
              | TypeHas String Range            -- ${Map String V}
-              deriving (Ord, Eq, Show)
+              deriving (Ord, Eq, Show, Lift)
 
 instance RangeOf TypeCon where
   rangeOf = \case TypeApp _ _ r -> r
