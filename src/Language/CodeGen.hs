@@ -245,7 +245,7 @@ makeModule mainName enableDebugger prelude postlude ast testQueries termDecls su
       , "  let Program decls _ = ast"
       , "  let rules = [rule | RulesDecl _ rules _ <- decls, rule <- rules]"
       , "  let config = Language.SolverDebugger.defaultConfig"
-      , "  (solutions, trace) <- Language.SolverDebugger.debugSolve config rules query"
+      , "  (solutions, trace) <- Language.SolverDebugger.debugSolve config checkingContext rules query"
       , "  putStrLn \"\\n=== TRACE ===\""
       , "  putStrLn $ Language.SolverDebugger.prettyTrace trace"
       , "  putStrLn \"=== RESULTS ===\""
