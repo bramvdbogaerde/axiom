@@ -201,7 +201,7 @@ getInCacheContents whenSucceeds = return $ map show whenSucceeds
 -- | Convert goal terms to string representation for tracing
 goalToString :: (ForAllPhases Ord p, Show (PureTerm' p), AnnotateType p) => Unification.VariableMapping p s -> SearchGoal p s -> TracedSolver p q s String
 goalToString mapping (SearchGoal ruleName goal) =
-   flip (Printf.printf "%s via %s") ruleName . show <$> liftSolver (liftST $ Unification.pureTerm goal mapping)
+   flip (Printf.printf "\x1b[1;31m %s via %s \x1b[0m") ruleName . show <$> liftSolver (liftST $ Unification.pureTerm goal mapping)
 
 -- | Traced version of solveSingle with debugging information
 tracedSolveSingle :: (Queue q, ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => Int -> TracedSolver p q s (Maybe (Either (Map String (PureTerm' p)) ()))
