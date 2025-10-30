@@ -21,7 +21,7 @@ typeQuery :: CheckingContext -> PureTerm -> Either Error TypedTerm
 typeQuery = runCheckTerm
 
 -- | Solve 'query' against 'solver' and return the out-cache of the given query
-solve :: (HaskellExprExecutor p, AnnotateType p, ForAllPhases Ord p, HaskellExprRename p)
+solve :: (HaskellExprExecutor p, ForAllPhases Show p, AnnotateType p, ForAllPhases Ord p, HaskellExprRename p)
       => (forall s . Solver.EngineCtx p [] s)
       -> PureTerm' p
       -> [Map String (PureTerm' p)]

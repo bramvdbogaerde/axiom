@@ -109,9 +109,9 @@ spec = do
               ref2 <- lift $ newSTRef (Uninitialized "y" AnyType)  
               ref3 <- lift $ newSTRef (Uninitialized "z" AnyType)
 
-              let cell1 = Ref ref1
-              let cell2 = Ref ref2
-              let cell3 = Ref ref3
+              let cell1 = Ref "cell1" ref1
+              let cell2 = Ref "cell2" ref2
+              let cell3 = Ref "cell3" ref3
 
               -- Create pointer chain: cell1 -> cell2 -> cell3
               lift $ writeSTRef ref1 (Ptr cell2)

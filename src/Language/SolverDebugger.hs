@@ -34,6 +34,7 @@ import Text.Read (readMaybe)
 import Control.Lens.Setter ((?~))
 import Control.Monad.Error.Class
 import Control.Monad.Except (runExceptT)
+import Data.Functor.Identity (Identity)
 
 
 -------------------------------------------------------------
@@ -98,12 +99,12 @@ type SolverTrace p = [TraceEntry p]
 -- | Pretty print a trace entry
 prettyTraceEntry :: (Show (PureTerm' p)) => TraceEntry p -> String
 prettyTraceEntry entry = unlines $
-  [ "Step " ++ show (traceStep entry) ++
+  [ "\x1b[1mStep " ++ show (traceStep entry) ++
     (case traceStateId entry of
        Just stateId -> " [State #" ++ show stateId ++ "]"
        Nothing -> "") ++
-    ": " ++ traceAction entry
-  , "  Goals: [" ++ intercalate ", " (traceGoals entry) ++ "]"
+    ": \x1b[0m" ++ traceAction entry
+  , "  Current goal: " ++ (case traceGoals entry of { [] -> "none" ; (goal:_) -> goal} ) 
   , "  Queue size: " ++ show (traceQueueSize entry)
   , "  Cache size: " ++ show (traceCacheSize entry)
   ] ++
@@ -199,12 +200,12 @@ getInCacheContents :: (Show (PureTerm' p)) => [InOut p s] -> TracedSolver p q s 
 getInCacheContents whenSucceeds = return $ map show whenSucceeds
 
 -- | Convert goal terms to string representation for tracing
-goalToString :: (ForAllPhases Ord p, Show (PureTerm' p), AnnotateType p) => Unification.VariableMapping p s -> SearchGoal p s -> TracedSolver p q s String
+goalToString :: (ForAllPhases Ord p, ForAllPhases Show p, Show (PureTerm' p), AnnotateType p) => Unification.VariableMapping p s -> SearchGoal p s -> TracedSolver p q s String
 goalToString mapping (SearchGoal ruleName goal) =
-   flip (Printf.printf "\x1b[1;31m %s via %s \x1b[0m") ruleName . show <$> liftSolver (liftST $ Unification.pureTerm goal mapping)
+   flip (Printf.printf "%s \x1b[1;31m via %s \x1b[0m") ruleName . show <$> liftSolver (liftST $ Unification.pureTerm goal mapping)
 
 -- | Traced version of solveSingle with debugging information
-tracedSolveSingle :: (Queue q, ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => Int -> TracedSolver p q s (Maybe (Either (Map String (PureTerm' p)) ()))
+tracedSolveSingle :: (Queue q, ForAllPhases Show p, ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => Int -> TracedSolver p q s (Maybe (Either (Map String (PureTerm' p)) ()))
 tracedSolveSingle stepNum = do
   queueSize <- liftSolver getQueueSize
 
@@ -221,7 +222,7 @@ tracedSolveSingle stepNum = do
   result <- liftSolver solveSingle
 
   -- Get partial mapping, cache info for trace
-  partialMapping <- return Map.empty
+  let partialMapping = Map.empty
   cacheSize <- getCurrentCacheSize
   outCache <- getCurrentOutCache
   inCache <- getInCacheContents currentWhenSucceeds
@@ -239,7 +240,7 @@ tracedSolveSingle stepNum = do
       return $ Just (Right ())
 
 -- | Traced version of solveAll with step limit from config
-tracedSolveAll :: (Queue q, ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => TracedSolver p q s [Map String (PureTerm' p)]
+tracedSolveAll :: (Queue q, ForAllPhases Show p, ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => TracedSolver p q s [Map String (PureTerm' p)]
 tracedSolveAll = go 1 []
   where
     go stepNum solutions = withStepLimit stepNum continueStep (return $ reverse solutions)
@@ -252,7 +253,7 @@ tracedSolveAll = go 1 []
             Just (Right ()) -> go (stepNum + 1) solutions
 
 -- | Main traced solve function with step limit from config and caching loop
-tracedSolve :: (Queue q, ForAllPhases Ord p, AnnotateType p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => PureTerm' p -> TracedSolver p q s [Map String (PureTerm' p)]
+tracedSolve :: (Queue q, ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => PureTerm' p -> TracedSolver p q s [Map String (PureTerm' p)]
 tracedSolve query = do
   partialMapping <- getCurrentPartialMapping
   cacheSize <- getCurrentCacheSize
@@ -264,7 +265,7 @@ tracedSolve query = do
 
 
 -- | Traced version of solveUntilStable with cache iteration tracking
-tracedSolveUntilStable :: (Queue q, ForAllPhases Ord p, AnnotateType p, ForAllPhases Eq p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => PureTerm' p -> Int -> TracedSolver p q s [Map String (PureTerm' p)]
+tracedSolveUntilStable :: (Queue q, ForAllPhases Show p, ForAllPhases Ord p, AnnotateType p, ForAllPhases Eq p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => PureTerm' p -> Int -> TracedSolver p q s [Map String (PureTerm' p)]
 tracedSolveUntilStable query iteration = do
   partialMapping <- getCurrentPartialMapping
   cacheSize <- getCurrentCacheSize
@@ -297,11 +298,11 @@ runSolverWithTrace context ctx tracedComp = do
   runSolver ctx $ runWriterT $ runReaderT (runTracedSolver tracedComp) context
 
 -- | Debug solve a query with config and return solutions with trace  
-debugSolve :: (ForAllPhases Ord p, AnnotateType p, ForAllPhases Eq p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => DebugConfig -> CheckingContext -> [RuleDecl' p] -> PureTerm' p -> IO ([Map String (PureTerm' p)], SolverTrace p)
-debugSolve config checkingContext rules query = do
+debugSolve :: (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, ForAllPhases Eq p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => DebugConfig -> CheckingContext -> [RuleDecl' p] -> [RewriteDecl' p Identity] -> PureTerm' p -> IO ([Map String (PureTerm' p)], SolverTrace p)
+debugSolve config checkingContext rules rewrites query = do
   return $ ST.runST $ do
     -- TODO: allow rewrites in the debugger
-    let ctx = fromRules @[] (_subtypingGraph checkingContext) rules []
+    let ctx = fromRules @[] (_subtypingGraph checkingContext) rules rewrites
     let debugCtx = createDebugContext config query
     runSolverWithTrace debugCtx ctx (tracedSolve query)
 
@@ -322,32 +323,33 @@ debugSession semFile = do
         Left typeError -> putStrLn $ "Type error: " ++ show typeError
         Right (checkingCtx, Program decls' _) -> do
           let rules = [rule | RulesDecl _ rules _ <- decls', rule <- rules]
+          let rewrites = [rule | Rewrite rule _ <- decls' ]
 
           putStrLn "Loaded and type checked rules successfully. Enter queries to debug (or 'quit' to exit):"
           putStrLn "Use ':set steps N' to limit solver steps, ':show config' to view settings."
           mapM_ print rules
 
-          debugLoop defaultConfig checkingCtx rules
+          debugLoop defaultConfig checkingCtx rules rewrites
   where
-    debugLoop :: DebugConfig -> CheckingContext -> [RuleDecl' TypingPhase] -> IO ()
-    debugLoop config ctx rules = do
+    debugLoop :: DebugConfig -> CheckingContext -> [RuleDecl' TypingPhase] -> [RewriteDecl' TypingPhase Identity] -> IO ()
+    debugLoop config ctx rules rewrites = do
       putStr "debug> " >> hFlushAll stdout
       input <- getLine
       if | input == "quit" -> putStrLn "Goodbye!"
-         | not (null input) && head input == ':' -> handleCommand input config ctx rules
-         | otherwise -> handleQuery input config ctx rules >> debugLoop config ctx rules
+         | not (null input) && head input == ':' -> handleCommand input config ctx rules rewrites
+         | otherwise -> handleQuery input config ctx rules rewrites >> debugLoop config ctx rules rewrites
 
-    handleCommand input config ctx rules =
+    handleCommand input config ctx rules rewrites =
       case parseCommand' input config of
-        Left err -> putStrLn err >> debugLoop config ctx rules
+        Left err -> putStrLn err >> debugLoop config ctx rules rewrites
         Right newConfig -> do
           putStrLn $ "Configuration updated: " ++ show newConfig
-          debugLoop newConfig ctx rules
+          debugLoop newConfig ctx rules rewrites
 
-    handleQuery input config ctx rules = fmap (either error id) $ runExceptT $ do
+    handleQuery input config ctx rules rewrites = fmap (either error id) $ runExceptT $ do
       goal <- modifyError (("Parse error: " ++) . show) $ liftEither $ parseGoal input
       checkedGoal <- modifyError (("Type error: " ++) . show) $ liftEither $ runCheckTerm ctx goal
-      (solutions, trace) <- liftIO $ debugSolve config ctx rules checkedGoal
+      (solutions, trace) <- liftIO $ debugSolve config ctx rules rewrites checkedGoal
       liftIO $ putStrLn "\n=== TRACE ==="
       liftIO $ putStrLn $ prettyTrace trace
       liftIO $ putStrLn "=== RESULTS ==="

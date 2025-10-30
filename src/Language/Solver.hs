@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections, MonoLocalBinds #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Language.Solver where
 
@@ -24,11 +25,13 @@ import qualified Language.Solver.Renamer as Renamer
 import qualified Language.Solver.Unification as Unification
 import Language.Solver.Worklist
 import Language.Solver.Unification (RefTerm)
-import qualified Debug.Trace as Debug
 import Control.Monad.Extra (ifM, when, unless)
 import Data.Either
 import Data.Maybe (catMaybes, fromMaybe)
 import Control.Monad ((>=>))
+import qualified Data.List as List
+import Data.Maybe (mapMaybe)
+import qualified Debug.Trace as Debug
 
 ------------------------------------------------------------
 -- Search data structures
@@ -39,8 +42,11 @@ import Control.Monad ((>=>))
 -- originated.
 data SearchGoal p s = SearchGoal
   { _goalRuleName :: String,
-    _goalTerm :: RefTerm p s }
+    _goalTerm :: RefTerm p s } 
 
+deriving instance (ForAllPhases Eq p) => Eq (SearchGoal p s)
+deriving instance (ForAllPhases Ord p) => Ord (SearchGoal p s)
+    
 type InOut p s = (PureTerm' p)
 
 data SearchState p s = SearchState
@@ -53,7 +59,7 @@ data SearchState p s = SearchState
     -- | Goals to add to the cache when all the search goals in this state
     -- have been solved.
     _searchWhenSucceeds :: ![InOut p s]
-  }
+  } 
 
 data SearchCtx p q s = SearchCtx
   { _searchQueue :: !(q (SearchState p s)),
@@ -100,13 +106,14 @@ addConclusionFunctor nam decl =
 -- | Construct an initial context from the rules defined the program
 fromRules :: forall q s p . (Queue q, ForAllPhases Ord p) => Subtyping -> [RuleDecl' p] -> [PureRewriteDecl p] -> EngineCtx p q s
 fromRules subtyping rules rewrites =
-      flip (foldr visitRewrite) rewrites
+      flip (foldr visitRewrite) (Debug.traceShowWith (map rewriteName) rewrites)
     $ foldr visit (emptyEngineCtx subtyping) rules
   where
-    visit rule@(RuleDecl _ _precedent consequent _) =
-      flip (foldr (`addConclusionFunctor` rule)) (foldMap functorName consequent)
+    visit rule@(RuleDecl _ _precedent consequents _) =
+      flip (foldr (`addConclusionFunctor` rule)) (mapMaybe functorName (List.singleton (head consequents)))
     visitRewrite decl@(RewriteDecl nam _ _ _) =
       over rewriteRules (Map.insertWith (++) nam [decl])
+    rewriteName (RewriteDecl nam _ _ _)= nam
 
 ------------------------------------------------------------
 -- Monad context
@@ -143,7 +150,7 @@ refTerm = liftUnification . Unification.refTerm'
 
 
 -- | Convert a RefTerm back to a pure term
-pureTerm :: (ForAllPhases Ord p, AnnotateType p) => RefTerm p s -> Solver p q s (PureTerm' p)
+pureTerm :: (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p) => RefTerm p s -> Solver p q s (PureTerm' p)
 pureTerm = liftUnification . Unification.pureTerm''
 
 -- | Generate unique variables in a given pure term
@@ -160,7 +167,7 @@ data CacheResult p   = InCache (PureTerm' p)        -- ^ indicates that the item
                      | NotInCache                   -- ^ indicates that the item is not in the in-cache
 
 -- | Add a term to the cache together with its unification result 
-addToCache :: (HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p), AnnotateType p) => PureTerm' p -> Solver p q s ()
+addToCache :: (HaskellExprRename p, ForAllPhases Show p, ForAllPhases Ord p, Show (PureTerm' p), AnnotateType p) => PureTerm' p -> Solver p q s ()
 addToCache t = do
   -- use a normalizer that results in variables without unique names
   -- this is important so that the cache satisfies the ascending chain condition
@@ -175,7 +182,7 @@ addToCache t = do
 
 -- | Adds an element to the in-cache if there is no already existing term that unifies with this one
 -- in the cache 
-addToInCache :: (HaskellExprRename p, ForAllPhases Ord p, HaskellExprExecutor p, AnnotateType p)
+addToInCache :: (HaskellExprRename p, ForAllPhases Ord p, ForAllPhases Show p,  HaskellExprExecutor p, AnnotateType p)
              => PureTerm' p
             -> Unification.VariableMapping p s
             -> [InOut p s]
@@ -185,7 +192,7 @@ addToInCache t mapping theInCache = do
   ifM (inCache t' theInCache mapping) (return theInCache) (return $ t : theInCache)
 
 -- | Looks up the result(s) from the term in the out-cache
-lookupCache :: (HaskellExprRename p, AnnotateType p, HaskellExprExecutor p, ForAllPhases Ord p)
+lookupCache :: (HaskellExprRename p,  ForAllPhases Show p, AnnotateType p, HaskellExprExecutor p, ForAllPhases Ord p)
             => PureTerm' p -> Solver p q s (Set (PureTerm' p))
 lookupCache queryTerm = do
   cache <- gets (^. outCache)
@@ -209,7 +216,7 @@ lookupCache queryTerm = do
       return $ if unified then Just cacheResults else Nothing
 
 -- | Unifies the query with the solutions from the out-cache
-cachedSolutions  :: (HaskellExprRename p, AnnotateType p, HaskellExprExecutor p, ForAllPhases Ord p, Show (PureTerm' p))
+cachedSolutions  :: (HaskellExprRename p, ForAllPhases Show p, AnnotateType p, HaskellExprExecutor p, ForAllPhases Ord p, Show (PureTerm' p))
                   => PureTerm' p                 -- ^ Original query term
                   -> Solver p q s [Map String (PureTerm' p)]  -- ^ Returns unified results as pure terms
 cachedSolutions query = do
@@ -238,7 +245,7 @@ cachedSolutions query = do
           return Nothing
 
 -- | Checks whether the given term unifies with a term in the in-cache
-inCache :: (HaskellExprRename p, AnnotateType p, HaskellExprExecutor p, ForAllPhases Ord p)
+inCache :: (HaskellExprRename p, ForAllPhases Show p,  AnnotateType p, HaskellExprExecutor p, ForAllPhases Ord p)
         => RefTerm p s
         -> [InOut p s]
         -> Unification.VariableMapping p s
@@ -251,7 +258,7 @@ inCache t inCache _mapping = or <$> mapM (uniqueTerm >=> refTerm >=> doesUnify t
 
 -- | Unifies two terms together or returns Left if the terms
 -- cannot be unified.
-unify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
+unify :: (ForAllPhases Ord p, ForAllPhases Show p,  AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
       => RefTerm p s
       -> RefTerm p s
       -> Solver p q s (Either String ())
@@ -259,7 +266,7 @@ unify left right =
   liftUnification $ fmap Right (Unification.unifyTerms left right) `catchError` (return . Left)
 
 -- | Returns "True" if the given terms can/are unified
-doesUnify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
+doesUnify :: (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
           => RefTerm p s
           -> RefTerm p s
           -> Solver p q s Bool
@@ -268,7 +275,7 @@ doesUnify t1 t2 = do
  isRight <$> unify t1 t2 <* restoreSnapshot snapshot
 
 -- | Force the unification of a pure term and returns the unified pure term
-forceUnify :: (ForAllPhases Ord p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
+forceUnify :: (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
            => PureTerm' p
            -> Solver p q s (PureTerm' p)
 forceUnify t1 =
@@ -287,14 +294,14 @@ initialWL query = do
   modify (over (searchCtx . searchQueue) (enqueue initialState))
 
 -- | Main entry point for solving a query - returns lazy list of all solutions
-solve :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
+solve :: (AnnotateType p, ForAllPhases Show p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
       => PureTerm' p -> Solver p q s [Map String (PureTerm' p)]
 solve = solveUntilStable
 
 -- | Solve a single step: dequeue one state and process it
 -- Returns Nothing if queue is empty, Just (Left solution) if solution found,
 -- Just (Right ()) if search state was processed and search should continue
-solveSingle :: forall p q s . (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
+solveSingle :: forall p q s . (AnnotateType p, ForAllPhases Show p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
             => Solver p q s (Maybe (Either (Map String (PureTerm' p)) ()))
 solveSingle = do
   queue <- gets (^. searchCtx . searchQueue)
@@ -317,7 +324,7 @@ solveSingle = do
           return $ Just (Right ())
 
 -- | Solve until the out-cache stabilizes (no longer changes between iterations)
-solveUntilStable :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
+solveUntilStable :: (AnnotateType p, ForAllPhases Show p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
                  => PureTerm' p -> Solver p q s [Map String (PureTerm' p)]
 solveUntilStable query = do
   initialCache <- gets (^. outCache)
@@ -331,7 +338,7 @@ solveUntilStable query = do
     else solveUntilStable query
 
 -- | Collect all solutions by repeatedly calling solveSingle
-solveAll :: (AnnotateType p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
+solveAll :: (AnnotateType p, ForAllPhases Show p, HaskellExprExecutor p, Queue q, HaskellExprRename p, ForAllPhases Ord p, Show (PureTerm' p))
          => Solver p q s [Map String (PureTerm' p)]
 solveAll = do
   result <- solveSingle
@@ -345,13 +352,22 @@ solveAll = do
 ------------------------------------------------------------
 
 -- | Continue solving with the given remaining goals
-continue :: (Queue q) => [SearchGoal p s] -> [InOut p s] -> Solver p q s ()
+continue :: (ForAllPhases Ord p, Queue q) => [SearchGoal p s] -> [InOut p s] -> Solver p q s ()
 continue remainingGoals whenSucceeds = do
-  newState <- SearchState 0 remainingGoals <$> takeSnapshot <*> pure whenSucceeds
+  newState <- SearchState 0 (removedup remainingGoals) <$> takeSnapshot <*> pure whenSucceeds
   modify (over (searchCtx . searchQueue) (enqueue newState))
 
+-- | Remove duplicates from a list while preserving order
+removedup :: (Ord a) => [a] -> [a]
+removedup = go Set.empty
+  where
+    go _seen [] = []
+    go seen (x:xs)
+      | x `Set.member` seen = go seen xs
+      | otherwise = x : go (Set.insert x seen) xs
+
 -- | Expand a goal by trying all matching rules
-expandGoal :: (AnnotateType p, HaskellExprRename p, HaskellExprExecutor p, Queue q, ForAllPhases Ord p)
+expandGoal :: (AnnotateType p, ForAllPhases Show p, HaskellExprRename p, HaskellExprExecutor p, Queue q, ForAllPhases Ord p)
            => SearchGoal p s
            -> [SearchGoal p s]
            -> [InOut p s]
@@ -377,7 +393,7 @@ expandGoal (SearchGoal _ruleName goal) remainingGoals whenSucceeds = do
 
       Eqq left right _ _ -> do
         -- Equality: try to unify, if it succeeds then = succeeds
-        either (const (return ()) . Debug.traceShowId) (const $ continue remainingGoals whenSucceeds) =<< unify left right
+        either (const (return ())) (const $ continue remainingGoals whenSucceeds) =<< unify left right
       Neq left right _ _ -> do
         -- Inequality: fail if unifies, otherwise succeed
         either (const $ continue remainingGoals whenSucceeds) (const $ return ()) =<< unify left right
@@ -413,7 +429,7 @@ findMatchingRules functorName = do
   gets (Set.toList . Map.findWithDefault Set.empty functorName . (^. conclusionFunctors))
 
 -- | Try to unify a goal with a rule and add new search states
-processRule :: forall p q s . (AnnotateType p, Queue q, HaskellExprRename p, HaskellExprExecutor p, ForAllPhases Ord p)
+processRule :: forall p q s . (AnnotateType p, ForAllPhases Show p, Queue q, HaskellExprRename p, HaskellExprExecutor p, ForAllPhases Ord p)
             => RefTerm p s      -- ^ the unification goal
             -> [SearchGoal p s] -- ^ list of remainong goals
             -> [InOut p s]      -- ^ in-cache

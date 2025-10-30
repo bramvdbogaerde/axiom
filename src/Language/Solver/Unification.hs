@@ -25,6 +25,7 @@ import qualified Data.Set as Set
 import Data.Kind
 import Data.Maybe (fromMaybe)
 import qualified Language.Solver.Renamer as Renamer
+import qualified Debug.Trace as Debug
 
 -------------------------------------------------------------
 -- Core data types
@@ -40,8 +41,11 @@ data CellValue p s a = Value (RefTerm p s)
                    | Uninitialized String Typ
 deriving instance (ForAllPhases Eq p) => Eq (CellValue p s a)
 
-newtype Cell p s a = Ref (BST.STRef s (CellValue p s a))
+data Cell p s a = Ref { name :: String, ref ::  BST.STRef s (CellValue p s a) }
                  deriving (Eq, Ord)
+
+instance Show (Cell p s a) where
+  show (Ref nam _) = "<cell: " ++ nam ++ ">"
 
 -- | A mapping between original variable names and their references
 type VariableMapping p s = Map String (Cell p s String)
@@ -103,7 +107,7 @@ getUniqueVariables = use numUniqueVariables
 updateUniqueVariables :: Int -> UnificationM p s ()
 updateUniqueVariables = modify . over numUniqueVariables . const
 
-pureTerm'' :: (ForAllPhases Ord p, AnnotateType p) => RefTerm p s -> UnificationM p s (PureTerm' p)
+pureTerm'' :: (ForAllPhases Ord p, ForAllPhases Show p,  AnnotateType p) => RefTerm p s -> UnificationM p s (PureTerm' p)
 pureTerm'' t = do
   getVariableMapping >>= lift . lift . ExceptT . pureTerm' t
 
@@ -116,10 +120,10 @@ liftST = lift . lift . lift
 -------------------------------------------------------------
 
 readCellRef :: Cell p s a -> BST.ST s (CellValue p s a)
-readCellRef (Ref ref) = BST.readSTRef ref
+readCellRef (Ref _ ref) = BST.readSTRef ref
 
 writeCellRef :: Cell p s a -> CellValue p s a -> BST.ST s ()
-writeCellRef (Ref ref) = BST.writeSTRef ref
+writeCellRef (Ref _ ref) = BST.writeSTRef ref
 
 -- | Get the final cell value with path compression
 setOf :: Cell p s String -> BST.ST s (Cell p s String)
@@ -165,7 +169,7 @@ refTerm term = runStateT (transformTerm term)
       where
         createNewCell = do
           cellRef <- lift $ BST.newSTRef (Uninitialized varName (getTermType @p tpy))
-          let cell = Ref cellRef
+          let cell = Ref varName cellRef
           modify (Map.insert varName cell)
           return $ Atom cell tpy range
 
@@ -235,20 +239,20 @@ addVisited :: BST.STRef s (CellValue p s String) -> VisitedList p s -> VisitedLi
 addVisited ref visited = ref : visited
 
 -- | Convert a pointer-based term back to a pure term with cycle detection
-pureTerm' :: (ForAllPhases Ord p, AnnotateType p) => RefTerm p s -> VariableMapping p s -> BST.ST s (Either String (PureTerm' p))
+pureTerm' :: (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p) => RefTerm p s -> VariableMapping p s -> BST.ST s (Either String (PureTerm' p))
 pureTerm' term _mapping = do
   -- TODO: should we still flatten the mapping or not?
   -- flattenMapping mapping
-  runExceptT $ evalStateT (convertTerm term) []
+  runExceptT $ runReaderT (convertTerm term) []
   where
-    convertTerm :: forall p s .  (ForAllPhases Ord p, AnnotateType p) => RefTerm p s -> StateT (VisitedList p s) (ExceptT String (BST.ST s)) (PureTerm' p)
-    convertTerm (Atom (Ref cellRef) _tpy range) =
+    convertTerm :: forall p s .  (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p) => RefTerm p s -> ReaderT (VisitedList p s) (ExceptT String (BST.ST s)) (PureTerm' p)
+    convertTerm (Atom (Ref _ cellRef) _tpy range) =
         lift (lift $ BST.readSTRef cellRef) >>= convertCell
       where convertCell = \case
               Value term ->
-                ifM (get >>= lift . lift . isVisited cellRef)
-                    (lift $ throwError "Cycle detected during term conversion")
-                    (modify (addVisited cellRef) >> convertTerm term)
+                ifM (ask >>= lift . lift . isVisited cellRef)
+                    (lift $ throwError $ "Cycle detected during term conversion (convertTerm), with term " ++ show term)
+                    (local (addVisited cellRef) $ convertTerm term)
               Uninitialized varName cellType -> return $ Atom (Identity varName) (typeAnnot (Proxy @p) cellType) range
               Ptr cell -> lift (lift $ parentValue cell) >>= convertCell
 
@@ -282,13 +286,12 @@ pureTerm' term _mapping = do
     convertTerm (TermExpr expr range) = flip TermExpr range <$> convertExpr expr
 
     convertTerm (TermMap mapping tpy range) =
-      -- TODO: the bimapM here is redundant
       return $ TermMap mapping tpy range
 
     convertTerm (Wildcard t range) =
       return $ Wildcard t range
 
-    convertExpr :: forall p (s :: Type) .  (ForAllPhases Ord p, AnnotateType p) => RefExpr p s -> StateT (VisitedList p s) (ExceptT String (BST.ST s)) (Expr p Identity)
+    convertExpr :: forall p (s :: Type) .  (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p) => RefExpr p s -> ReaderT (VisitedList p s) (ExceptT String (BST.ST s)) (Expr p Identity)
     convertExpr = \case
         LookupMap t1 t2 tpy range ->
             LookupMap <$> convertTerm t1 <*> convertTerm t2 <*> pure tpy <*> pure range
@@ -301,12 +304,12 @@ pureTerm' term _mapping = do
         SetUnion t1 t2 tpy r -> SetUnion <$> convertTerm t1 <*> convertTerm t2 <*> pure tpy <*> pure r
 
 -- | Same as pureTerm' but raises an error if the term could not be converted
-pureTerm :: (ForAllPhases Ord p, AnnotateType p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
+pureTerm :: (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
 pureTerm term = pureTerm' term >=> either error return
 
 
 -- | Same as pureTerm but ensures that all elements of the term are ground
-pureTermGround :: (ForAllPhases Ord p, AnnotateType p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
+pureTermGround :: (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p) => RefTerm p s -> VariableMapping p s -> BST.ST s (PureTerm' p)
 pureTermGround term mapping = do
   term' <- pureTerm term mapping
   if isTermGround term'
@@ -318,13 +321,13 @@ pureTermGround term mapping = do
 -------------------------------------------------------------
 
 -- | Normalize a term, meaning that nested terms of "TermExpr" and "GroundTerm" are collapsed into the inner "Term".
-normalizeTerm :: (ForAllPhases Ord p, HaskellExprRename p, HaskellExprExecutor p, AnnotateType p) => RefTerm p s -> UnificationM p s (RefTerm p s)
+normalizeTerm :: (ForAllPhases Ord p, ForAllPhases Show p, HaskellExprRename p, HaskellExprExecutor p, AnnotateType p) => RefTerm p s -> UnificationM p s (RefTerm p s)
 normalizeTerm (TermExpr expr _) = do
   evaluateExpr expr >>= normalizeTerm
 normalizeTerm t = return t
 
 -- | Evaluate an element of the expression language
-evaluateExpr :: (ForAllPhases Ord p, HaskellExprRename p, HaskellExprExecutor p, AnnotateType p) => RefExpr p s  -> UnificationM p s (RefTerm p s)
+evaluateExpr :: (ForAllPhases Ord p, ForAllPhases Show p, HaskellExprRename p, HaskellExprExecutor p, AnnotateType p) => RefExpr p s  -> UnificationM p s (RefTerm p s)
 evaluateExpr (EmptyMap tpy r) =
   return (TermMap Map.empty tpy r)
 evaluateExpr (LookupMap mapping key _ _) = do
@@ -347,8 +350,14 @@ evaluateExpr (UpdateMap mapping key value _ range) = do
     -- The term not being a 'TermMap' would be an error in the type checker, so we can just crash here
     _ -> error $ "UpdateMap: expected a map, got " ++ show (termTypeOf mapping') -- TODO: add show instance of mapping
 evaluateExpr (GroundTerm t _ _) = normalizeTerm t
-evaluateExpr (RewriteApp nam args _ range) = tryRules =<< findRewriteRules nam
-  where tryRules [] = throwError $ "No matching rewrite rules for application " ++ nam ++ " at " ++ show range
+evaluateExpr (RewriteApp nam args _ range) = tryRules =<< ensureNonEmpty =<< findRewriteRules nam
+  where -- we should at least find a rewrite rule, otherwise the specialisation should not have
+        -- been performed in the type checking phase. The "tryRules" function simply tries
+        -- to unify the arguments with the parameters, which **can** fail, hence the difference
+        -- between "throwError" and "error".
+        ensureNonEmpty [] = error $ "invariant violated: no rewrite rules found for " ++ show nam
+        ensureNonEmpty a = return a
+        tryRules [] = throwError $ "No matching rewrite rules for application " ++ nam ++ " at " ++ show range
         tryRules (rewriteRule : remaining) = do
           _snapshot <- liftST BST.snapshot
           (do
@@ -408,7 +417,7 @@ termOrder a b = case sortWith (fromEnum . termTypeOf) [a, b] of
   _ -> error "termOrder: impossible case - sortWith should always return exactly 2 elements"
 
 -- | Unify two reference-based terms
-unifyTerms :: forall p s . (ForAllPhases Ord p, AnnotateType p, HaskellExprRename p,  HaskellExprExecutor p) => RefTerm p s -> RefTerm p s -> UnificationM p s ()
+unifyTerms :: forall p s . (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprRename p,  HaskellExprExecutor p) => RefTerm p s -> RefTerm p s -> UnificationM p s ()
 unifyTerms = unifyTermsImpl
   where
     unifyTermsImpl :: (AnnotateType p, HaskellExprRename p, HaskellExprExecutor p) => RefTerm p s  -> RefTerm p s -> UnificationM p s ()
@@ -451,7 +460,7 @@ unifyTerms = unifyTermsImpl
       t'  <- pureTerm'' t
       case t' of
         TermExpr pureExpr _ -> do
-          unless (isGround pureExpr) $
+          unless (isGround $ Debug.traceShowId pureExpr) $
             throwError "The expression is not ground"
           result <- evaluateExpr expr
           pureResult <- pureTerm'' result
@@ -490,7 +499,7 @@ unifyTerms = unifyTermsImpl
     unifyTermsImpl _t1 _t2 = throwError "Cannot unify different term structures"
 
     unifyAtoms :: Cell p s String -> Cell p s String -> UnificationM p s ()
-    unifyAtoms cell1@(Ref ref1) cell2@(Ref ref2) = do
+    unifyAtoms cell1@(Ref _ ref1) cell2@(Ref _ ref2) = do
       finalVal1 <- liftST $ parentValue cell1
       finalVal2 <- liftST $ parentValue cell2
       subtyping <- getSubtyping
@@ -509,7 +518,7 @@ unifyTerms = unifyTermsImpl
                     then throwError "Cycle detected in unification"
                     else do
                       -- Update both cells with the narrowed type constraint
-                      liftST $ BST.writeSTRef ref1 (Ptr (Ref ref2))
+                      liftST $ BST.writeSTRef ref1 (Ptr (Ref name2 ref2))
                       liftST $ BST.writeSTRef ref2 (Uninitialized name2 narrowedType)
         (Uninitialized _ cellType, Value term) -> do
           -- Left is variable, right has value - check type compatibility first
@@ -549,7 +558,7 @@ unifyTerms = unifyTermsImpl
         _ -> error "Unexpected cell value in atom-term unification"
 
 -- | Convert variable mapping to pure term mapping for Haskell expression execution
-buildPureMapping :: forall p s . (ForAllPhases Ord p, AnnotateType p) => VariableMapping p s -> BST.ST s (Map String (PureTerm' p))
+buildPureMapping :: forall p s . (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p) => VariableMapping p s -> BST.ST s (Map String (PureTerm' p))
 buildPureMapping varMapping = do
   results <- mapM (\cell -> pureTerm' (Atom cell (typeAnnot (Proxy @p) AnyType) dummyRange) varMapping) varMapping
   case sequenceA results of
@@ -558,7 +567,7 @@ buildPureMapping varMapping = do
 
 -- | Unify two pure terms and return a substitution mapping
 unify :: forall p s .
-         (ForAllPhases Ord p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
+         (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
       => PureTerm' p
       -> PureTerm' p
       -> UnificationM p s (Map String (PureTerm' p))
@@ -575,7 +584,7 @@ unify term1 term2 = do
   either throwError return $ sequenceA results
 
 -- | Construct the mapping resulting from the unification process
-buildMapping :: forall p s . (AnnotateType p, ForAllPhases Ord p) => VariableMapping p s -> BST.ST s (Map String (PureTerm' p))
+buildMapping :: forall p s . (AnnotateType p, ForAllPhases Show p, ForAllPhases Ord p) => VariableMapping p s -> BST.ST s (Map String (PureTerm' p))
 buildMapping mapping = mapM (\cell -> pureTerm (Atom cell (typeAnnot (Proxy @p) AnyType) dummyRange) mapping) mapping
 
 -- | Run unification in the ST monad and return the result
@@ -592,7 +601,7 @@ runUnificationM subtyping rewrites m =
 
 -- | Run unification in the ST monad and return the result
 runUnification :: forall p .
-                  (ForAllPhases Ord p, HaskellExprExecutor p, HaskellExprRename p, AnnotateType p)
+                  (ForAllPhases Ord p, ForAllPhases Show p, HaskellExprExecutor p, HaskellExprRename p, AnnotateType p)
                => Subtyping
                -> Rewrites p
                -> PureTerm' p
