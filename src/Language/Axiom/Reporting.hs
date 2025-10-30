@@ -96,6 +96,8 @@ formatModelError HaskellExprTypeInferenceError =
   "Cannot infer type for Haskell expression - no type context available"
 formatModelError (InvalidConstructor msg) =
   "Invalid constructor: " ++ msg
+formatModelError InferenceFailure =
+  "Type inference failed due to incomplete information"
 
 formatTypeDifference :: [Typ] -> [Typ] -> String
 formatTypeDifference expected actual

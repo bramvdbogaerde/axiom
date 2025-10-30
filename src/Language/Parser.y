@@ -54,6 +54,7 @@ import qualified Data.Set as Set
   ','         { TokenWithRange Comma _ }
   '.'         { TokenWithRange Dot _ }
   ';'         { TokenWithRange Sem _ }
+  ':'         { TokenWithRange Colon _ }
   '|'         { TokenWithRange Bar _ }
   '|->'       { TokenWithRange MapsTo _ }
   '_'         { TokenWithRange Token.Wildcard _ }
@@ -88,6 +89,12 @@ Declaration : SyntaxBlock                    { $1 }
             | TransitionDecl                 { $1 }
             | RewriteRule                    { $1 }
             | ImportDecl                     { $1 }
+            | RewriteType                    { $1 }
+
+-- TODO: we should actually only allow atoms here, but that requires some additional rules
+-- to obtain lists of atoms.
+RewriteType :: { Decl }
+RewriteType : ':' IDENT '(' TermArgs ')' '=>' Term { RewriteType (getIdent $2) $4 $7 (mkRange $1 $7) }
 
 -- Syntax block: syntax { ... } or syntax name { ... }
 SyntaxBlock :: { Decl }

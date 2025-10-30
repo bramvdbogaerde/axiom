@@ -450,6 +450,9 @@ declToExp ctx = \case
   Import filename range ->
     [| Import $(lift filename) $(rangeToExp range) |]
 
+  RewriteType name args body range ->
+    [| RewriteType $(lift name) $(listE $ map (pureTermToExp ctx) args) $(pureTermToExp ctx body) $(rangeToExp range) |]
+
 -- | Convert TypeCtor to Template Haskell expression
 typeCtorToExp :: TypeCon -> Q Exp
 typeCtorToExp = \case

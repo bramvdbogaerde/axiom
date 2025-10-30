@@ -30,6 +30,8 @@ module Language.Types(
 
     -- * Type extractions
     referencedTypes,
+    uncurryFunType,
+    retFunType,
 
     -- * Type predicates
     isUserDefined, 
@@ -163,6 +165,18 @@ referencedTypes t = [t]
 curryFunType :: [Typ] -> Typ
 curryFunType [] = VoidType
 curryFunType ts = foldr1 FunType ts 
+
+-- | Extract the arguments from a curried "FunType"
+uncurryFunType :: Typ -> [Typ]
+uncurryFunType (FunType t1 t2@(FunType _ _)) = t1 : uncurryFunType t2
+uncurryFunType (FunType t1 _) = [t1]
+uncurryFunType t = [t]
+
+-- | Extract the return type from a curried "FunType"
+retFunType :: Typ -> Typ
+retFunType (FunType _ t2) = retFunType t2
+retFunType t = t
+
 
 -- | LEGACY (TODO): converts a user-defined type to primitive type
 primTyp :: Typ -> Typ

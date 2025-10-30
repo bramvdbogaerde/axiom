@@ -54,9 +54,10 @@ data ModelError = DuplicateVariable String Typ
                 | SortNotDefined String
                 | IncompatibleTypes [Typ] [Typ]
                 | NameNotDefined String
-                | ArityMismatch String Int Int  -- ^ functor name, expected arity, actual arity
-                | HaskellExprTypeInferenceError  -- ^ HaskellExpr type inference failure
-                | InvalidConstructor String  -- ^ term type cannot be used as constructor in syntax declaration
+                | ArityMismatch String Int Int    -- ^ functor name, expected arity, actual arity
+                | HaskellExprTypeInferenceError   -- ^ HaskellExpr type inference failure
+                | InvalidConstructor String       -- ^ term type cannot be used as constructor in syntax declaration
+                | InferenceFailure                -- ^ general inference failure
                 deriving (Ord, Eq, Show)
 
 data Error = Error { err :: ModelError, raisedAt :: Maybe Range,  ctx :: CheckingContext }
@@ -480,7 +481,7 @@ checkTerm (TermMap mapping _ range) =
 checkTerm (Wildcard _ range) =
   maybe (throwErrorAt range HaskellExprTypeInferenceError)
         (\typ -> return (Wildcard typ range, typ)) =<< ask
-  
+
 checkTerm (TermHask v _ _) = absurd v
 
 checkTerm_ :: MonadCheck m => PureTerm -> m Typ
@@ -507,8 +508,9 @@ checkExpr (UpdateMap mapTerm keyTerm valueTerm _ range) = do
 checkExpr (GroundTerm term _ range) = do
   (typedTerm, tpy) <- checkTerm term
   return (GroundTerm typedTerm tpy range, tpy)
-checkExpr (EmptyMap _ range) =
-  liftA2 (,) (asks (flip EmptyMap range . fromJust)) (asks fromJust)
+checkExpr (EmptyMap _ range) = do
+  ask >>= maybe (throwErrorAt range InferenceFailure)
+                (\tpy -> return (EmptyMap tpy range, tpy))
 checkExpr (SetUnion t1 t2 _ range) = do
   (t1', tpy1) <- checkTerm t1
   (t2', tpy2) <- checkTerm t2
@@ -517,7 +519,7 @@ checkExpr (SetUnion t1 t2 _ range) = do
   when (tpy1 /= tpy2)
     (throwErrorAt range (IncompatibleTypes [tpy1] [tpy2]))
   return (SetUnion t1' t2' tpy1 range, tpy1)
-  
+
 checkExpr _ = error "checkExpr: only LookupMap, UpdateMap and GroundTerm are supported in expressions"
 
 -- | Update or widen the sort name for a rewrite rule
@@ -530,11 +532,25 @@ updateOrWidenSort nam newSort range = ifM (hasType nam)
 
 pass2VisitDecl :: MonadCheck m => Decl -> m ()
 pass2VisitDecl (Rewrite (RewriteDecl nam args bdy range) _) = do
+  (tpys, bdyTpy) <- ifM (hasType nam)
+          (do
+            tpy <- lookupType (Just range) nam
+            let agsTpys = uncurryFunType tpy
+            let bdyTpy  = retFunType tpy
+            liftA2 (,) (zipWithM (\tpy arg -> local (const $ Just tpy) (checkTerm_ arg)) agsTpys args)
+                       (local (const $ Just bdyTpy) $ checkTerm_ bdy))
+          (liftA2 (,) (mapM checkTerm_ args) (checkTerm_ bdy))
+
+  let rewriteTpy = curryFunType (tpys ++ [bdyTpy])
+  -- Update or widen the constructor for the rewrite rule head
+  updateOrWidenSort nam rewriteTpy range
+pass2VisitDecl (RewriteType nam args bdy range) = do
   tpys <- mapM checkTerm_ args
   bdyTpy <- checkTerm_ bdy
   let rewriteTpy = curryFunType (tpys ++ [bdyTpy])
   -- Update or widen the constructor for the rewrite rule head
   updateOrWidenSort nam rewriteTpy range
+
 pass2VisitDecl _ = return ()
 
 pass2 :: MonadCheck m => Program -> m ()
@@ -551,8 +567,12 @@ checkRule (RuleDecl nam precedent consequent range) = RuleDecl nam <$> mapM (fma
 -- | Type a rewrite rule
 typeRewrite :: MonadCheck m => RewriteDecl -> m (TypedRewriteDecl Identity)
 typeRewrite (RewriteDecl name args body range) = do
-  typedArgs <- mapM (fmap fst . checkTerm) args
-  typedBody <- fmap fst (checkTerm body)
+  -- pass 2 should have associated a type to the rewrite rule
+  rewriteTpy <- lookupType (Just range) name
+  let argsTpy = uncurryFunType rewriteTpy
+  let bdyTpy  = retFunType rewriteTpy
+  typedArgs <- zipWithM (\tpy arg -> local (const $ Just tpy) (fst <$> checkTerm arg)) argsTpy args
+  typedBody <- local (const $ Just bdyTpy) $ fmap fst (checkTerm body)
   return $ RewriteDecl name typedArgs typedBody range
 
 typeSyntax :: MonadCheck m => SyntaxDecl -> m (Maybe TypedSyntaxDecl)
@@ -577,6 +597,10 @@ pass3VisitDecl (HaskellDecl s isPre range) =
   return $ HaskellDecl s isPre range
 pass3VisitDecl (Import filename range) =
   return $ Import filename range
+pass3VisitDecl (RewriteType name args body range) = do
+  typedArgs <- mapM (fmap fst . checkTerm) args
+  typedBody <- fmap fst (checkTerm body)
+  return $ RewriteType name typedArgs typedBody range
 
 pass3 :: MonadCheck m => Program -> m TypedProgram
 pass3 (Program decls comments) = Program <$> mapM pass3VisitDecl decls <*> pure (map typeComment comments)
@@ -600,6 +624,8 @@ pass4VisitDecl (HaskellDecl s isPre range) =
   return $ HaskellDecl s isPre range
 pass4VisitDecl (Import filename range) =
   return $ Import filename range
+pass4VisitDecl (RewriteType name args body range) =
+  return $ RewriteType name args body range
 
 pass4VisitRule :: MonadCheck m => TypedRuleDecl -> m TypedRuleDecl
 pass4VisitRule (RuleDecl nam precedent consequent range) =

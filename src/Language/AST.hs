@@ -217,6 +217,7 @@ data Decl' p = Syntax (Maybe String) [SyntaxDecl' p] Range  -- ^ Syntax block wi
              | TransitionDecl String (Typ, Range) (Typ, Range) Range
              | HaskellDecl String Bool Range
              | Import String Range  -- ^ Import declaration with filename
+             | RewriteType String [PureTerm' p] (PureTerm' p) Range
 deriving instance (ForAllPhases Ord p) => Ord (Decl' p)
 deriving instance (ForAllPhases Eq p) => Eq (Decl' p)
 deriving instance (ForAllPhases Show p) => Show (Decl' p)

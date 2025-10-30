@@ -44,6 +44,7 @@ tokens :-
   <0> "("                           { mkToken Lpar }
   <0> ")"                           { mkToken Rpar }
   <0> "union"                       { mkToken Union }
+  <0> ":"                           { mkToken Colon }
   <0> "{{{"                         { begin h }
   <h> "}}}"                         { collectInto (\s r -> TokenWithRange (Hask s) r) `andBegin` 0 }
   <h> [$white $printable]           { save }
