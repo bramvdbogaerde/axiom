@@ -68,6 +68,7 @@ module Language.AST(
     typeComment,
     variableName,
     safeVariableName,
+    variableNameSplit,
     Position(..),
     Range(..),
     RangeOf(..),
@@ -90,7 +91,7 @@ module Language.AST(
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.Regex (mkRegex, matchRegex)
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe, fromJust)
 import Language.Range
 import Data.Kind
 import Data.Functor.Identity
@@ -491,6 +492,14 @@ variableName s =
 safeVariableName :: String -> Maybe String
 safeVariableName s = head <$> matchRegex r s
   where r = mkRegex "([^0-9]+)[0-9]*"
+
+-- | Split the variable name into a base part and a numeric part
+variableNameSplit :: String -> (String, String)
+variableNameSplit s =
+    case fromJust $ matchRegex r s of
+      [base, numeric] -> (base, numeric)
+      _ -> error "not a valid variable"
+  where r = mkRegex "([^0-9]+)([0-9])*"
 
 -- | Allowed infix names that can be used in a term
 infixNames :: [String]
