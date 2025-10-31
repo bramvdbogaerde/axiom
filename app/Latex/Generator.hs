@@ -4,9 +4,13 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Functor law" #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 module Latex.Generator where
 
+import Data.Proxy
 import Language.AST
+import Language.Types
 import Text.Printf
 import Data.Kind
 import Data.List (intercalate)
@@ -39,7 +43,7 @@ data RenderState p = RenderState
 
 $(makeLenses ''RenderState)
 
-type MonadRender p (m :: Type -> Type) = (MonadState (RenderState p) m)
+type MonadRender p (m :: Type -> Type) = (MonadState (RenderState p) m, AnnotateType p)
 
 -- | Get a fresh unique name for an unnamed block
 freshName :: MonadRender p m => LatexType -> m String
@@ -115,11 +119,13 @@ renderWithTemplate template bindings = do
 renderTerm :: MonadRender p m => PureTerm' p -> m String
 renderTerm term@(Atom (Identity name) _ _) = do
   rules <- use renderRules
+  let (baseName, numName) = variableNameSplit name
   let maybeRendered = do
-        RenderRule pattern template <- Map.lookup name rules
+        RenderRule pattern template <- Map.lookup baseName rules
         bindings <- matchPattern pattern term
         return (template, bindings)
-  maybe (pure $ renderIdentifier name) (uncurry renderWithTemplate) maybeRendered
+  maybe (pure $ renderIdentifier $ suffixNumPart  baseName numName) (uncurry renderWithTemplate) maybeRendered
+
 
 renderTerm term@(Functor fname args _ _) = do
   rules <- use renderRules
@@ -144,14 +150,17 @@ renderTerm (SetOfTerms terms _ _) =
   printf "\\{%s\\}" . intercalate ", " <$> traverse renderTerm (Set.toList terms)
 renderTerm _ = pure "\\text{complex term}"
 
+suffixNumPart :: String -> String -> String
+suffixNumPart base numeric = base ++ (if numeric == "" then "" else "_" ++ numeric)
+
 -- | Renders a single syntax definition
-renderSyntax :: MonadRender p m => SyntaxDecl' p -> m String
+renderSyntax :: forall p m . MonadRender p m => SyntaxDecl' p -> m String
 renderSyntax (SyntaxDecl vrs tpy productions _) =
   if null productions
-    then printf "%s \\in %s&" varsStr <$> renderTpy tpy
-    else printf "%s \\in %s ::=&~ %s" varsStr <$> renderTpy tpy <*> productionStrs
+    then printf "%s \\in %s&" <$> varsStr <*> renderTpy tpy
+    else printf "%s \\in %s ::=&~ %s" <$> varsStr <*> renderTpy tpy <*> productionStrs
   where
-    varsStr = intercalate ", " (map renderIdentifier vrs)
+    varsStr = intercalate ", " <$> (mapM (\vr -> renderTerm $ Atom (Identity vr) (typeAnnot (Proxy @p) AnyType) dummyRange)  vrs)
     productionStrs = intercalate "\\\\&\\mid " <$> traverse renderTerm productions
 renderSyntax (TypeAliasDecl name tpy _) =
   printf "\\textbf{alias } %s = %s" (renderIdentifier name) <$> renderTpy tpy
@@ -184,7 +193,7 @@ renderDecl (RulesDecl name ruleDecls _) = do
 renderDecl _ = pure ()
 
 -- | Run the generator on a program to produce LaTeX output
-runGenerator :: Program' p -> LatexOutput
+runGenerator :: AnnotateType p => Program' p -> LatexOutput
 runGenerator prog@(Program decls _) = _output $ execState (renderProgram prog) initialState
   where
     initialState = RenderState (LatexOutput mempty) 0 (extractRenderRules decls)
