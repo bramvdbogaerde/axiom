@@ -1,5 +1,6 @@
 module Latex.Entrypoint (runLatexCommand, latexOptionsParser) where
 
+import qualified Language.Axiom.Reporting as Reporting
 import System.FilePath ((</>), (<.>))
 import System.Directory (createDirectoryIfMissing)
 import qualified Data.Map as Map
@@ -9,6 +10,7 @@ import Options.Applicative
 import Language.ImportResolver (resolveImportsFromFile, concatModules)
 import Latex.Generator (runGenerator)
 import Latex.Output (getBlocks, LatexType(..))
+import System.Exit
 
 -- | Options for the latex command
 data LatexOptions = LatexOptions
@@ -61,7 +63,7 @@ runLatexCommand (LatexOptions inputFile outputDir) = do
   -- Parse the input file
   (modules, result) <- resolveImportsFromFile inputFile
   prog <- case result of
-    Left err -> Reporting.printImportError modules err 
+    Left err -> Reporting.printImportError modules err  >> exitFailure
     Right p -> pure p
 
   -- Generate LaTeX output
