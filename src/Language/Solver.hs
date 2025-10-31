@@ -27,11 +27,9 @@ import Language.Solver.Worklist
 import Language.Solver.Unification (RefTerm)
 import Control.Monad.Extra (ifM, when, unless)
 import Data.Either
-import Data.Maybe (catMaybes, fromMaybe)
+import Data.Maybe ( catMaybes, fromMaybe, mapMaybe )
 import Control.Monad ((>=>))
 import qualified Data.List as List
-import Data.Maybe (mapMaybe)
-import qualified Debug.Trace as Debug
 
 ------------------------------------------------------------
 -- Search data structures
@@ -42,11 +40,11 @@ import qualified Debug.Trace as Debug
 -- originated.
 data SearchGoal p s = SearchGoal
   { _goalRuleName :: String,
-    _goalTerm :: RefTerm p s } 
+    _goalTerm :: RefTerm p s }
 
 deriving instance (ForAllPhases Eq p) => Eq (SearchGoal p s)
 deriving instance (ForAllPhases Ord p) => Ord (SearchGoal p s)
-    
+
 type InOut p s = (PureTerm' p)
 
 data SearchState p s = SearchState
@@ -59,7 +57,7 @@ data SearchState p s = SearchState
     -- | Goals to add to the cache when all the search goals in this state
     -- have been solved.
     _searchWhenSucceeds :: ![InOut p s]
-  } 
+  }
 
 data SearchCtx p q s = SearchCtx
   { _searchQueue :: !(q (SearchState p s)),
@@ -106,14 +104,13 @@ addConclusionFunctor nam decl =
 -- | Construct an initial context from the rules defined the program
 fromRules :: forall q s p . (Queue q, ForAllPhases Ord p) => Subtyping -> [RuleDecl' p] -> [PureRewriteDecl p] -> EngineCtx p q s
 fromRules subtyping rules rewrites =
-      flip (foldr visitRewrite) (Debug.traceShowWith (map rewriteName) rewrites)
+      flip (foldr visitRewrite) rewrites
     $ foldr visit (emptyEngineCtx subtyping) rules
   where
     visit rule@(RuleDecl _ _precedent consequents _) =
       flip (foldr (`addConclusionFunctor` rule)) (mapMaybe functorName (List.singleton (head consequents)))
     visitRewrite decl@(RewriteDecl nam _ _ _) =
       over rewriteRules (Map.insertWith (++) nam [decl])
-    rewriteName (RewriteDecl nam _ _ _)= nam
 
 ------------------------------------------------------------
 -- Monad context

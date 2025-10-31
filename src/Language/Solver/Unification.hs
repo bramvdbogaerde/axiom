@@ -19,13 +19,13 @@ import qualified Language.Solver.BacktrackingST as BST
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.Extra (ifM)
-import Control.Monad ( (>=>), zipWithM_, unless )
+import Control.Monad ( (>=>), zipWithM_, unless, foldM )
 import GHC.Exts (sortWith)
 import qualified Data.Set as Set
 import Data.Kind
 import Data.Maybe (fromMaybe)
 import qualified Language.Solver.Renamer as Renamer
-import qualified Debug.Trace as Debug
+
 
 -------------------------------------------------------------
 -- Core data types
@@ -362,7 +362,7 @@ evaluateExpr (RewriteApp nam args _ range) = tryRules =<< ensureNonEmpty =<< fin
           _snapshot <- liftST BST.snapshot
           (do
             -- Rename the arguments of the functions so that subsequent
-            -- invocations of the same rewrite rule does not unify
+            -- invocations of the same rewrite rule do not unify
             -- with the same parameters.
             (RewriteDecl _ prs bdy _) <- uniqueRewrite rewriteRule
             -- Then transform the atoms to cells ... 
@@ -437,10 +437,23 @@ unifyTerms = unifyTermsImpl
     unifyTermsImpl (TermValue v1 _ _) (TermValue v2 _ _) =
       if v1 == v2 then return ()
       else throwError $ "Values don't match: " ++ show v1 ++ " vs " ++ show v2
-    unifyTermsImpl (SetOfTerms {}) (SetOfTerms {}) =  error "set unification not yet supported"
+    unifyTermsImpl (SetOfTerms set1 _ _) (SetOfTerms set2 _ _) =
+       -- ensures that the terms are ground and that the set items are the same
+       if Set.size set1 == Set.size set2
+       then mapM_ (\item1 -> do
+                item1' <- pureTerm'' item1
+                let found = foldM (\acc item2 -> (acc ||) . (item1' ==) <$> pureTerm'' item2) False (Set.toList set2)
+                ifM found
+                  (return ())
+                  (throwError $ "set unification: item " ++ show item1' ++ " not found in second set"))
+             set1
+       else throwError "set unification: sets have different sizes"
     unifyTermsImpl (TermHask v1 _ _) (TermHask v2 _ _) =
       if v1 == v2 then return ()
       else throwError "Embedded Haskell values don't match"
+    unifyTermsImpl (TermMap m _ _) (TermMap m' _ _) =
+      if m == m' then return ()
+      else throwError "map unification: maps do not match (==)"
 
     -- 
     -- Wildcards
@@ -460,7 +473,7 @@ unifyTerms = unifyTermsImpl
       t'  <- pureTerm'' t
       case t' of
         TermExpr pureExpr _ -> do
-          unless (isGround $ Debug.traceShowId pureExpr) $
+          unless (isGround pureExpr) $
             throwError "The expression is not ground"
           result <- evaluateExpr expr
           pureResult <- pureTerm'' result
@@ -496,7 +509,7 @@ unifyTerms = unifyTermsImpl
     unifyTermsImpl t (Atom cell _ _) =
       unifyAtomWithTerm cell t
 
-    unifyTermsImpl _t1 _t2 = throwError "Cannot unify different term structures"
+    unifyTermsImpl t1 t2 = throwError $ "Could not unify " ++ show t1 ++ " with " ++ show t2 ++ "(different structure)"
 
     unifyAtoms :: Cell p s String -> Cell p s String -> UnificationM p s ()
     unifyAtoms cell1@(Ref _ ref1) cell2@(Ref _ ref2) = do
