@@ -38,6 +38,7 @@ import qualified Data.Set as Set
   '⇓'         { TokenWithRange BigStep _ }
   'rules'     { TokenWithRange Rules _ }
   'rule'      { TokenWithRange Rule _ }
+  'latex'     { TokenWithRange Token.Latex _ }
   BOOL        { TokenWithRange (Boo _) _ }
   'syntax'    { TokenWithRange (Ident "syntax") _ }
   'in'        { TokenWithRange (Ident "in") _ }
@@ -86,6 +87,7 @@ ProgramElement : Declaration ';'             { $1 }
 Declaration :: { Decl }
 Declaration : SyntaxBlock                    { $1 }
             | RulesBlock                     { $1 }
+            | LatexBlock                     { $1 }
             | TransitionDecl                 { $1 }
             | RewriteRule                    { $1 }
             | ImportDecl                     { $1 }
@@ -157,6 +159,26 @@ TermList : {- empty -}                       { [] }
 Terms :: { [PureTerm] }
 Terms : Term                                 { [$1] }
       | Term ';' Terms                       { $1 : $3 }
+
+-- LaTeX block: latex { ... }
+LatexBlock :: { Decl }
+LatexBlock : 'latex' '{' LatexRules '}'      { LatexRenderDecl $3 (mkRange $1 $4) }
+
+LatexRules :: { [LatexRenderRule] }
+LatexRules : {- empty -}                     { [] }
+           | LatexRule ';' LatexRules        { $1 : $3 }
+
+LatexRule :: { LatexRenderRule }
+LatexRule : Term '=>' LatexTemplate          { LatexRenderRule $1 $3 (if null $3 then mkRange $1 $2 else mkRange $1 (last $3)) }
+
+LatexTemplate :: { [LatexTemplateElement] }
+LatexTemplate : {- empty -}                  { [] }
+              | LatexTemplateElement ',' LatexTemplate { $1 : $3 }
+              | LatexTemplateElement         { [$1] }
+
+LatexTemplateElement :: { LatexTemplateElement }
+LatexTemplateElement : STRING                { LatexString (getString $1) (rangeOf $1) }
+                     | IDENT                 { LatexArg (getIdent $1) (rangeOf $1) }
 
 -- Transition declaration: transition Type ~> Type  
 TransitionDecl :: { Decl }

@@ -14,22 +14,35 @@ import qualified Data.Set as Set
 import Data.Functor.Identity
 import Control.Monad.State
 import Control.Lens
-import qualified Latex.Output 
+import qualified Latex.Output
 import Latex.Output hiding (Syntax)
+import Latex.Unicode (replaceUnicodeInString)
+import qualified Data.Map.Strict as Map
 
+
+-- | Key for looking up custom LaTeX rendering rules
+-- Either an atom name or a functor name
+type RenderKey = String
+
+-- | A rendering rule with both pattern and template
+data RenderRule p = RenderRule (PureTerm' p) [LatexTemplateElement]
+
+-- | Mapping from atoms/functors to their custom LaTeX rendering rules
+type RenderRules p = Map.Map RenderKey (RenderRule p)
 
 -- | State for rendering with a counter for generating unique names
-data RenderState = RenderState
+data RenderState p = RenderState
   { _output :: LatexOutput
   , _counter :: Int
+  , _renderRules :: RenderRules p
   }
 
 $(makeLenses ''RenderState)
 
-type MonadRender (m :: Type -> Type) = (MonadState RenderState m)
+type MonadRender p (m :: Type -> Type) = (MonadState (RenderState p) m)
 
 -- | Get a fresh unique name for an unnamed block
-freshName :: MonadRender m => LatexType -> m String
+freshName :: MonadRender p m => LatexType -> m String
 freshName latexType = do
   n <- use counter
   counter += 1
@@ -43,79 +56,137 @@ freshName latexType = do
 
 -- | Renders an identifier properly for LaTeX math mode
 -- Single letters are rendered as-is, multi-letter identifiers use \mathit
+-- Unicode symbols are converted to their LaTeX equivalents
 renderIdentifier :: String -> String
 renderIdentifier name
-  | length name == 1 = name
-  | otherwise = printf "\\mathit{%s}" name
+  | length name == 1 = replaceUnicodeInString name
+  | otherwise = printf "\\mathit{%s}" (replaceUnicodeInString name)
+
+
+renderFunctorName  :: String -> String
+renderFunctorName name
+  | length name == 1 = replaceUnicodeInString name
+  | otherwise = printf "\\mathsf{%s}" (replaceUnicodeInString name)
 
 -- | Renders a type constructor
-renderTpy :: MonadRender m => TypeCon -> m String
+renderTpy :: MonadRender p m => TypeCon -> m String
 renderTpy (TypeTyp name _) = pure $ renderIdentifier name
 renderTpy (TypeVar var _) = pure $ renderIdentifier var
 renderTpy (TypeHas hask _) = pure $ printf "\\texttt{%s}" hask
-renderTpy (TypeApp ctor args _) = 
+renderTpy (TypeApp ctor args _) =
   printf "%s(%s)" <$> renderTpy ctor <*> (intercalate ", " <$> traverse renderTpy args)
 
+-- | Extract custom rendering rules from the program
+extractRenderRules :: [Decl' p] -> RenderRules p
+extractRenderRules decls = Map.fromList $ concatMap extractFromDecl decls
+  where
+    extractFromDecl (LatexRenderDecl rules _) = map extractFromRule rules
+    extractFromDecl _ = []
+
+    extractFromRule (LatexRenderRule pattern template _) =
+      case pattern of
+        Atom (Identity name) _ _ -> (name, RenderRule pattern template)
+        Functor fname _ _ _ -> (fname, RenderRule pattern template)
+        _ -> error "Invalid LaTeX render pattern"
+
+-- | Match a term against a pattern and extract variable bindings
+matchPattern :: PureTerm' p -> PureTerm' p -> Maybe (Map.Map String (PureTerm' p))
+matchPattern (Atom (Identity patVar) _ _) term = Just $ Map.singleton patVar term
+matchPattern (Functor patName patArgs _ _) (Functor termName termArgs _ _)
+  | patName == termName && length patArgs == length termArgs =
+      -- Match each argument and merge the bindings
+      fmap Map.unions $ sequence $ zipWith matchPattern patArgs termArgs
+  | otherwise = Nothing
+matchPattern _ _ = Nothing
+
+-- | Render a term using a custom template with variable bindings
+renderWithTemplate :: MonadRender p m => [LatexTemplateElement] -> Map.Map String (PureTerm' p) -> m String
+renderWithTemplate template bindings = do
+  parts <- mapM renderTemplateElement template
+  return $ concat parts
+  where
+    renderTemplateElement (LatexString str _) = pure str
+    renderTemplateElement (LatexArg argName _) =
+      case Map.lookup argName bindings of
+        Just boundTerm -> renderTerm boundTerm  -- Recursively render the bound term
+        Nothing -> error $ "Internal error: argument '" ++ argName ++ "' not found in bindings. Type checker should have caught this."
+
 -- | Renders a term for LaTeX output
-renderTerm :: MonadRender m => PureTerm' p -> m String
-renderTerm (Atom (Identity name) _ _) = pure $ renderIdentifier name
-renderTerm (Functor fname [] _ _) = pure $ printf "%s()" (renderIdentifier fname)
-renderTerm (Functor fname args _ _) = 
-  printf "%s(%s)" (renderIdentifier fname) . intercalate ", " <$> traverse renderTerm args
-renderTerm (Eqq left right _ _) = 
+renderTerm :: MonadRender p m => PureTerm' p -> m String
+renderTerm term@(Atom (Identity name) _ _) = do
+  rules <- use renderRules
+  let maybeRendered = do
+        RenderRule pattern template <- Map.lookup name rules
+        bindings <- matchPattern pattern term
+        return (template, bindings)
+  maybe (pure $ renderIdentifier name) (uncurry renderWithTemplate) maybeRendered
+
+renderTerm term@(Functor fname args _ _) = do
+  rules <- use renderRules
+  let maybeRendered = do
+        RenderRule pattern template <- Map.lookup fname rules
+        bindings <- matchPattern pattern term
+        return (template, bindings)
+  maybe defaultRender (uncurry renderWithTemplate) maybeRendered
+  where
+    defaultRender = if null args
+      then pure $ printf "%s()" (renderFunctorName fname)
+      else printf "%s(%s)" (renderFunctorName fname) . intercalate ", " <$> traverse renderTerm args
+
+renderTerm (Eqq left right _ _) =
   printf "%s = %s" <$> renderTerm left <*> renderTerm right
-renderTerm (Neq left right _ _) = 
+renderTerm (Neq left right _ _) =
   printf "%s \\neq %s" <$> renderTerm left <*> renderTerm right
-renderTerm (Transition tname left right _ _) = 
+renderTerm (Transition tname left right _ _) =
   printf "%s \\xrightarrow{%s} %s" <$> renderTerm left <*> pure (renderIdentifier tname) <*> renderTerm right
 renderTerm (TermValue value _ _) = pure $ show value
-renderTerm (SetOfTerms terms _ _) = 
+renderTerm (SetOfTerms terms _ _) =
   printf "\\{%s\\}" . intercalate ", " <$> traverse renderTerm (Set.toList terms)
 renderTerm _ = pure "\\text{complex term}"
 
 -- | Renders a single syntax definition
-renderSyntax :: MonadRender m => SyntaxDecl -> m String
+renderSyntax :: MonadRender p m => SyntaxDecl' p -> m String
 renderSyntax (SyntaxDecl vrs tpy productions _) =
   if null productions
-    then printf "%s \\in %s" varsStr <$> renderTpy tpy
-    else printf "%s \\in %s ::= %s" varsStr <$> renderTpy tpy <*> productionStrs
+    then printf "%s \\in %s&" varsStr <$> renderTpy tpy
+    else printf "%s \\in %s ::=&~ %s" varsStr <$> renderTpy tpy <*> productionStrs
   where
     varsStr = intercalate ", " (map renderIdentifier vrs)
-    productionStrs = intercalate " \\mid " <$> traverse renderTerm productions
+    productionStrs = intercalate "\\\\&\\mid " <$> traverse renderTerm productions
 renderSyntax (TypeAliasDecl name tpy _) =
   printf "\\textbf{alias } %s = %s" (renderIdentifier name) <$> renderTpy tpy
-    
+
 -- | Render a single rule using mathpartir
-renderRule :: MonadRender m => RuleDecl -> m String
+renderRule :: MonadRender p m => RuleDecl' p -> m String
 renderRule (RuleDecl name precedents consequents _) =
   printf "\\inferrule{%s}{%s}%s"
     <$> (intercalate " \\\\ " <$> traverse renderTerm precedents)
     <*> (intercalate " \\\\ " <$> traverse renderTerm consequents)
     <*> pure ruleName
   where
-    ruleName = if null name then "" else printf "{\\scriptsize \\textsc{%s}}" name
+    ruleName = if null name then "" else printf "{\\scriptsize \\textsc{%s}}" (replaceUnicodeInString name)
 
 
 -- | Renders a program to the latex output
-renderProgram :: MonadRender m => Program -> m ()
+renderProgram :: MonadRender p m => Program' p -> m ()
 renderProgram (Program decls _) = mapM_ renderDecl decls
 
 -- | Renders a single declaration
-renderDecl :: MonadRender m => Decl -> m ()
+renderDecl :: MonadRender p m => Decl' p -> m ()
 renderDecl (Syntax name syntaxDecls _) = do
-  rendered <- intercalate "\n\n" <$> traverse renderSyntax syntaxDecls
+  rendered <- intercalate "\\\\\n" <$> traverse renderSyntax syntaxDecls
   blockName <- maybe (freshName Latex.Output.Syntax) pure name
   output %= addBlock blockName Latex.Output.Syntax rendered
 renderDecl (RulesDecl name ruleDecls _) = do
-  rendered <- intercalate "\n\n" <$> traverse renderRule ruleDecls
+  rendered <- intercalate "\\\\\n" <$> traverse renderRule ruleDecls
   blockName <- maybe (freshName Rules) pure name
   output %= addBlock blockName Rules rendered
 renderDecl _ = pure ()
 
 -- | Run the generator on a program to produce LaTeX output
-runGenerator :: Program -> LatexOutput
-runGenerator prog = _output $ execState (renderProgram prog) initialState
+runGenerator :: Program' p -> LatexOutput
+runGenerator prog@(Program decls _) = _output $ execState (renderProgram prog) initialState
   where
-    initialState = RenderState (LatexOutput mempty) 0
+    initialState = RenderState (LatexOutput mempty) 0 (extractRenderRules decls)
 
 

@@ -11,6 +11,7 @@ data Token = EOF
            | BigStep     -- ^ '⇓'
            | Rules       -- ^ 'rules'
            | Rule        -- ^ 'rule'
+           | Latex       -- ^ 'latex'
            | Lpar        -- ^ '('
            | Rpar        -- ^ ')'
            | LCBa        -- ^ '{'

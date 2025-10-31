@@ -38,6 +38,7 @@ tokens :-
   <0> "⇓"                           { mkToken BigStep }
   <0> "rules"                       { mkToken Rules }
   <0> "rule"                        { mkToken Rule }
+  <0> "latex"                       { mkToken Latex }
   <0> "true"                        { mkToken (Boo True)  }
   <0> "false"                       { mkToken (Boo False) }
   <0> "|->"                         { mkToken MapsTo }

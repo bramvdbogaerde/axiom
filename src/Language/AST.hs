@@ -21,6 +21,8 @@ module Language.AST(
     RewriteDecl,
     PureRewriteDecl,
     RuleDecl,
+    LatexRenderRule,
+    LatexTemplateElement(..),
     Term,
 
     ForAllPhases,
@@ -31,6 +33,7 @@ module Language.AST(
     SyntaxDecl'(..),
     RewriteDecl'(..),
     RuleDecl'(..),
+    LatexRenderRule'(..),
     Term'(..),
 
     TypeCon(..),
@@ -53,6 +56,7 @@ module Language.AST(
     TypedRewriteDecl,
     TypedSyntaxDecl,
     TypedRuleDecl,
+    TypedLatexRenderRule,
     TypedProgram,
 
     ParsePhase,
@@ -218,6 +222,7 @@ data Decl' p = Syntax (Maybe String) [SyntaxDecl' p] Range  -- ^ Syntax block wi
              | HaskellDecl String Bool Range
              | Import String Range  -- ^ Import declaration with filename
              | RewriteType String [PureTerm' p] (PureTerm' p) Range
+             | LatexRenderDecl [LatexRenderRule' p] Range  -- ^ LaTeX rendering block
 deriving instance (ForAllPhases Ord p) => Ord (Decl' p)
 deriving instance (ForAllPhases Eq p) => Eq (Decl' p)
 deriving instance (ForAllPhases Show p) => Show (Decl' p)
@@ -275,6 +280,24 @@ instance (ForAllPhases Show p) => Show (RuleDecl' p) where
     " => " ++
     "[" ++ intercalate ", " (Prelude.map show consequent) ++ "]" ++
     ";"
+
+-- | A LaTeX rendering rule maps a term pattern to a template
+-- Pattern can be: atom => template or functor(arg1, ..., argn) => template
+data LatexRenderRule' p = LatexRenderRule (PureTerm' p) [LatexTemplateElement] Range
+deriving instance (ForAllPhases Ord p) => Ord (LatexRenderRule' p)
+deriving instance (ForAllPhases Eq p) => Eq (LatexRenderRule' p)
+deriving instance (ForAllPhases Show p) => Show (LatexRenderRule' p)
+type LatexRenderRule = LatexRenderRule' ParsePhase
+type TypedLatexRenderRule = LatexRenderRule' TypingPhase
+
+-- | A LaTeX template element is either a string literal or a reference to an argument by name
+data LatexTemplateElement = LatexString String Range  -- ^ A literal string to output
+                          | LatexArg String Range      -- ^ A reference to an argument by name
+                          deriving (Ord, Eq, Show)
+
+instance RangeOf LatexTemplateElement where
+  rangeOf (LatexString _ r) = r
+  rangeOf (LatexArg _ r) = r
 
 ------------------------------------------------------------
 -- Expression AST

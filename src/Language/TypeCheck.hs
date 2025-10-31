@@ -561,6 +561,26 @@ pass2 (Program decls _) = mapM_ pass2VisitDecl decls
 -----------------------------------------
 
 -- | Check a rule in the given context
+-- | Type check and validate a LaTeX rendering rule
+checkLatexRule :: MonadCheck m => LatexRenderRule -> m TypedLatexRenderRule
+checkLatexRule (LatexRenderRule pattern template range) = do
+  -- Type check the pattern term
+  (typedPattern, _) <- checkTerm pattern
+
+  -- Extract all atom names from the pattern
+  let patternAtoms = Set.toList (atomNames typedPattern)
+
+  -- Validate that all template arguments exist in the pattern
+  mapM_ (validateTemplateArg patternAtoms) template
+
+  return $ LatexRenderRule typedPattern template range
+  where
+    validateTemplateArg patternAtoms (LatexArg argName argRange) =
+      unless (argName `elem` patternAtoms) $
+        throwErrorAt argRange $ NameNotDefined $
+          "Argument '" ++ argName ++ "' referenced in template but not found in pattern"
+    validateTemplateArg _ (LatexString _ _) = return ()
+
 checkRule :: MonadCheck m => RuleDecl -> m TypedRuleDecl
 checkRule (RuleDecl nam precedent consequent range) = RuleDecl nam <$> mapM (fmap fst . checkTerm) precedent <*> mapM (fmap fst . checkTerm) consequent <*> pure range
 
@@ -601,6 +621,8 @@ pass3VisitDecl (RewriteType name args body range) = do
   typedArgs <- mapM (fmap fst . checkTerm) args
   typedBody <- fmap fst (checkTerm body)
   return $ RewriteType name typedArgs typedBody range
+pass3VisitDecl (LatexRenderDecl rules range) =
+  LatexRenderDecl <$> mapM checkLatexRule rules <*> pure range
 
 pass3 :: MonadCheck m => Program -> m TypedProgram
 pass3 (Program decls comments) = Program <$> mapM pass3VisitDecl decls <*> pure (map typeComment comments)
@@ -626,6 +648,8 @@ pass4VisitDecl (Import filename range) =
   return $ Import filename range
 pass4VisitDecl (RewriteType name args body range) =
   return $ RewriteType name args body range
+pass4VisitDecl (LatexRenderDecl rules range) =
+  return $ LatexRenderDecl rules range
 
 pass4VisitRule :: MonadCheck m => TypedRuleDecl -> m TypedRuleDecl
 pass4VisitRule (RuleDecl nam precedent consequent range) =

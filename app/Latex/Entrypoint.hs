@@ -29,14 +29,7 @@ latexOptionsParser = LatexOptions
 -- | Generate the LaTeX preamble for a file
 latexPreamble :: LatexType -> String
 latexPreamble latexType = unlines
-  [ "\\documentclass{article}"
-  , "\\usepackage{amsmath}"
-  , "\\usepackage{amssymb}"
-  , "\\usepackage{mathpartir}"
-  , ""
-  , "\\begin{document}"
-  , ""
-  , "\\begin{" ++ env ++ "}"
+  [ "\\begin{" ++ env ++ "}"
   ]
   where
     env = case latexType of
@@ -47,10 +40,7 @@ latexPreamble latexType = unlines
 -- | Generate the LaTeX postamble for a file
 latexPostamble :: LatexType -> String
 latexPostamble latexType = unlines
-  [ "\\end{" ++ env ++ "}"
-  , ""
-  , "\\end{document}"
-  ]
+  [ "\\end{" ++ env ++ "}"  ]
   where
     env = case latexType of
       Syntax -> "align*"
@@ -69,9 +59,9 @@ writeLatexFile outDir name latexType content = do
 runLatexCommand :: LatexOptions -> IO ()
 runLatexCommand (LatexOptions inputFile outputDir) = do
   -- Parse the input file
-  (_, result) <- resolveImportsFromFile inputFile
+  (modules, result) <- resolveImportsFromFile inputFile
   prog <- case result of
-    Left err -> error $ "Parse error: " ++ show err
+    Left err -> Reporting.printImportError modules err 
     Right p -> pure p
 
   -- Generate LaTeX output

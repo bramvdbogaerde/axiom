@@ -453,6 +453,21 @@ declToExp ctx = \case
   RewriteType name args body range ->
     [| RewriteType $(lift name) $(listE $ map (pureTermToExp ctx) args) $(pureTermToExp ctx body) $(rangeToExp range) |]
 
+  LatexRenderDecl rules range ->
+    [| LatexRenderDecl $(listE (map (latexRenderRuleToExp ctx) rules)) $(rangeToExp range) |]
+
+-- | Convert LatexRenderRule to Template Haskell expression
+latexRenderRuleToExp :: CheckingContext -> TypedLatexRenderRule -> Q Exp
+latexRenderRuleToExp ctx (LatexRenderRule pattern template range) =
+  [| LatexRenderRule $(pureTermToExp ctx pattern) $(listE (map latexTemplateElementToExp template)) $(rangeToExp range) |]
+
+-- | Convert LatexTemplateElement to Template Haskell expression
+latexTemplateElementToExp :: LatexTemplateElement -> Q Exp
+latexTemplateElementToExp (LatexString str range) =
+  [| LatexString $(lift str) $(rangeToExp range) |]
+latexTemplateElementToExp (LatexArg name range) =
+  [| LatexArg $(lift name) $(rangeToExp range) |]
+
 -- | Convert TypeCtor to Template Haskell expression
 typeCtorToExp :: TypeCon -> Q Exp
 typeCtorToExp = \case
