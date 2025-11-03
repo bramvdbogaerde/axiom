@@ -148,7 +148,34 @@ renderTerm (Transition tname left right _ _) =
 renderTerm (TermValue value _ _) = pure $ show value
 renderTerm (SetOfTerms terms _ _) =
   printf "\\{%s\\}" . intercalate ", " <$> traverse renderTerm (Set.toList terms)
-renderTerm _ = pure "\\text{complex term}"
+renderTerm (IncludedIn nam t _) =
+  printf "\\mathit{%s} \\in %s" nam <$> renderTerm t
+renderTerm (TermExpr expr _) =
+  renderExpr expr
+renderTerm (Wildcard _ _) = return "_"
+renderTerm (HaskellExpr _ _ _) =
+  error "rendering of haskell expressions is not supported"
+renderTerm (TermHask _ _ _) =
+  error "terms representing haskell values should not arise during rendering"
+renderTerm (TermMap _ _ _) =
+  error "mappings should not arise during rendering"
+
+renderExpr :: MonadRender p m => Expr p Identity -> m String
+renderExpr (LookupMap key mapping _ _) =
+  printf "%s[%s]" <$> renderTerm mapping <*> renderTerm key
+renderExpr (UpdateMap mapping key value _ _) =
+  printf "%s[%s \\mapsto %s]" <$> renderExpr mapping <*> renderTerm key <*> renderTerm value
+renderExpr (EmptyMap _ _) =
+  pure "\\emptyset"
+renderExpr (RewriteApp fname args _ _) =
+  if null args
+    then pure $ printf "%s()" (renderFunctorName fname)
+    else printf "%s(%s)" (renderFunctorName fname) . intercalate ", " <$> traverse renderTerm args
+renderExpr (GroundTerm term _ _) =
+  renderTerm term
+renderExpr (SetUnion set1 set2 _ _) =
+  printf "%s \\cup %s" <$> renderTerm set1 <*> renderTerm set2
+
 
 suffixNumPart :: String -> String -> String
 suffixNumPart base numeric = base ++ (if numeric == "" then "" else "_" ++ numeric)
@@ -174,7 +201,13 @@ renderRule (RuleDecl name precedents consequents _) =
     <*> pure ruleName
   where
     ruleName = if null name then "" else printf "{\\scriptsize \\textsc{%s}}" (replaceUnicodeInString name)
-
+renderRule (OnRuleDecl name precedents consequents _) =
+  printf "\\inferrule{%s}{%s}%s"
+    <$> (intercalate " \\\\ " <$> traverse renderTerm precedents)
+    <*> (intercalate " \\\\ " <$> traverse renderTerm consequents)
+    <*> pure ruleName
+  where
+    ruleName = if null name then "" else printf "{\\scriptsize \\textsc{%s}}" (replaceUnicodeInString name)
 
 -- | Renders a program to the latex output
 renderProgram :: MonadRender p m => Program' p -> m ()
