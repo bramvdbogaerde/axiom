@@ -16,14 +16,6 @@ module.exports = grammar({
   ],
 
   rules: {
-    // Integer literals
-    integer_literal: $ => /[0-9]+/,
-
-    // Identifiers
-    identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
-
-    // Strings in double quotes
-    string: $ => /"([^"\\]|\\.)*"/,
 
     source_file: $ => repeat(choice(
       seq($.declaration, ';'),
@@ -215,16 +207,16 @@ module.exports = grammar({
     )),
 
     // Haskell blocks: {{{ ... }}}
-    haskell_block: $ => token(seq(
-      '{{{',
-      repeat(choice(
-        /[^}]/,
-        seq('}', /[^}]/),
-        seq('}', '}', /[^}]/)
-      )),
-      '}}}'
-    )),
+    haskell_block: $ => choice(hblock('{{', '}}'), hblock('[[', ']]')),
+    
+    // Integer literals
+    integer_literal: $ => /[0-9]+/,
 
+    // Identifiers
+    identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
+
+    // Strings in double quotes
+    string: $ => /"([^"\\]|\\.)*"/,
   }
 });
 
@@ -236,4 +228,16 @@ function sep1(rule, separator) {
 // Helper function for comma-separated lists (can be empty)
 function sep(rule, separator) {
   return optional(sep1(rule, separator));
+}
+
+function hblock(start, end) {
+  return token(seq(
+      start,
+      repeat(choice(
+        /[^}]/,
+        seq('}', /[^}]/),
+        seq('}', '}', /[^}]/)
+      )),
+      end
+    ));
 }
