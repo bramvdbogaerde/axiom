@@ -30,9 +30,9 @@ library
                   , Language.Types
                   , Language.Parser
                   , Language.TypeCheck
-                  , Language.Solver
                   , Language.Axiom
-                  , Language.SolverDebugger
+                  , Language.Axiom.Solver.Monad
+                  , Language.Axiom.Solver
                   , Language.ImportResolver
                   , Language.Solver.Unification
                   , Language.Solver.Renamer
@@ -47,11 +47,19 @@ library
                   , Language.Axiom.Reporting
   other-modules:   Language.Lexer.Token
                  , Data.Graph
+                 , Debug.TraceExtra
   extensions: TemplateHaskell
             , GeneralizedNewtypeDeriving
             , FlexibleContexts
             , TupleSections
             , StandaloneDeriving
+            , ScopedTypeVariables 
+            , MultiParamTypeClasses
+            , FlexibleContexts
+            , FunctionalDependencies
+            , LambdaCase
+            , GADTs
+            , DeriveFunctor
   hs-source-dirs: src
   ghc-options: -Werror -Wall -Wno-name-shadowing -Wno-unused-record-wildcards
   

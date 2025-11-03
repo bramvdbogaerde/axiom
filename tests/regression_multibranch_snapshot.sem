@@ -1,0 +1,15 @@
+
+
+
+syntax {
+	x, y, z in Set(Int);
+	n, m in Int;
+	c in Conclusion ::= works();
+};
+
+rules {
+	rule "set-union" [ x = {1, 2} ; y = {3, 4} ; n in x ; m in y ; m = 4 ] => [ works() ];
+};
+
+% test: works()
+

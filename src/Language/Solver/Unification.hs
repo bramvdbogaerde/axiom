@@ -25,6 +25,7 @@ import qualified Data.Set as Set
 import Data.Kind
 import Data.Maybe (fromMaybe)
 import qualified Language.Solver.Renamer as Renamer
+import qualified Debug.Trace as Debug
 
 
 -------------------------------------------------------------
@@ -114,6 +115,28 @@ pureTerm'' t = do
 -- | Lift an ST operation into the unification monad
 liftST :: BST.ST s a -> UnificationM p s a
 liftST = lift . lift . lift
+
+-------------------------------------------------------------
+-- Snapshotting and restoring
+-------------------------------------------------------------
+
+-- | A snapshot of both the backtracking ST state and the variable mapping
+data Snapshot p s = Snapshot
+  { _stSnapshot :: BST.Snapshot s
+  , _mappingSnapshot :: VariableMapping p s
+  }
+
+deriving instance (ForAllPhases Show p) => Show (Snapshot p s)
+
+-- | Create a snapshot of the current unification state
+snapshot :: UnificationM p s (Snapshot p s)
+snapshot = Snapshot <$> liftST BST.snapshot <*> getVariableMapping
+
+-- | Restore the unification state to a previous snapshot
+restore :: Snapshot p s -> UnificationM p s ()
+restore (Snapshot stSnap mapping) = do
+  liftST $ BST.restore stSnap
+  updateVariableMapping mapping
 
 -------------------------------------------------------------
 -- Union find
@@ -226,6 +249,16 @@ refTerm' t = do
   (t', variableMapping') <- liftST  $ refTerm t variableMapping
   updateVariableMapping variableMapping'
   return t'
+
+-- | Rename a rule using the internal unique variable counter to ensure freshness
+renameRule :: (HaskellExprRename p, ForAllPhases Ord p) => RuleDecl' p -> UnificationM p s (RuleDecl' p)
+renameRule rule = do
+  z <- use numUniqueVariables
+  zoom numUniqueVariables . lift $ Renamer.renameRuleState (Debug.trace ("variables>> " ++ show z) rule)
+
+-- | Rename a term using the internal unique variable counter to ensure freshness
+renameTerm :: (HaskellExprRename p, ForAllPhases Ord p) => PureTerm' p -> UnificationM p s (PureTerm' p)
+renameTerm term = zoom numUniqueVariables . lift $ Renamer.renameTermState term
 
 -- | Visited list abstraction for cycle detection
 type VisitedList p s = [BST.STRef s (CellValue p s String)]

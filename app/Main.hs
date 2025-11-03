@@ -19,10 +19,11 @@ import Options.Applicative
 import qualified LanguageServer
 import qualified Language.SolverDebugger as SolverDebugger
 import qualified Latex.Entrypoint as Latex
-import Language.Solver
+import qualified Language.SolverNew as Solver
 import qualified Language.Solver.BacktrackingST as ST
 import System.Timeout (timeout)
 import Text.Pretty.Simple (pPrint)
+import Control.Exception (evaluate)
 
 -------------------------------------------------------------
 -- Data types
@@ -170,18 +171,17 @@ runTestQuery (Program decls _) queryStr = do
           return False
         Right (checkingCtx, typedProgram) -> do
           let subtyping = _subtypingGraph checkingCtx
-          let engineCtx = fromProgram subtyping typedProgram :: EngineCtx TypingPhase [] s
+          let engineCtx = Solver.fromProgram subtyping typedProgram :: Solver.EngineCtx TypingPhase [] s
           let typedQuery = anyTyped query
-          let solverComputation = ST.runST $ runSolver engineCtx (solve @TypingPhase typedQuery)
-          
+          let solverResult = ST.runST $ Solver.runSolver engineCtx typedQuery
+
           -- Run with 5 second timeout to catch non-termination
-          timeoutResult <- timeout 5000000 (return $! solverComputation) -- 5 seconds in microseconds
+          timeoutResult <- timeout 5000000 (evaluate solverResult) -- 5 seconds in microseconds
           case timeoutResult of
             Nothing -> do
               putStrLn "TIMEOUT (non-termination detected)"
               return False
-            Just solutions -> do
-              let hasSolution = not $ null solutions
+            Just hasSolution -> do
               putStrLn $ if hasSolution then "PASS" else "FAIL"
               return hasSolution
 
