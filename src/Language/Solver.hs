@@ -101,17 +101,25 @@ addConclusionFunctor :: (ForAllPhases Ord p) => String -> RuleDecl' p -> EngineC
 addConclusionFunctor nam decl =
   over conclusionFunctors (Map.insertWith Set.union nam (Set.singleton decl))
 
--- | Construct an initial context from the rules defined the program
-fromRules :: forall q s p . (Queue q, ForAllPhases Ord p) => Subtyping -> [RuleDecl' p] -> [PureRewriteDecl p] -> EngineCtx p q s
-fromRules subtyping rules rewrites =
-      flip (foldr visitRewrite) rewrites
-    $ foldr visit (emptyEngineCtx subtyping) rules
-  where
-    visit rule@(RuleDecl _ _precedent consequents _) =
-      flip (foldr (`addConclusionFunctor` rule)) (mapMaybe functorName (List.singleton (head consequents)))
-    visit _ = id
-    visitRewrite decl@(RewriteDecl nam _ _ _) =
-      over rewriteRules (Map.insertWith (++) nam [decl])
+-- | Construct an initial solver engine context from the given program
+fromProgram :: forall q s p . (Queue q, ForAllPhases Ord p)
+            => Subtyping    -- ^ subtyping context for the given program
+            -> Program' p   -- ^ the program to create a context for
+            -> EngineCtx p q s
+fromProgram subtyping (Program decls _ ) =
+     (flip $ foldr visitRewrite) rewrites 
+   $ (flip $ foldr visitRule) rules
+   $ (flip $ foldr visitOnRule) onRules
+   $ emptyEngineCtx subtyping
+  where rules    = [r | RulesDecl _ rulesDecl _ <- decls, r@(RuleDecl {}) <- rulesDecl ] 
+        rewrites = [r | Rewrite r  _ <- decls ]
+        onRules  = [r | RulesDecl _ rulesDecl _ <- decls, r@(OnRuleDecl {}) <- rulesDecl ]
+        visitRule rule@(RuleDecl _ _precedent consequents _) =
+          flip (foldr (`addConclusionFunctor` rule)) (mapMaybe functorName (List.singleton (head consequents)))
+        visitRule _ = id
+        visitOnRule = const id -- TODO
+        visitRewrite decl@(RewriteDecl nam _ _ _) =
+          over rewriteRules (Map.insertWith (++) nam [decl])
 
 ------------------------------------------------------------
 -- Monad context

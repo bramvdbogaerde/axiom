@@ -143,13 +143,10 @@ makeModule mainName enableDebugger prelude postlude ast testQueries termDecls su
 
   runTestQuery :: (Int, (PureTerm' CodeGenPhase, Bool)) -> IO Bool
   runTestQuery (idx, (query, shouldPass)) = do
-    putStr $ "Testing query " ++ show idx ++ ": " ++ show query ++ 
+    putStr $ "Testing query " ++ show idx ++ ": " ++ show query ++
              " (expected: " ++ (if shouldPass then "PASS" else "FAIL") ++ ") ... "
-    let Program decls _ = ast
-    let rules = [rule | RulesDecl _ rules _ <- decls, rule <- rules]
-    let rewrites = [rewrite | Rewrite rewrite _ <- decls]
     -- subtyping is already available as a top-level variable
-    let engineCtx = fromRules Main.subtyping rules rewrites
+    let engineCtx = fromProgram Main.subtyping ast
     let solverComputation = ST.runST $ runSolver engineCtx (solve @CodeGenPhase @[] query)
     
     let hasSolution = not $ null solverComputation

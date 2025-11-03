@@ -34,7 +34,6 @@ import Text.Read (readMaybe)
 import Control.Lens.Setter ((?~))
 import Control.Monad.Error.Class
 import Control.Monad.Except (runExceptT)
-import Data.Functor.Identity (Identity)
 
 
 -------------------------------------------------------------
@@ -47,11 +46,12 @@ data DebugConfig = DebugConfig
   , _configShowInternalVars :: Bool  -- ^ Whether to show internal variables in trace
   } deriving (Show)
 
--- | Debugger context combining config and user variables
-data DebugContext = DebugContext
+-- | Debugger context combining config, user variables, and program
+data DebugContext p = DebugContext
   { _debugConfig :: DebugConfig
   , _userVariables :: Set String  -- ^ Variables that came from the original query
-  } deriving (Show)
+  , _debugProgram :: Program' p  -- ^ The program being debugged
+  }
 
 $(makeLenses ''DebugConfig)
 $(makeLenses ''DebugContext)
@@ -60,13 +60,9 @@ $(makeLenses ''DebugContext)
 defaultConfig :: DebugConfig
 defaultConfig = DebugConfig Nothing False  -- Don't show internal variables by default
 
--- | Default context with empty user variables
-defaultContext :: DebugContext
-defaultContext = DebugContext defaultConfig Set.empty
-
--- | Create debug context from config and query
-createDebugContext :: DebugConfig -> PureTerm' p -> DebugContext
-createDebugContext config query = DebugContext config (atomNames query)
+-- | Create debug context from config, query, and program
+createDebugContext :: DebugConfig -> PureTerm' p -> Program' p -> DebugContext p
+createDebugContext config query program = DebugContext config (atomNames query) program
 
 -------------------------------------------------------------
 -- Tracing
@@ -146,8 +142,8 @@ prettyTrace = foldMap prettyTraceEntry
 
 -- | Traced solver monad - wraps the solver with tracing capability and context
 newtype TracedSolver p q s a = TracedSolver
-  { runTracedSolver :: ReaderT DebugContext (WriterT (SolverTrace p) (Solver p q s)) a }
-  deriving (Functor, Applicative, Monad, MonadReader DebugContext, MonadWriter (SolverTrace p))
+  { runTracedSolver :: ReaderT (DebugContext p) (WriterT (SolverTrace p) (Solver p q s)) a }
+  deriving (Functor, Applicative, Monad, MonadReader (DebugContext p), MonadWriter (SolverTrace p))
 
 -- | Lift a solver action into the traced solver
 liftSolver :: Solver p q s a -> TracedSolver p q s a
@@ -293,17 +289,21 @@ tracedSolveUntilStable query iteration = do
       tracedSolveUntilStable query (iteration + 1)
 
 -- | Run a traced solver computation with context and return results with trace
-runSolverWithTrace :: (Queue q, HaskellExprExecutor p, AnnotateType p, ForAllPhases Ord p) => DebugContext -> EngineCtx p q s -> TracedSolver p q s a -> ST.ST s (a, SolverTrace p)
+runSolverWithTrace :: (Queue q, HaskellExprExecutor p, AnnotateType p, ForAllPhases Ord p) => DebugContext p -> EngineCtx p q s -> TracedSolver p q s a -> ST.ST s (a, SolverTrace p)
 runSolverWithTrace context ctx tracedComp = do
   runSolver ctx $ runWriterT $ runReaderT (runTracedSolver tracedComp) context
 
--- | Debug solve a query with config and return solutions with trace  
-debugSolve :: (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, ForAllPhases Eq p, HaskellExprExecutor p, HaskellExprRename p, Show (PureTerm' p)) => DebugConfig -> CheckingContext -> [RuleDecl' p] -> [RewriteDecl' p Identity] -> PureTerm' p -> IO ([Map String (PureTerm' p)], SolverTrace p)
-debugSolve config checkingContext rules rewrites query = do
+-- | Debug solve a query with config and return solutions with trace
+debugSolve :: (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprExecutor p, HaskellExprRename p)
+           => DebugConfig
+           -> CheckingContext
+           -> Program' p
+           -> PureTerm' p
+           -> IO ([Map String (PureTerm' p)], SolverTrace p)
+debugSolve config checkingContext program query = do
   return $ ST.runST $ do
-    -- TODO: allow rewrites in the debugger
-    let ctx = fromRules @[] (_subtypingGraph checkingContext) rules rewrites
-    let debugCtx = createDebugContext config query
+    let ctx = fromProgram @[] (_subtypingGraph checkingContext) program
+    let debugCtx = createDebugContext config query program
     runSolverWithTrace debugCtx ctx (tracedSolve query)
 
 -------------------------------------------------------------
@@ -317,39 +317,38 @@ debugSession semFile = do
   content <- readFile semFile
   case parseProgram content of
     Left err -> putStrLn $ "Parse error: " ++ show err
-    Right (Program decls _) -> do
+    Right program -> do
       -- Type check the program to get the subtyping graph
-      case runChecker' (Program decls []) of
+      case runChecker' program of
         Left typeError -> putStrLn $ "Type error: " ++ show typeError
-        Right (checkingCtx, Program decls' _) -> do
-          let rules = [rule | RulesDecl _ rules _ <- decls', rule <- rules]
-          let rewrites = [rule | Rewrite rule _ <- decls' ]
+        Right (checkingCtx, typedProgram) -> do
+          let rules = [rule | RulesDecl _ rules _ <- getDecls typedProgram, rule <- rules]
 
           putStrLn "Loaded and type checked rules successfully. Enter queries to debug (or 'quit' to exit):"
           putStrLn "Use ':set steps N' to limit solver steps, ':show config' to view settings."
           mapM_ print rules
 
-          debugLoop defaultConfig checkingCtx rules rewrites
+          debugLoop defaultConfig checkingCtx typedProgram
   where
-    debugLoop :: DebugConfig -> CheckingContext -> [RuleDecl' TypingPhase] -> [RewriteDecl' TypingPhase Identity] -> IO ()
-    debugLoop config ctx rules rewrites = do
+    debugLoop :: DebugConfig -> CheckingContext -> Program' TypingPhase -> IO ()
+    debugLoop config ctx program = do
       putStr "debug> " >> hFlushAll stdout
       input <- getLine
       if | input == "quit" -> putStrLn "Goodbye!"
-         | not (null input) && head input == ':' -> handleCommand input config ctx rules rewrites
-         | otherwise -> handleQuery input config ctx rules rewrites >> debugLoop config ctx rules rewrites
+         | not (null input) && head input == ':' -> handleCommand input config ctx program
+         | otherwise -> handleQuery input config ctx program >> debugLoop config ctx program
 
-    handleCommand input config ctx rules rewrites =
+    handleCommand input config ctx program =
       case parseCommand' input config of
-        Left err -> putStrLn err >> debugLoop config ctx rules rewrites
+        Left err -> putStrLn err >> debugLoop config ctx program
         Right newConfig -> do
           putStrLn $ "Configuration updated: " ++ show newConfig
-          debugLoop newConfig ctx rules rewrites
+          debugLoop newConfig ctx program
 
-    handleQuery input config ctx rules rewrites = fmap (either error id) $ runExceptT $ do
+    handleQuery input config ctx program = fmap (either error id) $ runExceptT $ do
       goal <- modifyError (("Parse error: " ++) . show) $ liftEither $ parseGoal input
       checkedGoal <- modifyError (("Type error: " ++) . show) $ liftEither $ runCheckTerm ctx goal
-      (solutions, trace) <- liftIO $ debugSolve config ctx rules rewrites checkedGoal
+      (solutions, trace) <- liftIO $ debugSolve config ctx program checkedGoal
       liftIO $ putStrLn "\n=== TRACE ==="
       liftIO $ putStrLn $ prettyTrace trace
       liftIO $ putStrLn "=== RESULTS ==="

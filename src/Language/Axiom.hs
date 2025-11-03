@@ -1,7 +1,7 @@
 {-# LANGUAGE RankNTypes #-}
 module Language.Axiom(
     module Language.CodeGen.Prelude,
-    solverFromRules,
+    solverFromProgram,
     solve,
     typeQuery
   ) where 
@@ -13,8 +13,8 @@ import Data.Map
 import Language.TypeCheck
 
 -- | Create a new solver based on the given rules and subtyping information
-solverFromRules :: (ForAllPhases Ord p) => Subtyping -> [RuleDecl' p] -> [PureRewriteDecl p] -> Solver.EngineCtx p [] s
-solverFromRules = Solver.fromRules
+solverFromProgram :: (ForAllPhases Ord p) => Subtyping -> Program' p -> Solver.EngineCtx p [] s
+solverFromProgram = Solver.fromProgram
 
 -- | Type an untyped term using the given type checker
 typeQuery :: CheckingContext -> PureTerm -> Either Error TypedTerm

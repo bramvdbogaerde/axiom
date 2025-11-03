@@ -52,11 +52,9 @@ runTestQuery (Program decls _) queryStr = do
       case runChecker' (Program decls []) of
         Left typeError -> return $ Left $ "Type error: " ++ show typeError
         Right (checkingCtx, typedProgram) -> do
-          let rules = [rule | RulesDecl _ rules _ <- getDecls typedProgram, rule <- rules]
-          let rewrites = [rewrite | Rewrite rewrite _ <- getDecls typedProgram]
           let subtyping = _subtypingGraph checkingCtx
           let typedQuery = anyTyped query
-          let engineCtx = fromRules subtyping rules rewrites :: EngineCtx TypingPhase [] s
+          let engineCtx = fromProgram subtyping typedProgram :: EngineCtx TypingPhase [] s
           let solverComputation = ST.runST $ runSolver engineCtx (solve @TypingPhase typedQuery)
           
           -- Run with 5 second timeout to catch non-termination
