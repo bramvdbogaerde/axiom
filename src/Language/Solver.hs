@@ -31,7 +31,8 @@ import Data.Maybe ( catMaybes, fromMaybe, mapMaybe )
 import Control.Monad ((>=>))
 import qualified Data.List as List
 
-------------------------------------------------------------
+
+-----------------------------------------------------------
 -- Search data structures
 ------------------------------------------------------------
 
@@ -52,7 +53,7 @@ data SearchState p s = SearchState
     _searchStateId :: Int,
     -- | Remaining goals to be solved
     _searchGoals :: ![SearchGoal p s],
-    -- | Snapshot to restore when resuming this search    
+    -- | Snapshot to restore when resuming this search
     _searchSnapshot :: ST.Snapshot s,
     -- | Goals to add to the cache when all the search goals in this state
     -- have been solved.

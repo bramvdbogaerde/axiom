@@ -227,6 +227,10 @@ refTerm' t = do
   updateVariableMapping variableMapping'
   return t'
 
+-- | Rename a rule using the internal unique variable counter to ensure freshness
+renameRule :: (HaskellExprRename p, ForAllPhases Ord p) => RuleDecl' p -> UnificationM p s (RuleDecl' p)
+renameRule rule = zoom numUniqueVariables . lift $ Renamer.renameRuleState rule
+
 -- | Visited list abstraction for cycle detection
 type VisitedList p s = [BST.STRef s (CellValue p s String)]
 

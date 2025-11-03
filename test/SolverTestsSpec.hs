@@ -5,7 +5,7 @@ import Test.Hspec
 import Language.AST
 import Language.Parser (parseTerm)
 import Language.ImportResolver
-import Language.Solver
+import qualified Language.SolverNew as Solver
 import Language.TypeCheck (runChecker', CheckingContext(..))
 import qualified Language.Solver.BacktrackingST as ST
 import System.Directory
@@ -17,6 +17,7 @@ import Control.Monad.Trans.Except
 import Control.Applicative ((<|>))
 import Data.Bifunctor (first)
 import System.Timeout (timeout)
+import Control.Exception (evaluate)
 
 -- | Find all .sem files in the tests directory
 findSemFiles :: IO [FilePath]
@@ -54,14 +55,14 @@ runTestQuery (Program decls _) queryStr = do
         Right (checkingCtx, typedProgram) -> do
           let subtyping = _subtypingGraph checkingCtx
           let typedQuery = anyTyped query
-          let engineCtx = fromProgram subtyping typedProgram :: EngineCtx TypingPhase [] s
-          let solverComputation = ST.runST $ runSolver engineCtx (solve @TypingPhase typedQuery)
-          
+          let engineCtx = Solver.fromProgram subtyping typedProgram :: Solver.EngineCtx TypingPhase [] s
+          let solverResult = ST.runST $ Solver.runSolver engineCtx typedQuery
+
           -- Run with 5 second timeout to catch non-termination
-          timeoutResult <- timeout 5000000 (return $! solverComputation) -- 5 seconds in microseconds
+          timeoutResult <- timeout 5000000 (evaluate solverResult) -- 5 seconds in microseconds
           case timeoutResult of
             Nothing -> return $ Left $ "Solver timeout: Query '" ++ queryStr ++ "' did not terminate within 5 seconds"
-            Just solutions -> return $ Right (not $ null solutions)
+            Just hasSolution -> return $ Right hasSolution
 
 -- | Load and parse a test file, returning either an error or (program, queries)
 loadTestFile :: FilePath -> ExceptT String IO (Program, [(String, Bool)])
