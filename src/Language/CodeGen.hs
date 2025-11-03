@@ -489,6 +489,8 @@ rewriteDeclToExp ctx (RewriteDecl name args body range) =
 ruleDeclToExp :: CheckingContext -> TypedRuleDecl -> Q Exp
 ruleDeclToExp ctx (RuleDecl name precedent consequent range) =
   [| RuleDecl $(lift name) $(listE (map (pureTermToExp ctx) precedent)) $(listE (map (pureTermToExp ctx) consequent)) $(rangeToExp range) |]
+ruleDeclToExp ctx (OnRuleDecl name precedent consequent range) =
+  [| OnRuleDecl $(lift name) $(listE (map (pureTermToExp ctx) precedent)) $(listE (map (pureTermToExp ctx) consequent)) $(rangeToExp range) |]
 
 pureTermToExp :: CheckingContext -> TypedTerm -> Q Exp
 pureTermToExp ctx = \case

@@ -583,6 +583,8 @@ checkLatexRule (LatexRenderRule pattern template range) = do
 
 checkRule :: MonadCheck m => RuleDecl -> m TypedRuleDecl
 checkRule (RuleDecl nam precedent consequent range) = RuleDecl nam <$> mapM (fmap fst . checkTerm) precedent <*> mapM (fmap fst . checkTerm) consequent <*> pure range
+checkRule (OnRuleDecl nam trigger consequent range) =
+  OnRuleDecl nam <$> mapM (fmap fst . checkTerm) trigger <*> mapM (fmap fst . checkTerm) consequent <*> pure range
 
 -- | Type a rewrite rule
 typeRewrite :: MonadCheck m => RewriteDecl -> m (TypedRewriteDecl Identity)
@@ -654,6 +656,8 @@ pass4VisitDecl (LatexRenderDecl rules range) =
 pass4VisitRule :: MonadCheck m => TypedRuleDecl -> m TypedRuleDecl
 pass4VisitRule (RuleDecl nam precedent consequent range) =
   RuleDecl nam <$> mapM pass4VisitTerm precedent <*> mapM pass4VisitTerm consequent <*> pure range
+pass4VisitRule (OnRuleDecl nam trigger consequent range) =
+  OnRuleDecl nam <$> mapM pass4VisitTerm trigger <*> mapM pass4VisitTerm consequent <*> pure range
 
 pass4VisitRewrite :: MonadCheck m => TypedRewriteDecl Identity -> m (TypedRewriteDecl Identity)
 pass4VisitRewrite (RewriteDecl name args body range) =

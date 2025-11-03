@@ -109,6 +109,7 @@ fromRules subtyping rules rewrites =
   where
     visit rule@(RuleDecl _ _precedent consequents _) =
       flip (foldr (`addConclusionFunctor` rule)) (mapMaybe functorName (List.singleton (head consequents)))
+    visit _ = id
     visitRewrite decl@(RewriteDecl nam _ _ _) =
       over rewriteRules (Map.insertWith (++) nam [decl])
 
@@ -434,57 +435,59 @@ processRule :: forall p q s . (AnnotateType p, ForAllPhases Show p, Queue q, Has
             -> RuleDecl' p      -- ^ the rule to match with
             -> Solver p q s ()
 processRule goal remainingGoals whenSucceeds0 isInCache rule = do
-  RuleDecl ruleName precedents consequents _ <- Solver $ lift $ zoom Unification.numUniqueVariables $ lift $ Renamer.renameRuleState rule
+  rule'  <- Solver $ lift $ zoom Unification.numUniqueVariables $ lift $ Renamer.renameRuleState rule
+  case rule' of 
+    OnRuleDecl {} -> error "unexpected 'on' declaration"
+    RuleDecl ruleName precedents consequents _ ->
+      -- TODO: the other consequents at the moment are only **secondary** meaning that they are resolved when the main goals
+      -- are resolved by using the in-cache.
+      case consequents of
+        [] ->  error $ "Rule " ++ ruleName ++ " has " ++ show (length consequents) ++ " consequents, expected to be 1 or more"
+        (consequent:consequents) -> (do
+          refConsequent <- refTerm consequent
+          unifiedConsequents <- mapM forceUnify consequents
 
-  -- TODO: the other consequents at the moment are only **secondary** meaning that they are resolved when the main goals
-  -- are resolved by using the in-cache.
-  case consequents of
-    (consequent:consequents) -> do
-      refConsequent <- refTerm consequent
-      unifiedConsequents <- mapM forceUnify consequents
+          -- Add the the other consequents to the in-cache (i.e., whenSucceeds)
+          let whenSucceeds' = unifiedConsequents ++ whenSucceeds0
 
-      -- Add the the other consequents to the in-cache (i.e., whenSucceeds)
-      let whenSucceeds' = unifiedConsequents ++ whenSucceeds0
+          -- Create unification goal: current goal = consequent
+          let unificationGoal = SearchGoal ("Csq-" ++ ruleName) (Eqq goal refConsequent (typeAnnot (Proxy @p) AnyType) dummyRange)
 
-      -- Create unification goal: current goal = consequent
-      let unificationGoal = SearchGoal ("Csq-" ++ ruleName) (Eqq goal refConsequent (typeAnnot (Proxy @p) AnyType) dummyRange)
+          if null precedents
+            then do
+              -- Rules WITHOUT precedents: Process directly without caching
+              continue (unificationGoal : remainingGoals) whenSucceeds'
+            else do
+              -- Rules WITH precedents: Apply caching logic
+              mapping <- gets (^. searchCtx . currentMapping)
+              pureGoal <- liftST $ Unification.pureTerm goal mapping
 
-      if null precedents
-        then do
-          -- Rules WITHOUT precedents: Process directly without caching
-          continue (unificationGoal : remainingGoals) whenSucceeds'
-        else do
-          -- Rules WITH precedents: Apply caching logic
-          mapping <- gets (^. searchCtx . currentMapping)
-          pureGoal <- liftST $ Unification.pureTerm goal mapping
+              if isInCache
+                then do -- Goal is in whenSucceeds (in-cache)
+                  cachedResults <- lookupCache pureGoal
+                  if Set.null cachedResults
+                    then continue remainingGoals whenSucceeds' -- Out-cache empty: skip this rule entirely
+                    else do
+                      -- Out-cache has results: create Eqq goals for each cached result
+                      let resultsList = Set.toList cachedResults
+                      mapM_ (processResult "In" remainingGoals whenSucceeds') resultsList
+                else do -- Goal not in-cache: add it, process precedents, and check out-cache
+                  -- Check out-cache for existing results and create additional search states
+                  cachedResults <- lookupCache pureGoal
+                  unless (Set.null cachedResults) $ do
+                    let resultsList = Set.toList cachedResults
+                    mapM_ (processResult "Old" remainingGoals whenSucceeds') resultsList
 
-          if isInCache
-            then do -- Goal is in whenSucceeds (in-cache)
-              cachedResults <- lookupCache pureGoal
-              if Set.null cachedResults
-                then continue remainingGoals whenSucceeds' -- Out-cache empty: skip this rule entirely
-                else do
-                  -- Out-cache has results: create Eqq goals for each cached result
-                  let resultsList = Set.toList cachedResults
-                  mapM_ (processResult "In" remainingGoals whenSucceeds') resultsList
-            else do -- Goal not in-cache: add it, process precedents, and check out-cache
-              -- Check out-cache for existing results and create additional search states
-              cachedResults <- lookupCache pureGoal
-              unless (Set.null cachedResults) $ do
-                let resultsList = Set.toList cachedResults
-                mapM_ (processResult "Old" remainingGoals whenSucceeds') resultsList
-
-              -- Also proceed with normal rule processing
-              precedentRefs <- mapM refTerm precedents
-              let precedentGoals = map (SearchGoal ruleName) precedentRefs
-              let newGoals = unificationGoal : precedentGoals ++ remainingGoals
-              continue newGoals whenSucceeds'
+                  -- Also proceed with normal rule processing
+                  precedentRefs <- mapM refTerm precedents
+                  let precedentGoals = map (SearchGoal ruleName) precedentRefs
+                  let newGoals = unificationGoal : precedentGoals ++ remainingGoals
+                  continue newGoals whenSucceeds')
       where
         processResult prefix remainingGoals whenSucceeds' cachedResult = do
           cachedRef <- refTerm cachedResult
           let eqqGoal = SearchGoal ("Cached-" ++ prefix ++ "-" ++ ruleName) (Eqq goal cachedRef (typeAnnot (Proxy @p) AnyType) dummyRange)
           continue (eqqGoal : remainingGoals) whenSucceeds'
-    _ -> error $ "Rule " ++ ruleName ++ " has " ++ show (length consequents) ++ " consequents, expected to be 1 or more"
 
 ------------------------------------------------------------
 -- Inspection

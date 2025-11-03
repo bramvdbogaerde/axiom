@@ -170,8 +170,6 @@ typeComment :: Comment' p -> Comment' q
 -- NOTE: id does not work since "id :: a -> a", and p /= q forall p, q.
 typeComment (Comment nam ran) = Comment nam ran
 
-
-
 -------------------------------------------------------------
 -- Type AST
 ------------------------------------------------------------
@@ -268,6 +266,10 @@ data RuleDecl' p = RuleDecl String -- ^ rule name
                            [PureTerm' p] -- ^ the precedent
                            [PureTerm' p] -- ^ the consequent
                            Range
+                 | OnRuleDecl String        -- ^ name 
+                              [PureTerm' p] -- ^ trigger
+                              [PureTerm' p] -- ^ consequent
+                              Range
 deriving instance (ForAllPhases Ord p) => Ord (RuleDecl' p)
 deriving instance (ForAllPhases Eq p) => Eq (RuleDecl' p)
 type RuleDecl = RuleDecl' ParsePhase
@@ -278,6 +280,12 @@ instance (ForAllPhases Show p) => Show (RuleDecl' p) where
   show (RuleDecl name precedent consequent _) =
     "rule " ++ name ++
     " [" ++ intercalate ", " (Prelude.map show precedent) ++ "]" ++
+    " => " ++
+    "[" ++ intercalate ", " (Prelude.map show consequent) ++ "]" ++
+    ";"
+
+  show (OnRuleDecl nam trigger consequent _) =
+    "on " ++ nam ++ " [ " ++ intercalate "," (Prelude.map show trigger) ++ "]" ++
     " => " ++
     "[" ++ intercalate ", " (Prelude.map show consequent) ++ "]" ++
     ";"

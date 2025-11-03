@@ -132,6 +132,9 @@ renameRule' :: (HaskellExprRename p, ForAllPhases Ord p)
 renameRule' freshCtr' (RuleDecl ruleName precedent consequent range) =
     runRenamer freshCtr' $
         RuleDecl ruleName <$> renameTerms precedent <*> renameTerms consequent <*> pure range
+renameRule' freshCtr' (OnRuleDecl ruleName precedent consequent range) =
+    runRenamer freshCtr' $
+        OnRuleDecl ruleName <$> renameTerms precedent <*> renameTerms consequent <*> pure range
 
 renameRuleState :: (HaskellExprRename p, ForAllPhases Ord p, Monad m) => RuleDecl' p -> StateT Int m (RuleDecl' p)
 renameRuleState rule = StateT $ return . flip renameRule' rule
