@@ -6,6 +6,7 @@
 "in" @keyword
 "alias" @keyword
 "as" @keyword
+"latex" @keyword
 
 ; Operators
 "::=" @operator

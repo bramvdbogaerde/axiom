@@ -16,6 +16,15 @@ module.exports = grammar({
   ],
 
   rules: {
+    // Integer literals
+    integer_literal: $ => /[0-9]+/,
+
+    // Identifiers
+    identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
+
+    // Strings in double quotes
+    string: $ => /"([^"\\]|\\.)*"/,
+
     source_file: $ => repeat(choice(
       seq($.declaration, ';'),
       $.haskell_block,
@@ -25,8 +34,10 @@ module.exports = grammar({
     declaration: $ => choice(
       $.syntax_block,
       $.rules_block,
+      $.latex_block,
       $.transition_declaration,
-      $.rewrite_rule
+      $.rewrite_rule,
+      $.rewrite_type
     ),
 
     // Syntax block: syntax { ... }
@@ -52,6 +63,13 @@ module.exports = grammar({
       )
     ),
 
+    // Latex rule block
+    latex_block: $ => seq('latex', '{', repeat(seq($.latex_rule, ';')), '}'),
+    latex_rule: $ => seq($.term, '=>', sep(choice($.identifier, $.string), ",")),
+
+    // A rewrite type: ': functor(arg1) => ret"
+    rewrite_type: $ => seq(':', $.term, '=>', $.term),
+  
     // Type alias: alias TypeRef as AliasName
     type_alias: $ => seq(
       'alias',
@@ -135,7 +153,8 @@ module.exports = grammar({
       $.haskell_expression,
       $.integer_literal,
       $.wildcard,
-      $.big_step_expr
+      $.big_step_expr,
+      seq(optional($.term), "[", sep(seq($.identifier, "|->", $.term), ","), "]") 
     ),
 
     atom: $ => $.identifier,
@@ -206,14 +225,6 @@ module.exports = grammar({
       '}}}'
     )),
 
-    // Integer literals
-    integer_literal: $ => /[0-9]+/,
-
-    // Identifiers
-    identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
-
-    // Strings in double quotes
-    string: $ => /"([^"\\]|\\.)*"/
   }
 });
 
