@@ -15,6 +15,8 @@ module.exports = grammar({
     $.regular_comment
   ],
 
+  word: $ => $.identifier,
+
   rules: {
 
     source_file: $ => repeat(choice(
@@ -45,8 +47,8 @@ module.exports = grammar({
     syntax_rule: $ => choice(
       $.type_alias,
       seq(
-        $.variable_list,
-        'in',
+        optional(
+          seq($.variable_list, 'in')),
         $.type_ref,
         optional(seq(
           '::=',
@@ -206,8 +208,15 @@ module.exports = grammar({
       '}'
     )),
 
+    embedded_haskell: $ =>
+      repeat1(choice(
+        /[^}]/,
+        seq('}', /[^}]/),
+        seq('}', '}', /[^}]/)
+      )),
+
     // Haskell blocks: {{{ ... }}}
-    haskell_block: $ => choice(hblock('{{', '}}'), hblock('[[', ']]')),
+    haskell_block: $ => choice(hblock($, '{{', '}}'), hblock($, '[[', ']]')),
     
     // Integer literals
     integer_literal: $ => /[0-9]+/,
@@ -230,14 +239,10 @@ function sep(rule, separator) {
   return optional(sep1(rule, separator));
 }
 
-function hblock(start, end) {
-  return token(seq(
+function hblock($, start, end) {
+  return seq(
       start,
-      repeat(choice(
-        /[^}]/,
-        seq('}', /[^}]/),
-        seq('}', '}', /[^}]/)
-      )),
+      $.embedded_haskell,
       end
-    ));
+    );
 }

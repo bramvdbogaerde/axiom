@@ -9,5 +9,5 @@
  (#set! injection.language "haskell"))
 
 ; Inject Haskell syntax highlighting into Haskell blocks  
-((haskell_block) @injection.content
+((embedded_haskell) @injection.content
  (#set! injection.language "haskell"))

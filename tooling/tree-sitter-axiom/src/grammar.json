@@ -1,6 +1,7 @@
 {
   "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/grammar.schema.json",
   "name": "axiom",
+  "word": "identifier",
   "rules": {
     "source_file": {
       "type": "REPEAT",
@@ -104,12 +105,25 @@
           "type": "SEQ",
           "members": [
             {
-              "type": "SYMBOL",
-              "name": "variable_list"
-            },
-            {
-              "type": "STRING",
-              "value": "in"
+              "type": "CHOICE",
+              "members": [
+                {
+                  "type": "SEQ",
+                  "members": [
+                    {
+                      "type": "SYMBOL",
+                      "name": "variable_list"
+                    },
+                    {
+                      "type": "STRING",
+                      "value": "in"
+                    }
+                  ]
+                },
+                {
+                  "type": "BLANK"
+                }
+              ]
             },
             {
               "type": "SYMBOL",
@@ -996,124 +1010,84 @@
         ]
       }
     },
+    "embedded_haskell": {
+      "type": "REPEAT1",
+      "content": {
+        "type": "CHOICE",
+        "members": [
+          {
+            "type": "PATTERN",
+            "value": "[^}]"
+          },
+          {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "}"
+              },
+              {
+                "type": "PATTERN",
+                "value": "[^}]"
+              }
+            ]
+          },
+          {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "}"
+              },
+              {
+                "type": "STRING",
+                "value": "}"
+              },
+              {
+                "type": "PATTERN",
+                "value": "[^}]"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "haskell_block": {
       "type": "CHOICE",
       "members": [
         {
-          "type": "TOKEN",
-          "content": {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "{{"
-              },
-              {
-                "type": "REPEAT",
-                "content": {
-                  "type": "CHOICE",
-                  "members": [
-                    {
-                      "type": "PATTERN",
-                      "value": "[^}]"
-                    },
-                    {
-                      "type": "SEQ",
-                      "members": [
-                        {
-                          "type": "STRING",
-                          "value": "}"
-                        },
-                        {
-                          "type": "PATTERN",
-                          "value": "[^}]"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "SEQ",
-                      "members": [
-                        {
-                          "type": "STRING",
-                          "value": "}"
-                        },
-                        {
-                          "type": "STRING",
-                          "value": "}"
-                        },
-                        {
-                          "type": "PATTERN",
-                          "value": "[^}]"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              },
-              {
-                "type": "STRING",
-                "value": "}}"
-              }
-            ]
-          }
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "{{"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "embedded_haskell"
+            },
+            {
+              "type": "STRING",
+              "value": "}}"
+            }
+          ]
         },
         {
-          "type": "TOKEN",
-          "content": {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "[["
-              },
-              {
-                "type": "REPEAT",
-                "content": {
-                  "type": "CHOICE",
-                  "members": [
-                    {
-                      "type": "PATTERN",
-                      "value": "[^}]"
-                    },
-                    {
-                      "type": "SEQ",
-                      "members": [
-                        {
-                          "type": "STRING",
-                          "value": "}"
-                        },
-                        {
-                          "type": "PATTERN",
-                          "value": "[^}]"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "SEQ",
-                      "members": [
-                        {
-                          "type": "STRING",
-                          "value": "}"
-                        },
-                        {
-                          "type": "STRING",
-                          "value": "}"
-                        },
-                        {
-                          "type": "PATTERN",
-                          "value": "[^}]"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              },
-              {
-                "type": "STRING",
-                "value": "]]"
-              }
-            ]
-          }
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "[["
+            },
+            {
+              "type": "SYMBOL",
+              "name": "embedded_haskell"
+            },
+            {
+              "type": "STRING",
+              "value": "]]"
+            }
+          ]
         }
       ]
     },
