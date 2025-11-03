@@ -27,6 +27,7 @@ data Token = EOF
            | Wildcard    -- ^ '_'
            | Union       -- ^ 'union'
            | Colon       -- ^ ':'
+           | On          -- ^ 'on'
            | Ident { tokVal :: String }
            | Quo { tokVal :: String }
            | IntLit { tokInt :: Int  }         -- ^ integer literal

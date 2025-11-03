@@ -62,6 +62,7 @@ tokens :-
   <0> "."                           { mkToken Dot }
   <0> ";"                           { mkToken Sem }
   <0> "|"                           { mkToken Bar }
+  <0> "on"                          { mkToken On }
   <0> "_"                           { mkToken Wildcard }
   <0> $alpha $alphanum*             { mkTokenWith Ident }
   <0> \"[^\"]*\"                    { mkTokenWith (\s -> Quo (init (tail s))) }

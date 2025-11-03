@@ -59,6 +59,7 @@ import qualified Data.Set as Set
   '|'         { TokenWithRange Bar _ }
   '|->'       { TokenWithRange MapsTo _ }
   '_'         { TokenWithRange Token.Wildcard _ }
+  'on'        { TokenWithRange Token.On _ }
   'union'     { TokenWithRange Token.Union _ }
   IDENT       { TokenWithRange (Ident _) _ }
   STRING      { TokenWithRange (Quo _) _ }
@@ -146,6 +147,7 @@ Rules : {- empty -}                          { [] }
 
 Rule :: { RuleDecl }
 Rule : 'rule' STRING '[' Goals ']' '=>' '[' TermList ']' { RuleDecl (getString $2) $4 $8 (mkRange $1 $9) }
+Rule : 'on'   STRING '[' Goals ']' '=>' '[' TermList ']' { OnRuleDecl (getString $2) $4 $8 (mkRange $1 $9) }
 
 Goals :: { [PureTerm] }
 Goals : {- empty -} { [] }
