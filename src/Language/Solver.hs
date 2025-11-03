@@ -82,9 +82,13 @@ data EngineCtx p q s = EngineCtx
     _outCache :: !(Map (PureTerm' p) (Set (PureTerm' p))),
     -- | Information about rewrite rules
     _rewriteRules :: Unification.Rewrites p,
+    -- | Set of rules declared with "on" for forward reasoning
+    -- represented as a map and indexed by the name of the facts
+    -- in the precedent. 
+    _onRules :: Map String (Set (RuleDecl' p)),
     -- | Subtyping graph for type-aware unification
     _subtyping :: !Subtyping
-  }
+    }
 
 -- | Create an empty search context
 emptySearchCtx :: (Queue q) => SearchCtx p q s
@@ -92,7 +96,7 @@ emptySearchCtx = SearchCtx emptyQueue Map.empty
 
 -- | Create an empty solver engine context
 emptyEngineCtx :: (Queue q) => Subtyping -> EngineCtx p q s
-emptyEngineCtx = EngineCtx Map.empty emptySearchCtx Map.empty Map.empty
+emptyEngineCtx = EngineCtx Map.empty emptySearchCtx Map.empty Map.empty Map.empty
 
 $(makeLenses ''EngineCtx)
 
@@ -107,17 +111,15 @@ fromProgram :: forall q s p . (Queue q, ForAllPhases Ord p)
             -> Program' p   -- ^ the program to create a context for
             -> EngineCtx p q s
 fromProgram subtyping (Program decls _ ) =
-     (flip $ foldr visitRewrite) rewrites 
+     (flip $ foldr visitRewrite) rewrites
    $ (flip $ foldr visitRule) rules
-   $ (flip $ foldr visitOnRule) onRules
    $ emptyEngineCtx subtyping
-  where rules    = [r | RulesDecl _ rulesDecl _ <- decls, r@(RuleDecl {}) <- rulesDecl ] 
+  where rules    = [r | RulesDecl _ rulesDecl _ <- decls, r <- rulesDecl ]
         rewrites = [r | Rewrite r  _ <- decls ]
-        onRules  = [r | RulesDecl _ rulesDecl _ <- decls, r@(OnRuleDecl {}) <- rulesDecl ]
         visitRule rule@(RuleDecl _ _precedent consequents _) =
           flip (foldr (`addConclusionFunctor` rule)) (mapMaybe functorName (List.singleton (head consequents)))
-        visitRule _ = id
-        visitOnRule = const id -- TODO
+        visitRule rule@(OnRuleDecl _ precedents _ _) =
+            flip (foldr (`addConclusionFunctor` rule)) (mapMaybe functorName (List.singleton (head precedents)))
         visitRewrite decl@(RewriteDecl nam _ _ _) =
           over rewriteRules (Map.insertWith (++) nam [decl])
 
@@ -444,7 +446,7 @@ processRule :: forall p q s . (AnnotateType p, ForAllPhases Show p, Queue q, Has
             -> Solver p q s ()
 processRule goal remainingGoals whenSucceeds0 isInCache rule = do
   rule'  <- Solver $ lift $ zoom Unification.numUniqueVariables $ lift $ Renamer.renameRuleState rule
-  case rule' of 
+  case rule' of
     OnRuleDecl {} -> error "unexpected 'on' declaration"
     RuleDecl ruleName precedents consequents _ ->
       -- TODO: the other consequents at the moment are only **secondary** meaning that they are resolved when the main goals
