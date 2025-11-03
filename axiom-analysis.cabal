@@ -31,6 +31,7 @@ library
                   , Language.Parser
                   , Language.TypeCheck
                   , Language.Solver
+                  , Language.SolverNew
                   , Language.Axiom
                   , Language.SolverDebugger
                   , Language.ImportResolver
