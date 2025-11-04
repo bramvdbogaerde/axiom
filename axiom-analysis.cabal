@@ -33,6 +33,7 @@ library
                   , Language.Solver
                   , Language.SolverNew
                   , Language.Axiom
+                  , Language.Axiom.Solver.Monad
                   , Language.SolverDebugger
                   , Language.ImportResolver
                   , Language.Solver.Unification
@@ -53,6 +54,13 @@ library
             , FlexibleContexts
             , TupleSections
             , StandaloneDeriving
+            , ScopedTypeVariables 
+            , MultiParamTypeClasses
+            , FlexibleContexts
+            , FunctionalDependencies
+            , LambdaCase
+            , GADTs
+            , DeriveFunctor
   hs-source-dirs: src
   ghc-options: -Werror -Wall -Wno-name-shadowing -Wno-unused-record-wildcards
   
