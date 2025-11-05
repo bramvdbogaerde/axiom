@@ -11,6 +11,7 @@ import Language.ImportResolver (resolveImportsFromFile, concatModules)
 import Latex.Generator (runGenerator)
 import Latex.Output (getBlocks, LatexType(..))
 import System.Exit
+import Language.TypeCheck
 
 -- | Options for the latex command
 data LatexOptions = LatexOptions
@@ -66,8 +67,13 @@ runLatexCommand (LatexOptions inputFile outputDir) = do
     Left err -> Reporting.printImportError modules err  >> exitFailure
     Right p -> pure p
 
+  -- Run the type checker
+  (_, checkedProgram) <- case runChecker' (concatModules prog) of
+    Left typeError -> Reporting.printError modules typeError >> exitFailure
+    Right (ctx, prog') -> return (ctx, prog')
+
   -- Generate LaTeX output
-  let latexOutput = runGenerator (concatModules prog)
+  let latexOutput = runGenerator checkedProgram
 
   -- Create output directory if it doesn't exist
   createDirectoryIfMissing True outputDir

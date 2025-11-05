@@ -161,8 +161,8 @@ renderTerm (TermMap _ _ _) =
   error "mappings should not arise during rendering"
 
 renderExpr :: MonadRender p m => Expr p Identity -> m String
-renderExpr (LookupMap key mapping _ _) =
-  printf "%s[%s]" <$> renderTerm mapping <*> renderTerm key
+renderExpr (LookupMap mapping key _ _) =
+  printf "%s(%s)" <$> renderTerm mapping <*> renderTerm key
 renderExpr (UpdateMap mapping key value _ _) =
   printf "%s[%s \\mapsto %s]" <$> renderExpr mapping <*> renderTerm key <*> renderTerm value
 renderExpr (EmptyMap _ _) =

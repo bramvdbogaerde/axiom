@@ -319,7 +319,7 @@ instance RangeOf LatexTemplateElement where
 -- terms, as long as those terms are ground. To enforce this we only
 -- allow pure terms, making it more difficult to put references to
 -- to-be-unified variables during unification.
-data Expr p s = LookupMap (Term' p s) (Term' p s) (XTypeAnnot p) Range -- ^ lookup the first term into a map represented by the second
+data Expr p s = LookupMap (Term' p s) (Term' p s) (XTypeAnnot p) Range -- ^ lookup the second term into a map represented by the first
             | UpdateMap {- Map -} (Expr p s) {- Key -} (Term' p s) {- Value -} (Term' p s) (XTypeAnnot p) Range
 -- TOOD: also add the set literals from the term language
             | EmptyMap (XTypeAnnot p) Range
