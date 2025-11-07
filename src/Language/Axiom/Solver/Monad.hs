@@ -6,10 +6,6 @@ module Language.Axiom.Solver.Monad
     liftST,
     branch,
     failSearch,
-    popGoal,
-    addGoals,
-    getInCache,
-    addToInCache,
     lookupCache,
     addToOutCache,
     findRules,
@@ -39,9 +35,7 @@ module Language.Axiom.Solver.Monad
     subtyping,
     currentSearchState,
     searchStateId,
-    searchGoals,
     searchSnapshot,
-    searchWhenSucceeds,
   )
 where
 
@@ -76,14 +70,6 @@ data SearchF p s next
     Fail
   | -- | Execute a unification action
     Unify (UnificationM p s next)
-  | -- | Pop the first goal from the goal list (returns Nothing if empty)
-    PopGoal (Maybe (SearchGoal p s) -> next)
-  | -- | Add goals to the current goal list
-    AddGoals [SearchGoal p s] next
-  | -- | Get the in-cache (whenSucceeds) for the current search state
-    GetInCache ([PureTerm' p] -> next)
-  | -- | Add a term to the in-cache
-    AddToInCache (PureTerm' p) next
   | -- | Lookup a term in the out-cache
     LookupCache (PureTerm' p) (Set (PureTerm' p) -> next)
   | -- | Add a term to the out-cache with its result
@@ -132,21 +118,6 @@ branch left right = Free (Branch left right)
 failSearch :: Solver p s a
 failSearch = Free Fail
 
--- | Pop the first goal from the goal list
-popGoal :: Solver p s (Maybe (SearchGoal p s))
-popGoal = Free (PopGoal Pure)
-
--- | Add goals to the current goal list
-addGoals :: [SearchGoal p s] -> Solver p s ()
-addGoals goals = Free (AddGoals goals (Pure ()))
-
--- | Get the in-cache for the current search state
-getInCache :: Solver p s [PureTerm' p]
-getInCache = Free (GetInCache Pure)
-
--- | Add a term to the in-cache
-addToInCache :: PureTerm' p -> Solver p s ()
-addToInCache term = Free (AddToInCache term (Pure ()))
 
 -- | Lookup a term in the out-cache
 lookupCache :: PureTerm' p -> Solver p s (Set (PureTerm' p))
@@ -188,13 +159,8 @@ deriving instance (ForAllPhases Show p) => Show (SearchGoal p s)
 data SearchState p s = SearchState
   { -- | Unique identifier for this search state
     _searchStateId :: Int,
-    -- | Remaining goals to be solved
-    _searchGoals :: ![SearchGoal p s],
     -- | Snapshot to restore when resuming this search
-    _searchSnapshot :: ST.Snapshot s,
-    -- | Goals to add to the cache when all the search goals in this state
-    -- have been solved. (i.e., in-cache)
-    _searchWhenSucceeds :: ![PureTerm' p]
+    _searchSnapshot :: Unification.Snapshot p s
   }
 
 deriving instance (ForAllPhases Show p) => Show (SearchState p s)
@@ -246,7 +212,7 @@ emptyEngineCtx subtyping =
       _rewriteRules = Map.empty,
       _onRules = Map.empty,
       _subtyping = subtyping,
-      _currentSearchState = SearchState 0 [] undefined [] -- snapshot will be set when needed
+      _currentSearchState = SearchState 0 undefined -- snapshot will be set when needed
     }
 
 -- | Associate a functor name with a rule
@@ -291,16 +257,10 @@ runSolverStep (Free Fail) =
   return (Debug.trace "fail" Nothing) -- This branch fails, try next from queue
 runSolverStep (Free (Branch left right)) = do
   -- Take a snapshot for the right branch
-  snapshot <- lift $ Unification.liftST ST.snapshot
-
-  -- Get current state information
-  ctx <- get
-  let currentState = ctx ^. currentSearchState
-  let inCache = currentState ^. searchWhenSucceeds
-  let goals = currentState ^. searchGoals
+  snapshot <- lift Unification.snapshot
 
   -- Create search state for the right branch
-  let rightState = SearchState 0 goals snapshot inCache
+  let rightState = SearchState 0 snapshot
   let rightQueued = QueuedSearch right rightState
 
   -- Enqueue only the right branch
@@ -311,25 +271,6 @@ runSolverStep (Free (Branch left right)) = do
 runSolverStep (Free (Unify m)) = do
   a <- lift m
   return (Just (Right a))
-runSolverStep (Free (PopGoal k)) = do
-  ctx <- get
-  let goals = ctx ^. currentSearchState . searchGoals
-  case goals of
-    [] -> return (Just (Right (k Nothing)))
-    (g : gs) -> do
-      -- Update the goals in the current search state
-      modify (over currentSearchState (set searchGoals gs))
-      return (Just (Right (k (Just g))))
-runSolverStep (Free (AddGoals newGoals k)) = do
-  modify (over currentSearchState (over searchGoals (++ newGoals)))
-  return (Just (Right k))
-runSolverStep (Free (GetInCache k)) = do
-  ctx <- get
-  let inCache = ctx ^. currentSearchState . searchWhenSucceeds
-  return (Just (Right (k inCache)))
-runSolverStep (Free (AddToInCache term k)) = do
-  modify (over currentSearchState (over searchWhenSucceeds (term :)))
-  return (Just (Right k))
 runSolverStep (Free (LookupCache term k)) = do
   ctx <- get
   let cache = ctx ^. outCache
@@ -366,7 +307,7 @@ dequeueAndRun = do
       modify (set searchQueue restQueue)
 
       -- Restore the snapshot from the dequeued state
-      lift $ Unification.liftST $ ST.restore (state ^. searchSnapshot)
+      lift $ Unification.restore (state ^. searchSnapshot)
 
       -- Update current search state
       modify (set currentSearchState state)

@@ -53,7 +53,7 @@ setElement v position element = do
     then do
       store <- readField v vectorStore
       writeArray store position element
-    else error $ "index out of bounds " ++ show position
+    else error $ "index out of bounds " ++ show position ++ ", array has length " ++ show currentLength
 
 -- | Grows a vector by doubling its current capacity.
 growVector :: Vector s a -> ST.ST s ()

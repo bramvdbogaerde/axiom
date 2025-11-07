@@ -117,6 +117,28 @@ liftST :: BST.ST s a -> UnificationM p s a
 liftST = lift . lift . lift
 
 -------------------------------------------------------------
+-- Snapshotting and restoring
+-------------------------------------------------------------
+
+-- | A snapshot of both the backtracking ST state and the variable mapping
+data Snapshot p s = Snapshot
+  { _stSnapshot :: BST.Snapshot s
+  , _mappingSnapshot :: VariableMapping p s
+  }
+
+deriving instance (ForAllPhases Show p) => Show (Snapshot p s)
+
+-- | Create a snapshot of the current unification state
+snapshot :: UnificationM p s (Snapshot p s)
+snapshot = Snapshot <$> liftST BST.snapshot <*> getVariableMapping
+
+-- | Restore the unification state to a previous snapshot
+restore :: Snapshot p s -> UnificationM p s ()
+restore (Snapshot stSnap mapping) = do
+  liftST $ BST.restore stSnap
+  updateVariableMapping mapping
+
+-------------------------------------------------------------
 -- Union find
 -------------------------------------------------------------
 
