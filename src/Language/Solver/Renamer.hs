@@ -10,6 +10,7 @@ module Language.Solver.Renamer(
       , unrenameTerm
       , runRenamer
       , renameRuleState
+      , renameTermState
       , renameState
       , baseName
     ) where
@@ -138,6 +139,9 @@ renameRule' freshCtr' (OnRuleDecl ruleName precedent consequent range) =
 
 renameRuleState :: (HaskellExprRename p, ForAllPhases Ord p, Monad m) => RuleDecl' p -> StateT Int m (RuleDecl' p)
 renameRuleState rule = StateT $ return . flip renameRule' rule
+
+renameTermState :: (HaskellExprRename p, ForAllPhases Ord p, Monad m) => PureTerm' p -> StateT Int m (PureTerm' p)
+renameTermState term = renameState (renameTerm term)
 
 -- | Transform the renamer monad to a state monad with a unique variable counter
 renameState :: Functor m => StateT RenamerCtx m a -> StateT Int m a

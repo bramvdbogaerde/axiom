@@ -1,3 +1,4 @@
+{-# LANGUAGE QuantifiedConstraints #-}
 module Language.Solver.Worklist(Queue(..), queueToList) where
 
 import Data.Sequence
@@ -6,7 +7,7 @@ import qualified Data.List as List
 
 
 -- | Queue abstraction for different search strategies
-class Queue q where
+class (forall a . (Show a => Show (q a))) => Queue q where
   emptyQueue :: q a
   enqueue :: a -> q a -> q a
   dequeue :: q a -> Maybe (a, q a)

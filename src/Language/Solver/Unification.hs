@@ -25,6 +25,7 @@ import qualified Data.Set as Set
 import Data.Kind
 import Data.Maybe (fromMaybe)
 import qualified Language.Solver.Renamer as Renamer
+import qualified Debug.Trace as Debug
 
 
 -------------------------------------------------------------
@@ -229,7 +230,13 @@ refTerm' t = do
 
 -- | Rename a rule using the internal unique variable counter to ensure freshness
 renameRule :: (HaskellExprRename p, ForAllPhases Ord p) => RuleDecl' p -> UnificationM p s (RuleDecl' p)
-renameRule rule = zoom numUniqueVariables . lift $ Renamer.renameRuleState rule
+renameRule rule = do
+  z <- use numUniqueVariables
+  zoom numUniqueVariables . lift $ Renamer.renameRuleState (Debug.trace ("variables>> " ++ show z) rule)
+
+-- | Rename a term using the internal unique variable counter to ensure freshness
+renameTerm :: (HaskellExprRename p, ForAllPhases Ord p) => PureTerm' p -> UnificationM p s (PureTerm' p)
+renameTerm term = zoom numUniqueVariables . lift $ Renamer.renameTermState term
 
 -- | Visited list abstraction for cycle detection
 type VisitedList p s = [BST.STRef s (CellValue p s String)]

@@ -203,6 +203,9 @@ data Snapshot s = Snapshot
   , _snapshotStateRef :: !(STRef.STRef s (STState s))
   }
 
+instance Show (Snapshot s) where
+  show = const "<<snapshot>>"
+  
 -- | Create a snapshot of the current state
 snapshot :: ST s (Snapshot s)
 snapshot = ST $ do
@@ -226,5 +229,6 @@ restore (Snapshot offset stateRef) = ST $ do
   lift $ mapM_ (uncurry $ setElement (state ^. storage)) (zip [0..] (snapshotElems snapshotData))
 
 -- TODO: Add cleanup functions to remove old snapshots
+
 
 

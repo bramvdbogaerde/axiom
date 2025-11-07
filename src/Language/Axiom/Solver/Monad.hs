@@ -53,7 +53,7 @@ import Control.Monad.Trans (lift)
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (mapMaybe)
+import Data.Maybe (mapMaybe, isNothing)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Language.AST
@@ -96,6 +96,10 @@ data SearchF p s next
 data Solver p s a
   = Pure a
   | Free (SearchF p s (Solver p s a))
+
+instance Show (Solver p s a) where
+  show = const "<<solver>>"
+
 
 instance Functor (Solver p s) where
   fmap f (Pure a) = Pure (f a)
@@ -177,9 +181,9 @@ instance MonadPlus (Solver p s) where
 data SearchGoal p s = SearchGoal
   { _goalRuleName :: String,
     _goalTerm :: RefTerm p s
-  } 
+  }
 
-deriving instance (ForAllPhases Show p) => Show (SearchGoal p s) 
+deriving instance (ForAllPhases Show p) => Show (SearchGoal p s)
 
 data SearchState p s = SearchState
   { -- | Unique identifier for this search state
@@ -193,12 +197,17 @@ data SearchState p s = SearchState
     _searchWhenSucceeds :: ![PureTerm' p]
   }
 
+deriving instance (ForAllPhases Show p) => Show (SearchState p s)
+
 -- | A queued search: pairs a computation with its search state
 -- Uses existential quantification to hide the result type
 data QueuedSearch p s = forall a. QueuedSearch
   { _queuedComputation :: !(Solver p s a),
     _queuedState :: !(SearchState p s)
   }
+
+
+deriving instance (ForAllPhases Show p) => Show (QueuedSearch p s)
 
 $(makeLenses ''SearchState)
 
@@ -340,7 +349,7 @@ runSolverStep (Free (FindRules name k)) = do
 runSolverToCompletion :: (Queue q, ForAllPhases Ord p) => Solver p s a -> StateT (EngineCtx p q s) (UnificationM p s) (Maybe a)
 runSolverToCompletion solver = do
   result <- runSolverStep solver
-  case result of
+  case Debug.traceWith (("failed>> " ++) . show . isNothing) result of
     Nothing -> return Nothing -- This branch failed
     Just (Left a) -> return (Just a) -- Got a result
     Just (Right nextSolver) -> runSolverToCompletion nextSolver -- Continue

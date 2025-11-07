@@ -16,6 +16,7 @@ import Control.Monad.Extra (ifM)
 import Control.Monad.State (StateT, get, gets, modify, evalStateT)
 import Control.Monad.Trans (lift)
 import Data.Maybe (isJust)
+import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Proxy
 import Language.AST
@@ -70,10 +71,11 @@ solveGoals = do
     Nothing -> do
       -- No more goals, we have a solution!
       -- Add all in-cache terms to the out-cache
-      inCacheTerms <- getInCache
+      inCacheTerms <- Debug.trace "<<solution>>" getInCache
       mapM_ addToOutCacheGround $ Debug.traceWith (("in-cache>> " ++) . show) inCacheTerms
     Just goal -> do
-      expandGoal goal
+      t <- pureTerm (_goalTerm goal)
+      expandGoal $ Debug.trace (("expand>> " ++) $ show t) goal
       solveGoals
 
 -- | Helper to add a term to the out-cache (only if it's ground)
@@ -209,6 +211,7 @@ processRule goal isInCache rule = do
                         then do
                           -- Goal is in in-cache: only use cached results
                           cachedResults <- lookupCache goalPure
+                          -- if we have something in the cache we must use it
                           msum $ map (processCachedResult goal ruleName "In") (Set.toList cachedResults)
                         else do
                           -- Goal not in in-cache: check cache and also process normally
@@ -250,6 +253,34 @@ processAllQueued = do
       result <- runSolverToCompletion computation  -- Run for side effects (cache updates)
       fmap (isJust result :) processAllQueued  -- Continue with rest of queue
 
+-- | Check if the query has a solution by looking in the out-cache
+-- Returns True if the query unifies with any key in the out-cache
+queryHasSolution :: forall p q s. (AnnotateType p, ForAllPhases Show p, HaskellExprExecutor p, HaskellExprRename p, ForAllPhases Ord p)
+                 => PureTerm' p -> StateT (EngineCtx p q s) (UnificationM p s) Bool
+queryHasSolution pureQuery = do
+  cache <- gets (^. outCache)
+  -- Check if the query unifies with any key in the out-cache
+  or <$> mapM (checkCacheKey pureQuery) (Map.keys cache)
+  where
+    checkCacheKey :: PureTerm' p -> PureTerm' p -> StateT (EngineCtx p q s) (UnificationM p s) Bool
+    checkCacheKey query cacheKey = do
+      snapshot <- lift $ Unification.liftST ST.snapshot
+
+      -- Make both terms unique to avoid permanent unification
+      query' <- lift $ Unification.renameTerm query
+      cacheKey' <- lift $ Unification.renameTerm cacheKey
+
+      queryRef <- lift $ Unification.refTerm' query'
+      cacheKeyRef <- lift $ Unification.refTerm' cacheKey'
+
+      -- Try to unify
+      unifyResult <- lift $ (fmap Right (Unification.unifyTerms queryRef cacheKeyRef)) `catchError` (return . Left)
+
+      -- Restore snapshot regardless of result
+      lift $ Unification.liftST $ ST.restore snapshot
+
+      return (isRight unifyResult)
+
 -- | Solve until the cache stabilizes
 -- Repeatedly reinitializes and solves the query until the cache stops growing
 solveUntilStable :: forall p q s. (AnnotateType p, ForAllPhases Show p, HaskellExprExecutor p, HaskellExprRename p, ForAllPhases Ord p, Queue q)
@@ -271,15 +302,15 @@ solveUntilStable pureQuery = do
   firstResult <- runSolverToCompletion solveGoals
 
   -- Process all queued searches (for cache population)
-  results <- (isJust firstResult :) <$> processAllQueued
+  _results <- (isJust firstResult :) <$> processAllQueued
 
   -- Check if cache changed
   finalCache <- gets (^. outCache)
 
   if initialCache == Debug.traceWith (("out >> " ++) . show) finalCache
-    then do
-      -- Cache stable - return whether we found a solution
-      return (or results)
+    then
+      -- Cache stable - check if the query has a solution in the out-cache
+      queryHasSolution pureQuery
     else solveUntilStable pureQuery  -- Cache changed, re-run with same query
 
 -- | Main entry point for solving a query
