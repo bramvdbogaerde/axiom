@@ -1,0 +1,14 @@
+
+
+syntax {
+	Conclusion ::= a() | b() | c();
+};
+
+rules {
+	rule "Test" [ 1 = 1 ] => [ a(); b() ];
+	rule "Test" [ a(); b() ] => [ c() ];
+	
+};
+
+
+%test: c()

@@ -41,7 +41,8 @@ where
 
 import Control.Applicative (Alternative (..))
 import Control.Lens
-import Control.Monad (MonadPlus (..))
+import Control.Monad (MonadPlus (..), foldM)
+import Control.Monad.Except (catchError)
 import Control.Monad.State (StateT, get, modify)
 import Control.Monad.Trans (lift)
 import qualified Data.List as List
@@ -251,7 +252,7 @@ fromProgram subtyping (Program decls _) =
 -- When we encounter a Branch, we capture the snapshot and in-cache,
 -- enqueue the right branch, and continue with the left
 -- Returns Nothing if this branch failed
-runSolverStep :: (Queue q, ForAllPhases Ord p) => Solver p s a -> StateT (EngineCtx p q s) (UnificationM p s) (Maybe (Either a (Solver p s a)))
+runSolverStep :: (Queue q, ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p) => Solver p s a -> StateT (EngineCtx p q s) (UnificationM p s) (Maybe (Either a (Solver p s a)))
 runSolverStep (Pure a) = return (Just (Left a))
 runSolverStep (Free Fail) =
   return (Debug.trace "fail" Nothing) -- This branch fails, try next from queue
@@ -274,9 +275,36 @@ runSolverStep (Free (Unify m)) = do
 runSolverStep (Free (LookupCache term k)) = do
   ctx <- get
   let cache = ctx ^. outCache
-  -- Find entries in cache that unify with the term (simplified for now)
-  let results = Map.findWithDefault Set.empty term cache
-  return (Just (Right (k results)))
+  -- Find all cache entries whose keys unify with the query term
+  matchingResults <- lift $ foldM (checkCacheEntry term) Set.empty (Map.toList cache)
+  return (Just (Right (k matchingResults)))
+  where
+    checkCacheEntry :: (ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
+                    => PureTerm' p
+                    -> Set (PureTerm' p)
+                    -> (PureTerm' p, Set (PureTerm' p))
+                    -> UnificationM p s (Set (PureTerm' p))
+    checkCacheEntry queryTerm accum (cacheKey, cacheValues) = do
+      -- Take snapshot before unification attempt
+      snapshot <- Unification.snapshot
+
+      -- Make both terms unique to avoid permanent unification
+      queryTerm' <- Unification.renameTerm queryTerm
+      cacheKey' <- Unification.renameTerm cacheKey
+
+      queryRef <- Unification.refTerm' queryTerm'
+      cacheKeyRef <- Unification.refTerm' cacheKey'
+
+      -- Try to unify
+      unifyResult <- fmap Right (Unification.unifyTerms queryRef cacheKeyRef) `catchError` (return . Left)
+
+      -- Restore snapshot regardless of result
+      Unification.restore snapshot
+
+      -- If unification succeeded, add the cache values to results
+      return $ case unifyResult of
+        Right () -> Set.union accum cacheValues
+        Left _ -> accum
 runSolverStep (Free (AddToOutCache key value k)) = do
   modify (over outCache (Map.insertWith Set.union key (Set.singleton value)))
   return (Just (Right k))
@@ -287,7 +315,7 @@ runSolverStep (Free (FindRules name k)) = do
 
 -- | Run a solver computation to completion, looping until we get a result or it fails
 -- Returns Nothing if this branch failed
-runSolverToCompletion :: (Queue q, ForAllPhases Ord p) => Solver p s a -> StateT (EngineCtx p q s) (UnificationM p s) (Maybe a)
+runSolverToCompletion :: (Queue q, ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p) => Solver p s a -> StateT (EngineCtx p q s) (UnificationM p s) (Maybe a)
 runSolverToCompletion solver = do
   result <- runSolverStep solver
   case Debug.traceWith (("failed>> " ++) . show . isNothing) result of
@@ -297,7 +325,7 @@ runSolverToCompletion solver = do
 
 -- | Dequeue the next search state and run it
 -- Returns Nothing if the queue is empty
-dequeueAndRun :: (Queue q, ForAllPhases Ord p) => StateT (EngineCtx p q s) (UnificationM p s) (Maybe ())
+dequeueAndRun :: (Queue q, ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p) => StateT (EngineCtx p q s) (UnificationM p s) (Maybe ())
 dequeueAndRun = do
   ctx <- get
   case dequeue (ctx ^. searchQueue) of
@@ -320,7 +348,7 @@ dequeueAndRun = do
 
 -- | Run all queued searches until the queue is empty
 -- This processes all branches in the search tree
-runAllQueued :: (Queue q, ForAllPhases Ord p) => StateT (EngineCtx p q s) (UnificationM p s) ()
+runAllQueued :: (Queue q, ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p) => StateT (EngineCtx p q s) (UnificationM p s) ()
 runAllQueued = do
   maybeMore <- dequeueAndRun
   case maybeMore of

@@ -227,6 +227,7 @@ processRule inCache goalPure goal isInCache rule = do
 
                               -- Try all branches (normal + cached)
                               msum (normalBranch : cachedBranches)
+                      mapM_ addToOutCacheGround renamedOtherConsequents
   where
     processCachedResult :: RefTerm p s -> PureTerm' p -> Solver p s ()
     processCachedResult goalRef cachedResult = do
@@ -241,7 +242,7 @@ processRule inCache goalPure goal isInCache rule = do
 -------------------------------------------------------------
 
 -- | Process all queued searches (ignoring their results, just for side effects like caching)
-processAllQueued :: (Queue q, ForAllPhases Ord p, ForAllPhases Show p) => StateT (EngineCtx p q s) (UnificationM p s) [Bool]
+processAllQueued :: (Queue q, ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p) => StateT (EngineCtx p q s) (UnificationM p s) [Bool]
 processAllQueued = do
   ctx <- get
   case dequeue (Debug.trace "dequeue" $ ctx ^. searchQueue) of
