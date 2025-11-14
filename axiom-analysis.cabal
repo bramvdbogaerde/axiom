@@ -30,11 +30,9 @@ library
                   , Language.Types
                   , Language.Parser
                   , Language.TypeCheck
-                  , Language.Solver
-                  , Language.SolverNew
                   , Language.Axiom
                   , Language.Axiom.Solver.Monad
-                  , Language.SolverDebugger
+                  , Language.Axiom.Solver
                   , Language.ImportResolver
                   , Language.Solver.Unification
                   , Language.Solver.Renamer

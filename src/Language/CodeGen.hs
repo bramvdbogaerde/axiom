@@ -60,7 +60,7 @@ preludeSystemImports =
   import qualified Language.Range
   import qualified Language.Types
   import qualified Language.TypeCheck
-  import Language.Solver
+  import Language.Axiom.Solver
   import qualified Language.Solver.BacktrackingST as ST
 
   -- Haskell imports
@@ -139,7 +139,6 @@ makeModule mainName enableDebugger prelude postlude ast testQueries termDecls su
   $mainName' = do
     $debuggerMain'
 
-  $debuggerREPL'
 
   runTestQuery :: (Int, (PureTerm' CodeGenPhase, Bool)) -> IO Bool
   runTestQuery (idx, (query, shouldPass)) = do
@@ -147,9 +146,9 @@ makeModule mainName enableDebugger prelude postlude ast testQueries termDecls su
              " (expected: " ++ (if shouldPass then "PASS" else "FAIL") ++ ") ... "
     -- subtyping is already available as a top-level variable
     let engineCtx = fromProgram Main.subtyping ast
-    let solverComputation = ST.runST $ runSolver engineCtx (solve @CodeGenPhase @[] query)
+    let solverComputation = ST.runST $ runSolver @_ @[] engineCtx query
     
-    let hasSolution = not $ null solverComputation
+    let hasSolution = solverComputation
     let testPassed = hasSolution == shouldPass
     
     if testPassed
@@ -175,10 +174,7 @@ makeModule mainName enableDebugger prelude postlude ast testQueries termDecls su
                                   , "import qualified Text.Read"
                                   ]
                                 else ""
-    debuggerMain' = T.pack $ if enableDebugger
-                            then debuggerMainCode
-                            else testRunnerMainCode
-
+    debuggerMain' = T.pack $  testRunnerMainCode 
     mainName' = T.pack mainName
     
     testRunnerMainCode = unlines
@@ -199,65 +195,6 @@ makeModule mainName enableDebugger prelude postlude ast testQueries termDecls su
       , "    exitWith (ExitFailure 1)"
       ]
     
-    debuggerMainCode = unlines
-      [ "putStrLn \"Generated code debugger\""
-      , "putStrLn \"Available test queries:\""
-      , "mapM_ (\\(i, (query, _)) -> putStrLn $ show i ++ \": \" ++ show query) (zip [1..] testQueries)"
-      , "debuggerREPL testQueries"
-      ]
-    
-    debuggerREPL' = T.pack $ if enableDebugger then debuggerREPLCode else ""
-    
-    debuggerREPLCode = unlines
-      [ "debuggerREPL ::  [(PureTerm' CodeGenPhase, Bool)] -> IO ()"
-      , "debuggerREPL testQueries = do"
-      , "  putStr \"debug> \""
-      , "  System.IO.hFlush System.IO.stdout"
-      , "  input <- getLine"
-      , "  case input of"
-      , "    \"quit\" -> putStrLn \"Goodbye!\""
-      , "    \"help\" -> do"
-      , "      putStrLn \"Commands:\""
-      , "      putStrLn \"  help    - Show this help\""
-      , "      putStrLn \"  list    - List available queries\""
-      , "      putStrLn \"  run N   - Debug query number N\""
-      , "      putStrLn \"  quit    - Exit debugger\""
-      , "      debuggerREPL testQueries"
-      , "    \"list\" -> do"
-      , "      putStrLn \"Available test queries:\""
-      , "      mapM_ (\\(i, (query, _)) -> putStrLn $ show i ++ \": \" ++ show query) (zip [1..] testQueries)"
-      , "      debuggerREPL testQueries"
-      , "    _ | Just queryNumStr <- Data.List.stripPrefix \"run \" input -> do"
-      , "        case Text.Read.readMaybe queryNumStr of"
-      , "          Just queryNum | queryNum >= 1 && queryNum <= length testQueries -> do"
-      , "            let (query, _) = testQueries !! (queryNum - 1)"
-      , "            debugQuery query"
-      , "            debuggerREPL testQueries"
-      , "          _ -> do"
-      , "            putStrLn $ \"Invalid query number. Use 1-\" ++ show (length testQueries)"
-      , "            debuggerREPL testQueries"
-      , "    _ -> do"
-      , "      putStrLn \"Unknown command. Type 'help' for available commands.\""
-      , "      debuggerREPL testQueries"
-      , ""
-      , "debugQuery :: PureTerm' CodeGenPhase -> IO ()"
-      , "debugQuery query = do"
-      , "  putStrLn $ \"Debugging query: \" ++ show query"
-      , "  let Program decls _ = ast"
-      , "  let rules = [rule | RulesDecl _ rules _ <- decls, rule <- rules]"
-      , "  let rewrites = [ rule | Rewrite rule _ <- decls ]"
-      , "  let config = Language.SolverDebugger.defaultConfig"
-      , "  (solutions, trace) <- Language.SolverDebugger.debugSolve config checkingContext rules rewrites  query"
-      , "  putStrLn \"\\n=== TRACE ===\""
-      , "  putStrLn $ Language.SolverDebugger.prettyTrace trace"
-      , "  putStrLn \"=== RESULTS ===\""
-      , "  if null solutions"
-      , "    then putStrLn \"No solutions found.\""
-      , "    else do"
-      , "      putStrLn $ \"Found \" ++ show (length solutions) ++ \" solution(s):\""
-      , "      mapM_ (putStrLn . (\"  \" ++) . show) solutions"
-      ]
-
 
 ------------------------------------------------------------
 -- Monad

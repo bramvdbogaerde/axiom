@@ -5,7 +5,7 @@ import Test.Hspec
 import Language.AST
 import Language.Parser (parseTerm)
 import Language.ImportResolver
-import qualified Language.SolverNew as Solver
+import qualified Language.Axiom.Solver as Solver
 import Language.TypeCheck (runChecker', CheckingContext(..))
 import qualified Language.Solver.BacktrackingST as ST
 import System.Directory

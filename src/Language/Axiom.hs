@@ -7,9 +7,8 @@ module Language.Axiom(
   ) where 
 
 import Language.CodeGen.Prelude
-import qualified Language.Solver as Solver
+import qualified Language.Axiom.Solver as Solver
 import qualified Language.Solver.BacktrackingST as ST
-import Data.Map
 import Language.TypeCheck
 
 -- | Create a new solver based on the given rules and subtyping information
@@ -24,7 +23,7 @@ typeQuery = runCheckTerm
 solve :: (HaskellExprExecutor p, ForAllPhases Show p, AnnotateType p, ForAllPhases Ord p, HaskellExprRename p)
       => (forall s . Solver.EngineCtx p [] s)
       -> PureTerm' p
-      -> [Map String (PureTerm' p)]
+      -> Bool
 solve solver query =
-  ST.runST $ Solver.runSolver solver (Solver.solve query)
+  ST.runST $ Solver.runSolver solver query
   

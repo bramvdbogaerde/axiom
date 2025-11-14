@@ -1,10 +1,7 @@
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Language.SolverNew(
+module Language.Axiom.Solver(
     EngineCtx,
     fromProgram
   , runSolver) where
