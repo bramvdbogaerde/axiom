@@ -5,8 +5,8 @@ syntax {
 };
 
 rules {
-	rule "Test" [ 1 = 1 ] => [ a(); b() ];
-	rule "Test" [ a(); b() ] => [ c() ];
+	rule "Test1" [ 1 = 1 ] => [ a(); b() ];
+	rule "Test2" [ a(); b() ] => [ c() ];
 	
 };
 

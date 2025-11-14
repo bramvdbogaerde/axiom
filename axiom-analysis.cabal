@@ -49,6 +49,7 @@ library
                   , Language.Axiom.Reporting
   other-modules:   Language.Lexer.Token
                  , Data.Graph
+                 , Debug.TraceExtra
   extensions: TemplateHaskell
             , GeneralizedNewtypeDeriving
             , FlexibleContexts

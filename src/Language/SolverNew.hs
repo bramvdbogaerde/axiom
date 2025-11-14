@@ -76,9 +76,15 @@ solveGoal :: (AnnotateType p, ForAllPhases Show p, HaskellExprExecutor p, Haskel
           -> PureTerm' p    -- ^ Goal to solve
           -> Solver p s ()
 solveGoal inCache pureGoal = do
-  goalRef <- refTerm pureGoal
-  unifiedGoal <- pureTerm goalRef
-  Debug.trace (("expand>> " ++) $ show unifiedGoal) $ expandGoal inCache pureGoal goalRef
+    goalRef <- refTerm pureGoal
+    cached <- cachedResults goalRef
+    msum (expandGoal inCache pureGoal goalRef : cached)
+
+  where cachedResults goalRef =
+          map (processCachedResult goalRef) . Set.toList <$> lookupCache pureGoal
+        processCachedResult goalRef cachedResult = do
+          cachedRef <- refTerm cachedResult
+          either (const mzero) (const $ return ()) =<< unify goalRef cachedRef
 
 -- | Helper to add a term to the out-cache (only if it's ground)
 addToOutCacheGround :: (AnnotateType p, ForAllPhases Show p, HaskellExprRename p, ForAllPhases Ord p)
@@ -176,7 +182,7 @@ expandSet _inCache nam set = do
 -- and recursively solve precedents
 processRule :: forall p s. (AnnotateType p, ForAllPhases Show p, HaskellExprRename p, HaskellExprExecutor p, ForAllPhases Ord p)
             => InCache p -> PureTerm' p -> RefTerm p s -> Bool -> RuleDecl' p -> Solver p s ()
-processRule inCache goalPure goal isInCache rule = do
+processRule inCache _goalPure goal isInCache rule = do
   case rule of
     OnRuleDecl {} -> error "unexpected 'on' declaration"
     RuleDecl ruleName _precedents consequents _ -> do
@@ -212,30 +218,13 @@ processRule inCache goalPure goal isInCache rule = do
                           -- Rules WITH precedents: Apply caching logic
                           if isInCache
                             then do
-                              -- Goal is in in-cache: only use cached results
-                              cachedResults <- lookupCache goalPure
-                              msum $ map (processCachedResult goal) (Set.toList cachedResults)
+                              -- Goal is in in-cache, we cannot proceed here
+                              mzero
                             else do
-                              -- Goal not in in-cache: check cache and also process normally
-                              cachedResults <- lookupCache goalPure
+                              -- Goal is not in the in-cache we can proceed recursively
+                              mapM_ (solveGoal inCache') renamedPrecedents
 
-                              -- Create normal processing branch: recursively solve precedents
-                              let normalBranch = mapM_ (solveGoal inCache') renamedPrecedents
-
-                              -- Create branches for cached results
-                              let cachedBranches = map (processCachedResult goal) (Set.toList cachedResults)
-
-                              -- Try all branches (normal + cached)
-                              msum (normalBranch : cachedBranches)
                       mapM_ addToOutCacheGround renamedOtherConsequents
-  where
-    processCachedResult :: RefTerm p s -> PureTerm' p -> Solver p s ()
-    processCachedResult goalRef cachedResult = do
-      cachedRef <- refTerm cachedResult
-      result <- unify goalRef cachedRef
-      case result of
-        Left _ -> mzero
-        Right () -> return ()
 
 -------------------------------------------------------------
 -- High-level API

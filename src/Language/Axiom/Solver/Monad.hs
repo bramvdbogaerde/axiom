@@ -58,6 +58,7 @@ import qualified Language.Solver.Unification as Unification
 import Language.Solver.Worklist (Queue (..))
 import Language.TypeCheck
 import qualified Debug.Trace as Debug
+import qualified Debug.TraceExtra as Debug
 
 -------------------------------------------------------------
 -- Solver monad with free monad structure
@@ -292,7 +293,7 @@ runSolverStep (Free (LookupCache term k)) = do
       queryTerm' <- Unification.renameTerm queryTerm
       cacheKey' <- Unification.renameTerm cacheKey
 
-      queryRef <- Unification.refTerm' queryTerm'
+      queryRef <- Unification.refTerm' (Debug.traceShowPrefix "trying>>" queryTerm')
       cacheKeyRef <- Unification.refTerm' cacheKey'
 
       -- Try to unify
