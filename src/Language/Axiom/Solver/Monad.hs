@@ -9,6 +9,7 @@ module Language.Axiom.Solver.Monad
     lookupCache,
     addToOutCache,
     findRules,
+    findOnRules,
     addConclusionFunctor,
 
     -- * Running the solver
@@ -78,6 +79,8 @@ data SearchF p s next
     AddToOutCache (PureTerm' p) (PureTerm' p) next
   | -- | Find rules matching a functor name
     FindRules String ([RuleDecl' p] -> next)
+    -- | Find "on" rules matching a functor name
+  | FindOnRules String ([RuleDecl' p] -> next)
   deriving (Functor)
 
 -- | The solver monad as a free monad over SearchF
@@ -132,6 +135,11 @@ addToOutCache key value = Free (AddToOutCache key value (Pure ()))
 -- | Find rules matching a functor name
 findRules :: String -> Solver p s [RuleDecl' p]
 findRules name = Free (FindRules name Pure)
+
+-- | Find 'on' rules that unify with the given term 
+findOnRules :: String -> Solver p s [RuleDecl' p]
+findOnRules name = Free (FindOnRules name Pure)
+
 
 -- | Alternative instance for non-deterministic search
 -- empty represents failure, <|> represents branching
@@ -222,6 +230,10 @@ addConclusionFunctor :: (ForAllPhases Ord p) => String -> RuleDecl' p -> EngineC
 addConclusionFunctor nam decl =
   over conclusionFunctors (Map.insertWith Set.union nam (Set.singleton decl))
 
+addOnFunctor :: (ForAllPhases Ord p) => String -> RuleDecl' p -> EngineCtx p q s -> EngineCtx p q s
+addOnFunctor  nam decl =
+  over onRules (Map.insertWith Set.union nam (Set.singleton decl))
+
 -- | Construct an initial solver engine context from a program
 fromProgram ::
   forall q s p.
@@ -232,16 +244,16 @@ fromProgram ::
   Program' p ->
   EngineCtx p q s
 fromProgram subtyping (Program decls _) =
-  (flip $ foldr visitRewrite) rewrites $
-    (flip $ foldr visitRule) rules $
-      emptyEngineCtx subtyping
+   (flip $ foldr visitRewrite) rewrites
+ $ (flip $ foldr visitRule) rules 
+ $ emptyEngineCtx subtyping
   where
     rules = [r | RulesDecl _ rulesDecl _ <- decls, r <- rulesDecl]
     rewrites = [r | Rewrite r _ <- decls]
     visitRule rule@(RuleDecl _ _precedent consequents _) =
       flip (foldr (`addConclusionFunctor` rule)) (mapMaybe functorName (List.singleton (head consequents)))
     visitRule rule@(OnRuleDecl _ precedents _ _) =
-      flip (foldr (`addConclusionFunctor` rule)) (mapMaybe functorName (List.singleton (head precedents)))
+      flip (foldr (`addOnFunctor` rule)) (mapMaybe functorName (List.singleton (head precedents)))
     visitRewrite decl@(RewriteDecl nam _ _ _) =
       over rewriteRules (Map.insertWith (++) nam [decl])
 
@@ -313,6 +325,10 @@ runSolverStep (Free (FindRules name k)) = do
   ctx <- get
   let rules = Set.toList $ Map.findWithDefault Set.empty name (ctx ^. conclusionFunctors)
   return (Just (Right (k rules)))
+runSolverStep (Free (FindOnRules name k)) = do
+  ctx <- get
+  let rules = Set.toList $ Map.findWithDefault Set.empty name (ctx ^. onRules)
+  return (Just (Right (k rules)))
 
 -- | Run a solver computation to completion, looping until we get a result or it fails
 -- Returns Nothing if this branch failed
@@ -355,3 +371,4 @@ runAllQueued = do
   case maybeMore of
     Nothing -> return () -- Queue empty, done
     Just () -> runAllQueued -- Continue processing
+

@@ -17,9 +17,8 @@ import System.FilePath
 import Language.Axiom.Reporting (printError, printImportError)
 import Options.Applicative
 import qualified LanguageServer
-import qualified Language.SolverDebugger as SolverDebugger
 import qualified Latex.Entrypoint as Latex
-import qualified Language.SolverNew as Solver
+import qualified Language.Axiom.Solver as Solver
 import qualified Language.Solver.BacktrackingST as ST
 import System.Timeout (timeout)
 import Text.Pretty.Simple (pPrint)
@@ -74,10 +73,6 @@ codegenOptionsParser = CodeGenOptions
 checkCommand :: Parser (IO ())
 checkCommand = runCheckCommand <$> inputOptionsParser <*> verbosityFlag
 
--- | Parser for the 'debug' subcommand
-debugCommand :: Parser (IO ())
-debugCommand = runDebugCommand <$> inputOptionsParser
-
 -- | Parser for the 'lsp' subcommand  
 lspCommand :: Parser (IO ())
 lspCommand = pure $ do
@@ -104,8 +99,6 @@ latexCommand = Latex.runLatexCommand <$> Latex.latexOptionsParser
 commandParser :: Parser (IO ())
 commandParser = subparser  ( command "check"
     (info checkCommand (progDesc "Type check a program"))
- <> command "debug"
-    (info debugCommand (progDesc "Start interactive solver debugger"))
  <> command "lsp"
     (info lspCommand (progDesc "Start Language Server Protocol server"))
  <> command "codegen"
@@ -199,10 +192,6 @@ runCheckCommand (InputOptions filename) verbose = do
     Right ast  -> do
       result <- traverse (\(ctx, ast') -> when verbose (pPrint ctx >> pPrint ast') >> return (ctx, ast')) $ runChecker' ast
       either (printError contents) (const printSuccess) result
-
--- | Execute the solver debugging command
-runDebugCommand :: InputOptions -> IO ()
-runDebugCommand (InputOptions filename) = SolverDebugger.debugSession filename
 
 -- | Execute the code generation command
 runCodegenCommand :: InputOptions -> CodeGenOptions -> IO ()

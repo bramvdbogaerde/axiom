@@ -262,14 +262,14 @@ type TypedRewriteDecl = RewriteDecl' TypingPhase
 
 
 -- | rule NAME [ PRECEDENT ] => [ CONSEQUENT ];
-data RuleDecl' p = RuleDecl String -- ^ rule name
-                           [PureTerm' p] -- ^ the precedent
-                           [PureTerm' p] -- ^ the consequent
-                           Range
-                 | OnRuleDecl String        -- ^ name 
-                              [PureTerm' p] -- ^ trigger
-                              [PureTerm' p] -- ^ consequent
-                              Range
+data RuleDecl' p = RuleDecl   {  ruleName        :: String -- ^ rule name
+                               , rulePrecedents  :: [PureTerm' p] -- ^ the precedent
+                               , ruleConsequents :: [PureTerm' p] -- ^ the consequent
+                               , ruleRange       :: Range }
+                 | OnRuleDecl {  ruleName        :: String        -- ^ name 
+                               , rulePrecedents  :: [PureTerm' p] -- ^ trigger
+                               , ruleConsequents :: [PureTerm' p] -- ^ consequent
+                               , ruleRange :: Range }
 deriving instance (ForAllPhases Ord p) => Ord (RuleDecl' p)
 deriving instance (ForAllPhases Eq p) => Eq (RuleDecl' p)
 type RuleDecl = RuleDecl' ParsePhase

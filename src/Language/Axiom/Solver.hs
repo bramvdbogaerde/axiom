@@ -1,5 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Language.Axiom.Solver(
     EngineCtx,
@@ -26,6 +27,7 @@ import Language.Types
 import qualified Debug.Trace as Debug
 import Language.Axiom.Solver.Monad
 import Data.Either (isRight)
+import qualified Debug.TraceExtra as Debug
 
 -------------------------------------------------------------
 -- Type aliases
@@ -92,8 +94,25 @@ addToOutCacheGround t = do
   tr <- refTerm t
   tground <- pureTerm tr
   -- Only add ground terms to cache
-  when (isTermGround tground) $
+  when (isTermGround tground) $ do
     addToOutCache t' tground
+
+
+-- | Triggers (analyzes) the rules defined using "on" from the formal semantics
+triggerOnRules :: (AnnotateType p, HaskellExprRename p, HaskellExprExecutor p, ForAllPhases Ord p, ForAllPhases Show p) => PureTerm' p -> Solver p s ()
+triggerOnRules (Functor name _ _ _) = do
+    rules <- mapM (liftUnification . Unification.renameRule) =<< findOnRules name
+    -- ensure that all the conditions in the precedent are derivable, and then
+    -- derive the consequent 
+    mapM_ processRule (Debug.traceShowPrefix "on rules>>" rules)
+  where processRule rule = do
+            let precedents = rulePrecedents rule
+            let consequents = ruleConsequents rule
+            mapM_ (solveGoal []) precedents
+            mapM_ addToOutCacheGround consequents
+
+
+triggerOnRules _ = return () -- no rules to trigger for other patterns
 
 -- | Check if a RefTerm is in the in-cache
 isInInCache :: (AnnotateType p, ForAllPhases Show p, HaskellExprRename p, HaskellExprExecutor p, ForAllPhases Ord p)
@@ -227,6 +246,16 @@ processRule inCache _goalPure goal isInCache rule = do
 -- High-level API
 -------------------------------------------------------------
 
+solveAll :: (Queue q, ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p)
+         => Solver p s ()
+         -> StateT (EngineCtx p q s) (UnificationM p s) [Bool]
+solveAll solver = do
+  -- Run the solver computation with empty in-cache
+  firstResult <- runSolverToCompletion solver
+
+  -- Process all queued searches (for cache population)
+  (isJust firstResult :) <$> processAllQueued
+
 -- | Process all queued searches (ignoring their results, just for side effects like caching)
 processAllQueued :: (Queue q, ForAllPhases Ord p, ForAllPhases Show p, AnnotateType p, HaskellExprRename p, HaskellExprExecutor p) => StateT (EngineCtx p q s) (UnificationM p s) [Bool]
 processAllQueued = do
@@ -281,15 +310,15 @@ solveUntilStable pureQuery = do
   modify (set currentSearchState initialState)
 
   -- Run the solver computation with empty in-cache
-  firstResult <- runSolverToCompletion (solveGoal [] pureQuery)
+  _ <- solveAll (solveGoal [] pureQuery)
 
-  -- Process all queued searches (for cache population)
-  _results <- (isJust firstResult :) <$> processAllQueued
-
-  -- Check if cache changed
+  -- Check if cache changed, and if so, trigger all the 'on' rules
   finalCache <- gets (^. outCache)
+  _ <- solveAll (msum $ map triggerOnRules $ Set.toList $ Set.unions $ Map.elems finalCache)
 
-  if initialCache == Debug.traceWith (("out >> " ++) . show) finalCache
+  finalCache' <- gets (^. outCache)
+
+  if initialCache == Debug.traceWith (("out >> " ++) . show) finalCache'
     then
       -- Cache stable - check if the query has a solution in the out-cache
       queryHasSolution pureQuery

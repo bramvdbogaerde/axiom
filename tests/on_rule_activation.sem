@@ -1,0 +1,14 @@
+
+
+syntax {
+	term in Term ::= a() | b() | c() | d();
+};
+
+
+rules {
+	rule "rule1" [ ] => [ a() ; b() ];
+	rule "rule2" [ a() ; c() ] => [ d() ]; 
+	on "onrule" [ b() ] => [ c() ];
+};
+
+%test: d()
